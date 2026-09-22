@@ -8,3 +8,7 @@ aiosqlite>=0.20.0
 jinja2>=3.1.4
 python-multipart>=0.0.9
 httpx>=0.27.0
+
+# 網頁自動化（CDP 模式：接入使用者自己開的 Chrome）
+# 先前缺少這個依賴，導致照 README 從零安裝後，執行到 Web RPA 才在執行期爆炸。
+playwright>=1.40.0

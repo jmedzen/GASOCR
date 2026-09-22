@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-002-indigo?style=for-the-badge" alt="Build 002" />
+  <img src="https://img.shields.io/badge/Build-003-indigo?style=for-the-badge" alt="Build 003" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
   <img src="https://img.shields.io/badge/Cost-Strict%200%20Free%20Tier-success?style=for-the-badge" alt="Zero Cost" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python" alt="Python" />
@@ -51,9 +51,23 @@
 ### 8. 🔍 左圖右文校對檢視器 (Side-by-Side Proofreader)
 - **逐頁對照**：左側呈現高清晰 PDF 渲染原圖，右側為 Markdown / 文字編輯區。
 - **鍵盤快速鍵切換頁碼**：
-  - **前一頁**：`Alt + ←` 或 `Alt + [`（瀏覽模式亦支援 `←`、`[`、`PageUp`）
-  - **後一頁**：`Alt + →` 或 `Alt + ]`（瀏覽模式亦支援 `→`、`]`、`PageDown`）
-  - **快速儲存**：`Ctrl + S` 或 `Cmd + S`
+  - **前一頁**：`⌥ + ←`（macOS）／`Alt + ←`（Windows/Linux），或 `⌥ + [`
+  - **後一頁**：`⌥ + →`（macOS）／`Alt + →`（Windows/Linux），或 `⌥ + ]`
+  - **瀏覽模式**（輸入框未聚焦時）亦可直接按 `←`、`→`、`[`、`]`
+  - **快速儲存**：`⌘ + S`（macOS）／`Ctrl + S`（Windows/Linux）
+  - **原模重辨**：`⌥/Alt + R`　**升級重辨**：`⌥/Alt + U`　**暫停/繼續**：`⌥/Alt + P`
+  - **開關重辨佇列**：`⌥/Alt + Q`，或輸入框未聚焦時直接按 `Q`
+  - **關閉彈窗**：`Esc`
+
+> 🍎 **macOS 相容性說明**
+> 網頁端快速鍵一律以 `event.code`（實體鍵位置）判斷，而非 `event.key`。
+> 原因是 macOS 的 `Option (⌥)` 是**組合鍵**，會改寫 `event.key`：
+> `⌥Q`→`œ`、`⌥R`→`®`、`⌥U`→死鍵、`⌥P`→`π`、`⌥[`→`“`、`⌥]`→`‘`，
+> 因此用 `event.key` 比對字母／括號在 macOS 上會全部失效。改用 `event.code` 後兩平台皆正常。
+>
+> 另外兩點 macOS 專屬處理：
+> 1. 在**文字編輯框內**編輯時，`⌥←`/`⌥→` 保留給 macOS 原生的「逐詞移動游標」，不會被翻頁快捷鍵搶走；編輯中請改用 `⌥ + [`、`⌥ + ]` 或 `Fn + ↑/↓` 翻頁。Windows/Linux 的 `Alt + ←/→` 無此衝突，編輯中仍可直接翻頁。
+> 2. MacBook 沒有 `PageUp`/`PageDown` 實體鍵，對應為 `Fn + ↑` / `Fn + ↓`。
 - **線上即時修正**：校對後可直接點擊「儲存修改」，即時持久化至資料庫。
 - **單頁重新辨識**：點擊「重新辨識本頁」使用原任務模型直接背景執行。
 - **升級模型單頁重新辨識 (`upgrademodel`)**：提供模型下拉選單，可挑選任意高階模型（如 `gemini-2.5-pro`），點擊「升級重新辨識」即可僅對該頁改用指定模型重跑，其餘 Prompt 與排版設定完全繼承原任務。辨識完成後自動更新為該頁專屬模型標籤。

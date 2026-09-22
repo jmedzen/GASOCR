@@ -57,12 +57,21 @@ async def init_db():
         """)
 
         # 資料表遷移檢查
+        cursor = await db.execute("PRAGMA table_info(accounts)")
+        acc_cols = [row["name"] for row in await cursor.fetchall()]
+        if "is_paid" not in acc_cols:
+            await db.execute("ALTER TABLE accounts ADD COLUMN is_paid INTEGER DEFAULT 0")
+
         cursor = await db.execute("PRAGMA table_info(tasks)")
         cols = [row["name"] for row in await cursor.fetchall()]
         if "start_page" not in cols:
             await db.execute("ALTER TABLE tasks ADD COLUMN start_page INTEGER DEFAULT 1")
         if "end_page" not in cols:
             await db.execute("ALTER TABLE tasks ADD COLUMN end_page INTEGER DEFAULT 0")
+        if "is_paid" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN is_paid INTEGER DEFAULT 0")
+        if "paid_account_id" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN paid_account_id INTEGER DEFAULT NULL")
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS task_pages (
@@ -111,14 +120,16 @@ async def reset_orphan_processing_pages() -> int:
 
 # --- Accounts CRUD ---
 
-async def add_api_key_account(name: str, api_key: str, rpm_limit: int = 15) -> int:
+async def add_api_key_account(name: str, api_key: str, rpm_limit: int = 15, is_paid: int = 0) -> int:
     today_str = datetime.date.today().isoformat()
     now = time.time()
+    # 付費金鑰享有更高的預設 RPM（例如 1000）
+    actual_rpm = 1000 if is_paid else rpm_limit
     async with get_db() as db:
         cursor = await db.execute("""
-            INSERT INTO accounts (name, auth_type, api_key, rpm_limit, last_reset_date, created_at)
-            VALUES (?, 'api_key', ?, ?, ?, ?)
-        """, (name, api_key.strip(), rpm_limit, today_str, now))
+            INSERT INTO accounts (name, auth_type, api_key, rpm_limit, is_paid, last_reset_date, created_at)
+            VALUES (?, 'api_key', ?, ?, ?, ?, ?)
+        """, (name, api_key.strip(), actual_rpm, 1 if is_paid else 0, today_str, now))
         await db.commit()
         return cursor.lastrowid
 
@@ -214,14 +225,16 @@ async def create_task(
     column: str, 
     custom_prompt: str = "",
     start_page: int = 1,
-    end_page: int = 0
+    end_page: int = 0,
+    is_paid: int = 0,
+    paid_account_id: Optional[int] = None
 ):
     now = time.time()
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO tasks (id, filename, original_filepath, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, filename, filepath, model, lang, direction, column, custom_prompt, start_page, end_page, now, now))
+            INSERT INTO tasks (id, filename, original_filepath, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, filename, filepath, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, now, now))
         await db.commit()
 
 async def delete_task(task_id: str):

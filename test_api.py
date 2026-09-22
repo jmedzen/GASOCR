@@ -20,23 +20,36 @@ async def test_fastapi_endpoints():
         assert "accounts" in data
         print(f"   ✅ GET /api/accounts 成功 (目前 {len(data['accounts'])} 組帳號)")
         
-        # 3. 測試新增 API Key
+        # 3. 測試新增免費與付費 API Key
         resp = await client.post("/api/accounts/api-key", json={
-            "name": "測試單元金鑰",
+            "name": "測試單元金鑰 (Free)",
             "api_key": "AIzaSyTestIntegrationKey_12345678",
-            "rpm_limit": 15
+            "rpm_limit": 15,
+            "is_paid": False
         })
         assert resp.status_code == 200
         acc_id = resp.json()["account_id"]
-        print(f"   ✅ POST /api/accounts/api-key 成功 (Account ID: {acc_id})")
+        print(f"   ✅ POST /api/accounts/api-key 新增免費金鑰成功 (Account ID: {acc_id})")
+
+        # 3.1 測試新增付費 API Key
+        resp_paid = await client.post("/api/accounts/api-key", json={
+            "name": "測試付費金鑰 (Paid)",
+            "api_key": "AIzaSyTestPaidKey_87654321",
+            "is_paid": True
+        })
+        assert resp_paid.status_code == 200
+        paid_acc_id = resp_paid.json()["account_id"]
+        print(f"   ✅ POST /api/accounts/api-key 新增付費金鑰成功 (Account ID: {paid_acc_id})")
         
-        # 4. 驗證金鑰有被正確遮罩 (Masked)
+        # 4. 驗證金鑰脫敏與付費標記
         resp = await client.get("/api/accounts")
         accounts = resp.json()["accounts"]
         target = next((a for a in accounts if a["id"] == acc_id), None)
-        assert target is not None
-        assert target["masked_key"] == "AIza....5678", f"金鑰應被安全遮罩，實際為 {target.get('masked_key')}"
-        print("   ✅ 金鑰脫敏防外洩驗證通過")
+        target_paid = next((a for a in accounts if a["id"] == paid_acc_id), None)
+        assert target is not None and target["masked_key"] == "AIza....5678" and target.get("is_paid", 0) == 0
+        assert target_paid is not None and target_paid["masked_key"] == "AIza....4321" and target_paid.get("is_paid") == 1
+        assert target_paid.get("rpm_limit") == 1000, f"付費金鑰 RPM Limit 應為 1000，實際為 {target_paid.get('rpm_limit')}"
+        print("   ✅ 金鑰脫敏防外洩與付費通道標記 (is_paid=1, RPM=1000) 驗證通過")
         
         # 5. 測試切換開關
         resp = await client.post(f"/api/accounts/{acc_id}/toggle")
@@ -47,16 +60,20 @@ async def test_fastapi_endpoints():
         # 6. 刪除測試帳號
         resp = await client.delete(f"/api/accounts/{acc_id}")
         assert resp.status_code == 200
-        print("   ✅ DELETE /api/accounts/{id} 成功清理")
+        print("   ✅ DELETE /api/accounts/{id} 成功清理免費測試帳號")
 
-        # 7. 測試模型清單自動獲取與刷新 API (包含 [Web] 前綴模型)
+        # 7. 測試模型清單自動獲取與刷新 API (已完全移除 AI Studio)
         resp = await client.get("/api/models")
         assert resp.status_code == 200
         models_data = resp.json()
         assert "models" in models_data and models_data["count"] > 0
         web_models = [m for m in models_data["models"] if m.get("is_web", False)]
-        assert len(web_models) >= 5, "應包含至少 5 個網頁自動化模型"
-        print(f"   ✅ GET /api/models 獲取成功 (共有 {models_data['count']} 個模型，包含 {len(web_models)} 個網頁自動化模型)")
+        assert len(web_models) >= 2, "應包含至少 2 個網頁自動化模型"
+        # 驗證所有模型清單中已完全移除 AI Studio 選項
+        for m in models_data["models"]:
+            assert "AI Studio" not in m.get("name", "") and "AI Studio" not in m.get("id", ""), \
+                f"模型選單中不應包含 AI Studio: {m}"
+        print(f"   ✅ GET /api/models 獲取成功 (共有 {models_data['count']} 個模型，包含 {len(web_models)} 個網頁模型，無 AI Studio 選項)")
 
         resp = await client.get("/api/models?refresh=true")
         assert resp.status_code == 200
@@ -144,6 +161,51 @@ async def test_fastapi_endpoints():
             # 清理該任務
             await client.delete(f"/api/tasks/{tid}")
         print("   ✅ 批次任務列表驗證與清理完畢")
+
+        # 10. 測試付費模式批次任務建立 (use_paid_model=True, paid_account_id)
+        files_paid = [
+            ("files", ("paid_batch_doc.pdf", test_pdf_content, "application/pdf")),
+        ]
+        data_paid = {
+            "model": "gemini-3.8-flash",
+            "lang": "traditional",
+            "direction": "auto",
+            "column": "auto",
+            "custom_prompt": "測試付費批次",
+            "start_page": 1,
+            "end_page": 1,
+            "use_paid_model": "true",
+            "paid_account_id": paid_acc_id
+        }
+        resp = await client.post("/api/tasks", files=files_paid, data=data_paid)
+        assert resp.status_code == 200
+        paid_task_id = resp.json()["task_id"]
+        
+        # 驗證資料庫中付費標記與專屬金鑰 ID
+        resp = await client.get(f"/api/tasks/{paid_task_id}")
+        assert resp.status_code == 200
+        task_data = resp.json()["task"]
+        assert task_data.get("is_paid") == 1, "任務應標記為 is_paid == 1"
+        assert task_data.get("paid_account_id") == paid_acc_id, f"任務 paid_account_id 應為 {paid_acc_id}"
+        print(f"   ✅ POST /api/tasks 付費批次任務建立成功 (is_paid=1, paid_account_id={paid_acc_id})")
+
+        # 11. 驗證排程器隔離性 (Scheduler Strict Isolation)
+        from scheduler import scheduler
+        # 專屬付費模式：索取指定付費帳號
+        chosen_paid = await scheduler.get_next_available_account(specific_account_id=paid_acc_id)
+        assert chosen_paid is not None and chosen_paid["id"] == paid_acc_id, "排程器應正確鎖定並指派指定之付費帳號"
+        print("   ✅ 排程器專用模式成功鎖定指定付費帳號")
+
+        # 免費輪詢模式：絕對不可分派付費帳號
+        chosen_free = await scheduler.get_next_available_account(specific_account_id=None)
+        if chosen_free is not None:
+            assert chosen_free.get("is_paid", 0) == 0, "免費輪詢模式絕不可分派付費帳號！"
+        print("   ✅ 排程器免費輪詢模式隔離驗證通過 (嚴禁調用付費金鑰)")
+
+        # 清理付費任務與測試帳號
+        await client.delete(f"/api/tasks/{paid_task_id}")
+        await client.delete(f"/api/accounts/{paid_acc_id}")
+        print("   ✅ 清理付費測試任務與付費金鑰完畢")
         
     print("==================================================")
     print("🎉 FastAPI Web API 端點全數驗證通過！")

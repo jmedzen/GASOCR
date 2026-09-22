@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 002') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 003') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -815,7 +815,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 002') }}
+                            {{ build_number | default('Build 003') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -857,7 +857,7 @@
                 <button 
                     @click="toggleQueueModal()" 
                     class="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition shadow-xs cursor-pointer reocr-nav-btn"
-                    title="開啟重新辨識與升級佇列 (快捷鍵: Alt + Q 或 Q)"
+                    :title="'開啟重新辨識與升級佇列 (快捷鍵: ' + modKeyLabel + '+Q 或 Q)'"
                 >
                     <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
                     <span class="font-semibold hidden sm:inline">重辨佇列</span>
@@ -870,7 +870,8 @@
                     <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
                           :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : 'reocr-count-badge'"
                           x-text="reocrQueue.length">0</span>
-                    <kbd class="text-[10px] font-mono hidden md:inline ml-0.5">Alt+Q</kbd>
+                    <kbd class="text-[10px] font-mono hidden md:inline ml-0.5"
+                         x-text="modKeyLabel + '+Q'">Alt+Q</kbd>
                 </button>
             </div>
         </div>
@@ -989,6 +990,40 @@
                             </select>
                         </div>
 
+                        <!-- Paid API Model Option (使用付費模型與金鑰選擇) -->
+                        <div class="md:col-span-2 p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2.5">
+                            <div class="flex items-center justify-between flex-wrap gap-2">
+                                <label class="flex items-center space-x-2 cursor-pointer select-none">
+                                    <input type="checkbox" x-model="formConfig.usePaidModel" class="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer">
+                                    <span class="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                        <span>💎 使用付費模型</span>
+                                        <span class="text-[10px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full border border-amber-300">極速免 15 RPM 節流·獨立專屬 API</span>
+                                    </span>
+                                </label>
+                                <span class="text-[11px] text-amber-700 font-medium" x-show="formConfig.usePaidModel">⚠️ 批次 OCR 將只使用所選的付費 API 金鑰</span>
+                            </div>
+                            
+                            <div x-show="formConfig.usePaidModel" x-transition class="pt-1 border-t border-amber-200/60">
+                                <label class="block text-[11px] font-semibold text-amber-900 mb-1 flex items-center justify-between">
+                                    <span>選擇專屬付費 API Key：</span>
+                                    <span class="text-[10px] text-amber-700" x-text="`可選 ${paidAccounts.length} 組`"></span>
+                                </label>
+                                <template x-if="paidAccounts.length > 0">
+                                    <select x-model.number="formConfig.paidAccountId" class="w-full text-xs font-medium rounded-lg border border-amber-300 bg-white p-2 text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer">
+                                        <template x-for="acc in paidAccounts" :key="acc.id">
+                                            <option :value="acc.id" x-text="`${acc.name} (${acc.masked_key || 'API Key'})`" :selected="formConfig.paidAccountId === acc.id"></option>
+                                        </template>
+                                    </select>
+                                </template>
+                                <template x-if="paidAccounts.length === 0">
+                                    <div class="text-xs text-amber-800 bg-white/80 p-2.5 rounded-lg border border-amber-200 flex items-center justify-between">
+                                        <span>⚠️ 目前尚未設定任何「付費金鑰」。</span>
+                                        <button type="button" @click="openAccountsModal(); authTab = 'api_key'; newKey.is_paid = true;" class="text-amber-900 underline font-bold hover:text-amber-700 cursor-pointer">立即前往新增</button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
                         <!-- Page Range Selection (start, end) -->
                         <div class="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                             <div class="flex items-center justify-between mb-1.5">
@@ -1059,18 +1094,19 @@
 
                 <!-- Submit Button -->
                 <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <div class="text-xs text-slate-500 flex items-center space-x-1">
-                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
-                        <span>零費用 15 RPM 自動節流防護</span>
+                    <div class="text-xs flex items-center space-x-1" :class="formConfig.usePaidModel ? 'text-amber-700 font-semibold' : 'text-slate-500'">
+                        <i :data-lucide="formConfig.usePaidModel ? 'gem' : 'shield-check'" class="w-4 h-4" :class="formConfig.usePaidModel ? 'text-amber-600' : 'text-emerald-600'"></i>
+                        <span x-text="formConfig.usePaidModel ? '💎 付費極速模式（鎖定付費專屬金鑰）' : '零費用 15 RPM 自動節流防護'"></span>
                     </div>
                     <button 
                         @click="startBatchOcrTask()"
-                        :disabled="pendingFiles.length === 0 || isSubmitting || activeAccountsCount === 0"
-                        class="px-6 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-sm shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition"
+                        :disabled="pendingFiles.length === 0 || isSubmitting || (formConfig.usePaidModel ? (activePaidAccountsCount === 0 || !formConfig.paidAccountId) : activeAccountsCount === 0)"
+                        class="px-6 py-2 rounded-xl text-white font-semibold text-sm shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition cursor-pointer"
+                        :class="formConfig.usePaidModel ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'"
                     >
                         <i data-lucide="play" class="w-4 h-4" x-show="!isSubmitting"></i>
                         <i data-lucide="loader-2" class="w-4 h-4 animate-spin" x-show="isSubmitting"></i>
-                        <span x-text="isSubmitting ? '啟動中...' : (pendingFiles.length > 0 ? `開始批次轉譯 (${pendingFiles.length} 個檔案)` : '請先選取 PDF 檔案')"></span>
+                        <span x-text="isSubmitting ? '啟動中...' : (pendingFiles.length > 0 ? (formConfig.usePaidModel ? `開始付費批次轉譯 (${pendingFiles.length} 個檔案)` : `開始批次轉譯 (${pendingFiles.length} 個檔案)`) : '請先選取 PDF 檔案')"></span>
                     </button>
                 </div>
             </div>
@@ -1116,6 +1152,9 @@
                                     <div class="flex items-center space-x-2">
                                         <i data-lucide="file-text" class="w-4 h-4 text-blue-600 shrink-0"></i>
                                         <span class="truncate max-w-[180px] sm:max-w-xs font-semibold" :title="task.filename" x-text="task.filename"></span>
+                                        <template x-if="task.is_paid">
+                                            <span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 shrink-0">💎 付費</span>
+                                        </template>
                                     </div>
                                 </td>
                                 <td class="p-3 font-mono whitespace-nowrap">
@@ -1312,10 +1351,11 @@
                         :disabled="isFirstPage"
                         class="px-2.5 py-1 rounded-md text-xs font-semibold border transition flex items-center space-x-1 shrink-0"
                         :class="isFirstPage ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-xs cursor-pointer'"
-                        title="切換至前一頁 (快速鍵: Alt + ← 或 ←)"
+                        :title="'切換至前一頁 (快速鍵: ' + modKeyLabel + '+← 或 ←)'"
                     >
                         <span>◀ 上一頁</span>
-                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline">Alt+←</kbd>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline"
+                             x-text="modKeyLabel + '+←'">Alt+←</kbd>
                     </button>
 
                     <span class="text-xs font-semibold text-slate-500 mr-1 shrink-0">頁碼：</span>
@@ -1341,10 +1381,11 @@
                         :disabled="isLastPage"
                         class="px-2.5 py-1 rounded-md text-xs font-semibold border transition flex items-center space-x-1 shrink-0"
                         :class="isLastPage ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-xs cursor-pointer'"
-                        title="切換至後一頁 (快速鍵: Alt + → 或 →)"
+                        :title="'切換至後一頁 (快速鍵: ' + modKeyLabel + '+→ 或 →)'"
                     >
                         <span>下一頁 ▶</span>
-                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline">Alt+→</kbd>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline"
+                             x-text="modKeyLabel + '+→'">Alt+→</kbd>
                     </button>
                 </div>
 
@@ -1362,11 +1403,12 @@
                         :disabled="isRetryingPage"
                         class="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-amber-400 bg-white hover:bg-amber-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer"
                         :class="{'opacity-50 cursor-not-allowed': isRetryingPage}"
-                        title="使用初始任務模型重新辨識本頁（快捷鍵: Alt + R）"
+                        :title="'使用初始任務模型重新辨識本頁（快捷鍵: ' + modKeyLabel + '+R）'"
                     >
                         <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-600" :class="{'animate-spin': isRetryingPage && !isRetryingUpgrade}"></i>
                         <span x-text="currentPage?.status === 'processing' && !isRetryingUpgrade ? '辨識中 (點擊重試)' : '重新辨識本頁'"></span>
-                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline ml-0.5">Alt+R</kbd>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline ml-0.5"
+                             x-text="modKeyLabel + '+R'">Alt+R</kbd>
                     </button>
 
                     <!-- 當前頁面轉譯中時的暫停按鈕 / 暫停中的繼續按鈕 -->
@@ -1374,7 +1416,7 @@
                         <button 
                             @click="pauseCurrentPage()" 
                             class="px-2 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-pause"
-                            title="暫停當前頁面的轉譯"
+                            :title="'暫停當前頁面的轉譯（快捷鍵: ' + modKeyLabel + '+P）'"
                         >
                             <i data-lucide="pause" class="w-3 h-3"></i>
                             <span>暫停</span>
@@ -1384,7 +1426,7 @@
                         <button 
                             @click="retryCurrentPage()" 
                             class="px-2 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-resume"
-                            title="繼續當前頁面的轉譯"
+                            :title="'繼續當前頁面的轉譯（快捷鍵: ' + modKeyLabel + '+P）'"
                         >
                             <i data-lucide="play" class="w-3 h-3"></i>
                             <span>繼續轉譯</span>
@@ -1413,11 +1455,12 @@
                             :disabled="isRetryingPage"
                             class="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer"
                             :class="{'opacity-50 cursor-not-allowed': isRetryingPage}"
-                            title="使用所選的升級模型重新辨識本頁（快捷鍵: Alt + U）"
+                            :title="'使用所選的升級模型重新辨識本頁（快捷鍵: ' + modKeyLabel + '+U）'"
                         >
                             <i data-lucide="zap" class="w-3 h-3 text-amber-300" :class="{'animate-spin': isRetryingPage && isRetryingUpgrade}"></i>
                             <span x-text="currentPage?.status === 'processing' && isRetryingUpgrade ? '升級中 (點擊重試)' : '升級重新辨識'"></span>
-                            <kbd class="text-[10px] text-indigo-200 font-mono hidden sm:inline ml-0.5">Alt+U</kbd>
+                            <kbd class="text-[10px] text-indigo-200 font-mono hidden sm:inline ml-0.5"
+                                 x-text="modKeyLabel + '+U'">Alt+U</kbd>
                         </button>
                     </div>
 
@@ -1425,7 +1468,7 @@
                     <button 
                         @click="toggleQueueModal()" 
                         class="px-2.5 py-1 rounded-lg border text-xs font-medium transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer reocr-toolbar-btn"
-                        title="查看重新辨識與升級佇列 (快捷鍵: Alt + Q 或 Q)"
+                        :title="'查看重新辨識與升級佇列 (快捷鍵: ' + modKeyLabel + '+Q 或 Q)'"
                     >
                         <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-600"></i>
                         <span>重辨佇列</span>
@@ -1437,9 +1480,12 @@
                     </button>
 
                     <!-- 儲存修改按鈕 -->
-                    <button @click="saveCurrentPageText()" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition flex items-center space-x-1 shadow-sm shrink-0" title="儲存修改 (快速鍵: Ctrl+S 或 Cmd+S)">
+                    <button @click="saveCurrentPageText()" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition flex items-center space-x-1 shadow-sm shrink-0"
+                            :title="'儲存修改 (快速鍵: ' + saveKeyLabel + ')'">
                         <i data-lucide="save" class="w-3.5 h-3.5"></i>
                         <span>儲存修改</span>
+                        <kbd class="text-[10px] text-emerald-100 font-mono hidden sm:inline ml-0.5"
+                             x-text="saveKeyLabel">Ctrl+S</kbd>
                     </button>
                 </div>
             </div>
@@ -1492,7 +1538,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 002') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 003') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -1759,12 +1805,12 @@
                 <!-- Drawer Footer: Quick Key Hints -->
                 <div class="p-3.5 border-t text-[11px] flex flex-wrap items-center justify-between gap-2 reocr-footer">
                     <div class="flex items-center space-x-3">
-                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+Q</kbd> / <kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Q</kbd> 開關佇列</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+Q'">Alt+Q</kbd> / <kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Q</kbd> 開關佇列</span>
                         <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Esc</kbd> 關閉</span>
                     </div>
                     <div class="flex items-center space-x-2">
-                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+R</kbd> 原模重辨</span>
-                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+U</kbd> 升級重辨</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+R'">Alt+R</kbd> 原模重辨</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+U'">Alt+U</kbd> 升級重辨</span>
                     </div>
                 </div>
             </div>
@@ -1784,55 +1830,130 @@
                 </button>
             </div>
 
-            <!-- Zero-cost Info Box -->
-            <div class="my-4 p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-start space-x-2.5">
-                <i data-lucide="info" class="w-4 h-4 text-blue-600 shrink-0 mt-0.5"></i>
-                <div class="leading-relaxed">
-                    <strong>如何達成 0 元費用？</strong> 請直接使用多個 Google 帳號分別登入 
-                    <a href="https://aistudio.google.com/" target="_blank" class="underline font-semibold hover:text-blue-900">Google AI Studio</a> 
-                    建立免費 API Key。在此處新增多組金鑰後，系統會自動分配請求，避開單一帳號 15 RPM 限制，且絕不觸發付費扣款。
+            <!-- Dedicated Paid API Keys Section -->
+            <div class="my-4 bg-gradient-to-r from-amber-50/80 via-orange-50/50 to-amber-50/80 rounded-xl border border-amber-200 p-4 shadow-2xs">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm">💎</span>
+                        <div>
+                            <h3 class="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                <span>付費 API 金鑰專區 (Paid API Keys)</span>
+                                <span class="text-[10px] font-semibold px-2 py-0.5 bg-amber-200/80 text-amber-900 rounded-full border border-amber-300">專屬付費通道·1000 RPM 極速</span>
+                            </h3>
+                            <p class="text-[11px] text-amber-800/80">批次 OCR 勾選「使用付費模型」時專屬調用此處金鑰，享有每頁 0.2 秒極速防抖，絕不與免費池共用</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-bold" x-text="`${paidAccounts.length} 組金鑰`"></span>
+                </div>
+
+                <div class="border border-amber-200 rounded-lg overflow-hidden bg-white shadow-2xs">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-amber-100/60 border-b border-amber-200 font-semibold text-amber-900">
+                            <tr>
+                                <th class="p-2.5">帳號備註</th>
+                                <th class="p-2.5">通道類型</th>
+                                <th class="p-2.5">金鑰識別</th>
+                                <th class="p-2.5">今日請求</th>
+                                <th class="p-2.5">狀態</th>
+                                <th class="p-2.5 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-amber-100">
+                            <template x-for="acc in paidAccounts" :key="acc.id">
+                                <tr class="hover:bg-amber-50/40 transition">
+                                    <td class="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                                        <span class="text-amber-600 font-bold">💎</span>
+                                        <span x-text="acc.name"></span>
+                                    </td>
+                                    <td class="p-2.5">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">付費通道 (1000 RPM)</span>
+                                    </td>
+                                    <td class="p-2.5 font-mono text-slate-600" x-text="acc.masked_key || 'API Key'"></td>
+                                    <td class="p-2.5 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
+                                    <td class="p-2.5">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                            :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                                            x-text="acc.is_active ? '啟用中' : '已停用'"></span>
+                                    </td>
+                                    <td class="p-2.5 text-right space-x-1">
+                                        <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px] cursor-pointer">測試</button>
+                                        <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px] cursor-pointer" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
+                                        <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px] cursor-pointer">刪除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="paidAccounts.length === 0">
+                                <tr>
+                                    <td colspan="6" class="p-4 text-center text-amber-700/70 bg-amber-50/20">
+                                        目前尚無付費金鑰。若需極速大量處理，請於下方新增 API Key 時勾選「設為付費金鑰」。
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <!-- Current Accounts Table -->
-            <div class="border border-slate-200 rounded-xl overflow-hidden mb-6">
-                <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
-                        <tr>
-                            <th class="p-3">帳號備註</th>
-                            <th class="p-3">類型</th>
-                            <th class="p-3">金鑰識別</th>
-                            <th class="p-3">今日請求</th>
-                            <th class="p-3">狀態</th>
-                            <th class="p-3 text-right">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <template x-for="acc in accounts" :key="acc.id">
-                            <tr class="hover:bg-slate-50/60 transition">
-                                <td class="p-3 font-medium text-slate-800" x-text="acc.name"></td>
-                                <td class="p-3 uppercase text-slate-500" x-text="acc.auth_type"></td>
-                                <td class="p-3 font-mono text-slate-600" x-text="acc.masked_key || 'OAuth Token'"></td>
-                                <td class="p-3 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
-                                <td class="p-3">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                                        :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
-                                        x-text="acc.is_active ? '啟用中' : '已停用'"></span>
-                                </td>
-                                <td class="p-3 text-right space-x-1.5">
-                                    <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px]">測試</button>
-                                    <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px]" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
-                                    <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px]">刪除</button>
-                                </td>
-                            </tr>
-                        </template>
-                        <template x-if="accounts.length === 0">
+            <!-- Free Accounts Section -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 bg-emerald-100 text-emerald-800 rounded text-xs font-bold">🌿</span>
+                        <h3 class="text-xs font-bold text-slate-700">免費 API 金鑰池 (Free API Keys)</h3>
+                    </div>
+                    <span class="text-xs text-slate-500 font-medium" x-text="`${freeAccounts.length} 組金鑰`"></span>
+                </div>
+
+                <!-- Zero-cost Info Box -->
+                <div class="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-start space-x-2.5">
+                    <i data-lucide="info" class="w-4 h-4 text-blue-600 shrink-0 mt-0.5"></i>
+                    <div class="leading-relaxed">
+                        <strong>如何達成 0 元費用？</strong> 請直接使用多個 Google 帳號分別登入 
+                        <a href="https://aistudio.google.com/" target="_blank" class="underline font-semibold hover:text-blue-900">Google AI Studio</a> 
+                        建立免費 API Key。在此處新增多組金鑰後，系統會自動分配請求，避開單一帳號 15 RPM 限制，且絕不觸發付費扣款。
+                    </div>
+                </div>
+
+                <!-- Current Free Accounts Table -->
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
                             <tr>
-                                <td colspan="6" class="p-6 text-center text-slate-400">目前尚無任何金鑰，請於下方新增</td>
+                                <th class="p-3">帳號備註</th>
+                                <th class="p-3">類型</th>
+                                <th class="p-3">金鑰識別</th>
+                                <th class="p-3">今日請求</th>
+                                <th class="p-3">狀態</th>
+                                <th class="p-3 text-right">操作</th>
                             </tr>
-                        </template>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="acc in freeAccounts" :key="acc.id">
+                                <tr class="hover:bg-slate-50/60 transition">
+                                    <td class="p-3 font-medium text-slate-800" x-text="acc.name"></td>
+                                    <td class="p-3 uppercase text-slate-500" x-text="acc.auth_type"></td>
+                                    <td class="p-3 font-mono text-slate-600" x-text="acc.masked_key || 'OAuth Token'"></td>
+                                    <td class="p-3 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
+                                    <td class="p-3">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                            :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                                            x-text="acc.is_active ? '啟用中' : '已停用'"></span>
+                                    </td>
+                                    <td class="p-3 text-right space-x-1.5">
+                                        <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px] cursor-pointer">測試</button>
+                                        <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px] cursor-pointer" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
+                                        <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px] cursor-pointer">刪除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="freeAccounts.length === 0">
+                                <tr>
+                                    <td colspan="6" class="p-6 text-center text-slate-400">目前尚無任何免費金鑰，請於下方新增</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- Tabs: Add API Key, OAuth, or Web RPA -->
@@ -1851,15 +1972,28 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs font-medium text-slate-600 mb-1">帳號備註名稱</label>
-                            <input type="text" x-model="newKey.name" required placeholder="例：我的帳號 1 (Gmail)" class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <input type="text" x-model="newKey.name" required placeholder="例：付費帳號 1 / 免費帳號 1" class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-slate-600 mb-1">Google AI Studio API Key</label>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Google API Key</label>
                             <input type="password" x-model="newKey.api_key" required placeholder="AIzaSy..." class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
                         </div>
                     </div>
+
+                    <!-- Paid Key Checkbox Option -->
+                    <div class="flex items-center space-x-2 pt-1 p-2 bg-amber-50/60 rounded-lg border border-amber-200">
+                        <input type="checkbox" id="modal_new_key_is_paid" x-model="newKey.is_paid" class="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer">
+                        <label for="modal_new_key_is_paid" class="text-xs font-bold text-amber-900 cursor-pointer flex items-center gap-1.5 select-none">
+                            <span>💎 設為付費金鑰 (Paid API Key)</span>
+                            <span class="text-[10px] text-amber-700 font-normal">（獨立專屬通道，享有 1000 RPM 極速，不與免費池共用）</span>
+                        </label>
+                    </div>
+
                     <div class="flex justify-end">
-                        <button type="submit" class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer">確認新增金鑰</button>
+                        <button type="submit" 
+                            class="px-4 py-1.5 rounded-lg text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+                            :class="newKey.is_paid ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'"
+                            x-text="newKey.is_paid ? '💎 確認新增付費金鑰' : '確認新增免費金鑰'"></button>
                     </div>
                 </form>
 
@@ -1893,29 +2027,31 @@
 
                     <!-- Login Status Card -->
                     <div class="rounded-xl border p-3.5"
-                        :class="webRpaStatus.logged_in 
+                        :class="webRpaReady 
                             ? 'border-emerald-200 bg-emerald-50/60' 
                             : 'border-amber-200 bg-amber-50/60'">
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex items-start space-x-2.5 min-w-0">
                                 <div class="p-1.5 rounded-lg shrink-0 mt-0.5"
-                                    :class="webRpaStatus.logged_in ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
-                                    <i :data-lucide="webRpaStatus.logged_in ? 'shield-check' : 'shield-alert'" class="w-4 h-4"></i>
+                                    :class="webRpaReady ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
+                                    <i :data-lucide="webRpaReady ? 'shield-check' : 'shield-alert'" class="w-4 h-4"></i>
                                 </div>
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <span class="text-xs font-bold text-slate-800">登入狀態</span>
                                         <span class="px-2 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1"
-                                            :class="webRpaStatus.logged_in 
+                                            :class="webRpaReady 
                                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
                                                 : 'bg-amber-100 text-amber-800 border border-amber-300'">
                                             <span class="w-1.5 h-1.5 rounded-full"
-                                                :class="webRpaStatus.logged_in ? 'bg-emerald-500' : 'bg-amber-500'"></span>
-                                            <span x-text="webRpaStatus.logged_in ? '✅ Cookie 有效，就緒' : '⚠️ 尚未登入'"></span>
+                                                :class="webRpaReady ? 'bg-emerald-500' : 'bg-amber-500'"></span>
+                                            <span x-text="webRpaHeadline"></span>
                                         </span>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border border-slate-300 bg-white text-slate-600"
+                                            x-text="isCdpMode ? 'CDP 模式' : '舊版 launch 模式'"></span>
                                     </div>
                                     <p class="text-[11px] text-slate-600 mt-1 leading-relaxed break-words"
-                                        x-text="webRpaStatus.message || '請完成下方登入流程以啟用 [Web] 模型。'"></p>
+                                        x-text="webRpaStatusMessage"></p>
                                 </div>
                             </div>
                             <!-- Refresh status button -->
@@ -1928,8 +2064,80 @@
                         </div>
                     </div>
 
+                    <!-- ── CDP 模式：接入使用者自己開的 Chrome（建議）── -->
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'cdp'"
+                        class="rounded-xl border border-sky-200 bg-sky-50/40 p-3.5 space-y-3">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="plug" class="w-3.5 h-3.5 text-sky-600"></i>
+                                <span class="text-xs font-bold text-sky-800">接入您自己的 Chrome（建議）</span>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                :class="cdpStatus.available ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-300'"
+                                x-text="cdpStatus.available ? '● 已偵測到 Chrome' : '○ 未偵測到 Chrome'"></span>
+                        </div>
+
+                        <p class="text-[11px] text-sky-900/80 leading-relaxed">
+                            由<b>您自己</b>開啟一個帶除錯埠的 Chrome 並手動登入，GASOCR 再接入這個「真實」session。
+                            這能避開 AI Studio 的自動化偵測（<code class="font-mono text-[10px]">permission denied</code>），
+                            因為反機器人通行證綁在瀏覽器指紋與 IP 上，<b>不是只綁 cookie</b>。
+                        </p>
+                        <p class="text-[11px] text-sky-900/80 leading-relaxed">
+                            ⚠️ 執行期間請<b>保持該 Chrome 視窗開著</b>，且不要在同一視窗手動操作分頁。
+                            關閉 GASOCR 不會關閉您的 Chrome。
+                        </p>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" @click="checkCdpStatus()" :disabled="cdpStatus.checking"
+                                class="px-3 py-1.5 rounded-lg border border-sky-300 bg-white hover:bg-sky-50 text-sky-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                <i data-lucide="search" class="w-3.5 h-3.5" :class="{'animate-spin': cdpStatus.checking}"></i>
+                                <span x-text="cdpStatus.checking ? '檢查中...' : '① 檢查 CDP 連線'"></span>
+                            </button>
+                            <button type="button" @click="connectCdp()" :disabled="cdpStatus.connecting || !cdpStatus.available"
+                                class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                                <i data-lucide="plug-zap" class="w-3.5 h-3.5" :class="{'animate-pulse': cdpStatus.connecting}"></i>
+                                <span x-text="cdpStatus.connecting ? '接入中...' : '② 接入並驗證登入'"></span>
+                            </button>
+                            <button type="button" @click="copyChromeCommand()"
+                                class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                <span>複製啟動指令</span>
+                            </button>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[11px] font-semibold text-slate-600">
+                                    步驟 1：在終端機執行（或直接跑 <code class="font-mono">./start_chrome_cdp.sh</code>）
+                                </span>
+                            </div>
+                            <div class="rounded-lg bg-slate-900 p-2.5 overflow-x-auto">
+                                <pre class="text-[10.5px] leading-relaxed font-mono whitespace-pre text-slate-100"
+                                    x-text="cdpStatus.command || '（載入中…）'"></pre>
+                            </div>
+                        </div>
+
+                        <p class="text-[11px] leading-relaxed rounded-lg px-2.5 py-2 border"
+                            :class="cdpStatus.logged_in
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                : 'bg-white border-slate-200 text-slate-600'"
+                            x-text="cdpStatus.message || '尚未檢查 CDP 連線。'"></p>
+                    </div>
+
+                    <!-- ── 舊版模式：Playwright 自行啟動 + cookie 重放（已知會被 AI Studio 拒絕）── -->
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                        class="rounded-xl border border-amber-300 bg-amber-50/60 px-3 py-2.5">
+                        <p class="text-[11px] text-amber-900 leading-relaxed">
+                            ⚠️ <b>舊版模式</b>：由 Playwright 啟動無頭瀏覽器並重放 cookie。
+                            經審計確認這會被 AI Studio 判定為「被盜的 session」而回
+                            <code class="font-mono text-[10px]">permission denied</code>，僅保留作對照測試。
+                            建議改用上方的「接入您自己的 Chrome」。
+                        </p>
+                    </div>
+
                     <!-- Login Flow Steps -->
-                    <div class="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3">
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                        class="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3">
                         <div class="flex items-center gap-2 mb-1">
                             <i data-lucide="key-round" class="w-3.5 h-3.5 text-purple-600"></i>
                             <span class="text-xs font-bold text-purple-800">一次性登入設定流程</span>
@@ -1984,7 +2192,7 @@
                     </div>
 
                     <!-- Config Form -->
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div class="flex items-center space-x-2 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
                             <input type="checkbox" id="web_rpa_enabled" x-model="webRpaConfig.enabled"
                                 @change="saveWebRpaConfig()" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
@@ -1995,7 +2203,14 @@
                             <select x-model="webRpaConfig.target_service" @change="saveWebRpaConfig()"
                                 class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer">
                                 <option value="gemini">Gemini 官方網頁 (免 GCP 專案·最穩定推薦)</option>
-                                <option value="aistudio">Google AI Studio (需 GCP 專案權限)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">瀏覽器模式</label>
+                            <select x-model="webRpaConfig.browser_mode" @change="saveWebRpaConfig(); checkCdpStatus()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer">
+                                <option value="cdp">接入您自己的 Chrome（建議）</option>
+                                <option value="launch">Playwright 自行啟動（舊版，會被拒）</option>
                             </select>
                         </div>
                         <div>
@@ -2008,11 +2223,16 @@
 
                     <!-- Bottom: headless toggle + test -->
                     <div class="flex items-center justify-between pt-2 border-t border-slate-200">
-                        <label class="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer">
+                        <label x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                            class="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer">
                             <input type="checkbox" x-model="webRpaConfig.headless" @change="saveWebRpaConfig()"
                                 class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
                             <span>背景靜默執行 (Headless 無頭模式)</span>
                         </label>
+                        <span x-show="(webRpaConfig.browser_mode || 'cdp') === 'cdp'"
+                            class="text-[11px] text-slate-400">
+                            CDP 模式使用您自己開的 Chrome，無需設定無頭模式
+                        </span>
                         <button type="button" @click="testWebRpa()" :disabled="isTestingWebRpa"
                             class="px-3 py-1.5 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold transition flex items-center gap-1 cursor-pointer disabled:opacity-60">
                             <i data-lucide="flask-conical" class="w-3 h-3"></i>
@@ -2051,7 +2271,9 @@
                     column: 'auto',
                     customPrompt: '',
                     startPage: 1,
-                    endPage: 0
+                    endPage: 0,
+                    usePaidModel: false,
+                    paidAccountId: null
                 },
                 modelsList: {{ models | tojson }},
                 isLoadingModels: false,
@@ -2076,15 +2298,27 @@
                 toastMessage: '',
                 toastTimeout: null,
                 authTab: 'api_key',
-                newKey: { name: '', api_key: '' },
+                newKey: { name: '', api_key: '', is_paid: false },
                 newOAuth: { name: '', client_id: '', client_secret: '', refresh_token: '' },
                 webRpaConfig: {
                     enabled: true,
-                    target_service: 'aistudio',
+                    target_service: 'gemini',
+                    browser_mode: 'cdp',
+                    cdp_port: 9222,
+                    cdp_user_data_dir: 'data/chrome_profile_rpa',
                     headless: true,
                     timeout_seconds: 60,
                     chrome_path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
                     supported_models: ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-3-pro-preview']
+                },
+                cdpStatus: {
+                    available: false,
+                    logged_in: false,
+                    checking: false,
+                    connecting: false,
+                    command: '',
+                    endpoint: 'http://127.0.0.1:9222',
+                    message: ''
                 },
                 webRpaStatus: {
                     logged_in: false,
@@ -2106,7 +2340,6 @@
                 isRetryingPage: false,
                 isRetryingUpgrade: false,
                 upgradeModel: 'gemini-2.5-pro',
-
                 setTheme(theme) {
                     this.currentTheme = theme;
                     localStorage.setItem('ocr_theme', theme);
@@ -2116,8 +2349,54 @@
                     document.body.classList.add('theme-' + theme);
                 },
 
+                get paidAccounts() {
+                    return this.accounts.filter(a => a.is_paid === 1);
+                },
+                get freeAccounts() {
+                    return this.accounts.filter(a => !a.is_paid);
+                },
                 get activeAccountsCount() {
-                    return this.accounts.filter(a => a.is_active).length;
+                    return this.accounts.filter(a => a.is_active && !a.is_paid).length;
+                },
+                get activePaidAccountsCount() {
+                    return this.accounts.filter(a => a.is_active && a.is_paid === 1).length;
+                },
+
+                // ── Web RPA 狀態：依瀏覽器模式給出正確的判讀 ──
+                // ── 平台判斷（快捷鍵提示文字用）──
+                get isMacPlatform() {
+                    const ua = navigator.userAgent || '';
+                    return /Mac|iPhone|iPad|iPod/i.test(ua);
+                },
+                // macOS 顯示 ⌥，其他平台顯示 Alt
+                get modKeyLabel() { return this.isMacPlatform ? '⌥' : 'Alt'; },
+                get saveKeyLabel() { return this.isMacPlatform ? '⌘S' : 'Ctrl+S'; },
+                get pageUpKeyLabel() { return this.isMacPlatform ? 'Fn+↑' : 'PageUp'; },
+                get pageDownKeyLabel() { return this.isMacPlatform ? 'Fn+↓' : 'PageDown'; },
+
+                get isCdpMode() {
+                    return (this.webRpaConfig.browser_mode || 'cdp') === 'cdp';
+                },
+
+                get webRpaReady() {
+                    return this.isCdpMode ? !!this.cdpStatus.logged_in : !!this.webRpaStatus.logged_in;
+                },
+
+                get webRpaHeadline() {
+                    if (this.isCdpMode) {
+                        if (this.cdpStatus.logged_in) return '✅ 已接入並登入';
+                        if (this.cdpStatus.available) return '⚠️ 已找到 Chrome，尚未驗證';
+                        return '⚠️ 尚未開啟 Chrome';
+                    }
+                    return this.webRpaStatus.logged_in ? '✅ Cookie 有效，就緒' : '⚠️ 尚未登入';
+                },
+
+                get webRpaStatusMessage() {
+                    if (this.isCdpMode) {
+                        return this.cdpStatus.message
+                            || '請先執行 ./start_chrome_cdp.sh 開啟 Chrome 並手動登入，再點「檢查 CDP 連線」。';
+                    }
+                    return this.webRpaStatus.message || '請完成下方登入流程以啟用 [Web] 模型。';
                 },
 
                 get activeReocrCount() {
@@ -2263,6 +2542,9 @@
                         const res = await fetch('/api/accounts');
                         const data = await res.json();
                         this.accounts = data.accounts || [];
+                        if (this.paidAccounts.length > 0 && !this.formConfig.paidAccountId) {
+                            this.formConfig.paidAccountId = this.paidAccounts[0].id;
+                        }
                     } catch (err) {
                         console.error('Failed to load accounts:', err);
                     }
@@ -2304,9 +2586,10 @@
                             body: JSON.stringify(this.newKey)
                         });
                         if (res.ok) {
-                            this.newKey = { name: '', api_key: '' };
+                            const wasPaid = this.newKey.is_paid;
+                            this.newKey = { name: '', api_key: '', is_paid: false };
                             await this.loadAccounts();
-                            alert('API Key 新增成功！');
+                            alert(wasPaid ? '💎 付費 API Key 新增成功！' : 'API Key 新增成功！');
                             this.refreshModels(false);
                         }
                     } catch (err) {
@@ -2364,6 +2647,75 @@
                     } catch (err) {
                         console.error('載入 Web RPA 設定失敗:', err);
                     }
+                    await this.refreshChromeCommand();
+                    await this.checkCdpStatus();
+                },
+
+                async refreshChromeCommand() {
+                    try {
+                        const res = await fetch('/api/web-rpa/chrome-command');
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.cdpStatus.command = data.command || '';
+                            this.cdpStatus.endpoint = data.cdp_endpoint || this.cdpStatus.endpoint;
+                        }
+                    } catch (err) {
+                        console.error('取得 Chrome 啟動指令失敗:', err);
+                    }
+                },
+
+                async checkCdpStatus() {
+                    if ((this.webRpaConfig.browser_mode || 'cdp') !== 'cdp') return;
+                    this.cdpStatus.checking = true;
+                    try {
+                        const res = await fetch('/api/web-rpa/cdp-status');
+                        const data = await res.json();
+                        this.cdpStatus.available = !!data.available;
+                        this.cdpStatus.message = data.message || '';
+                        if (data.launch_command) this.cdpStatus.command = data.launch_command;
+                        if (data.endpoint) this.cdpStatus.endpoint = data.endpoint;
+                    } catch (err) {
+                        this.cdpStatus.available = false;
+                        this.cdpStatus.message = '檢查 CDP 連線失敗: ' + err;
+                    } finally {
+                        this.cdpStatus.checking = false;
+                    }
+                },
+
+                async connectCdp() {
+                    this.cdpStatus.connecting = true;
+                    this.showToast('🔗 正在接入您的 Chrome...');
+                    try {
+                        const res = await fetch('/api/web-rpa/cdp-connect', { method: 'POST' });
+                        const data = await res.json();
+                        this.cdpStatus.logged_in = !!data.logged_in;
+                        this.cdpStatus.message = data.message || '';
+                        // 同步到共用的登入狀態卡片
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || '';
+                        if (data.logged_in) {
+                            this.showToast('✅ 已成功接入並確認登入！');
+                        } else {
+                            alert('⚠️ CDP 接入結果：\n\n' + (data.message || '未知狀態'));
+                        }
+                    } catch (err) {
+                        alert('接入 CDP 失敗: ' + err);
+                    } finally {
+                        this.cdpStatus.connecting = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async copyChromeCommand() {
+                    const cmd = this.cdpStatus.command || '';
+                    if (!cmd) { alert('尚未取得啟動指令，請稍候再試。'); return; }
+                    try {
+                        await navigator.clipboard.writeText(cmd);
+                        this.showToast('📋 啟動指令已複製到剪貼簿！');
+                    } catch (err) {
+                        // 剪貼簿 API 在非 HTTPS 環境可能被拒，改用 prompt 讓使用者手動複製
+                        window.prompt('請手動複製以下指令：', cmd);
+                    }
                 },
 
                 async saveWebRpaConfig() {
@@ -2386,7 +2738,7 @@
                     this.webRpaStatus.launching = true;
                     this.showToast('🌐 正在啟動專屬登入視窗...');
                     try {
-                        const target = this.webRpaConfig.target_service || 'aistudio';
+                        const target = this.webRpaConfig.target_service || 'gemini';
                         const res = await fetch(`/api/web-rpa/launch-login?service=${target}`, {
                             method: 'POST'
                         });
@@ -2498,6 +2850,10 @@
                     formData.append('custom_prompt', this.formConfig.customPrompt);
                     formData.append('start_page', this.formConfig.startPage || 1);
                     formData.append('end_page', this.formConfig.endPage || 0);
+                    formData.append('use_paid_model', this.formConfig.usePaidModel ? 'true' : 'false');
+                    if (this.formConfig.usePaidModel && this.formConfig.paidAccountId) {
+                        formData.append('paid_account_id', this.formConfig.paidAccountId);
+                    }
 
                     try {
                         const res = await fetch('/api/tasks', {
@@ -2750,10 +3106,26 @@
 
                 handleKeyDown(e) {
                     const target = e.target;
-                    const isEditing = target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT');
+                    const tag = target && target.tagName;
+                    // 編輯焦點判斷需含 contenteditable，否則會搶走輸入框的按鍵
+                    const isEditing = !!target && (
+                        tag === 'TEXTAREA' || tag === 'INPUT' ||
+                        tag === 'SELECT' || target.isContentEditable === true
+                    );
 
-                    // 1. Esc 關閉佇列或帳號彈窗
-                    if (e.key === 'Escape') {
+                    // ⚠️ 一律使用 e.code（實體鍵位置），不要用 e.key。
+                    //
+                    // macOS 的 Option(⌥) 是「組合鍵」，會改寫 e.key：
+                    //   ⌥Q → 'œ'   ⌥R → '®'   ⌥U → Dead(死鍵)
+                    //   ⌥P → 'π'   ⌥[ → '“'   ⌥] → '‘'
+                    // 所以用 e.key 比對字母／括號，在 macOS 上會全部失效。
+                    // e.code 不受修飾鍵與輸入法影響，兩個平台都可靠。
+                    const code = e.code || '';
+                    const key = (e.key || '').toLowerCase();
+                    const isPlain = !e.altKey && !e.ctrlKey && !e.metaKey;
+
+                    // 1. Esc 關閉彈窗
+                    if (code === 'Escape' || key === 'escape') {
                         if (this.showQueueModal) {
                             e.preventDefault();
                             this.showQueueModal = false;
@@ -2766,41 +3138,40 @@
                         }
                     }
 
-                    // 2. Alt + Q 或非文字輸入焦點下的 Q: 開關重辨佇列
-                    if ((e.altKey && e.key.toLowerCase() === 'q') || (!isEditing && !e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'q')) {
+                    // 2. ⌥/Alt + Q，或非編輯焦點下單按 Q：開關重辨佇列
+                    if ((e.altKey && code === 'KeyQ') ||
+                        (isPlain && !isEditing && code === 'KeyQ')) {
                         e.preventDefault();
                         this.toggleQueueModal();
                         return;
                     }
 
-                    // 3. 只有在校對狀態下（已開啟任務且有頁面）才作用的校對快捷鍵
+                    // 3. 只有在校對狀態（已開啟任務且有頁面）才作用的快捷鍵
                     if (!this.currentTask || !this.pages || this.pages.length === 0) return;
 
-                    // 支援 Ctrl+S / Cmd+S 快速儲存
-                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                        if (this.selectedPageNum) {
-                            e.preventDefault();
-                            this.saveCurrentPageText();
-                            return;
-                        }
+                    // ⌘S / Ctrl+S 快速儲存（兩個平台的慣用鍵都支援）
+                    if ((e.metaKey || e.ctrlKey) && code === 'KeyS') {
+                        e.preventDefault();
+                        this.saveCurrentPageText();
+                        return;
                     }
 
-                    // 支援 Alt + R: 原模型重新辨識本頁
-                    if (e.altKey && e.key.toLowerCase() === 'r') {
+                    // ⌥/Alt + R：以原任務模型重新辨識本頁
+                    if (e.altKey && code === 'KeyR') {
                         e.preventDefault();
                         this.retryCurrentPage();
                         return;
                     }
 
-                    // 支援 Alt + U: 升級重新辨識本頁
-                    if (e.altKey && e.key.toLowerCase() === 'u') {
+                    // ⌥/Alt + U：以升級模型重新辨識本頁
+                    if (e.altKey && code === 'KeyU') {
                         e.preventDefault();
                         this.retryWithUpgradeModel();
                         return;
                     }
 
-                    // 支援 Alt + P: 暫停 / 繼續當前頁面轉譯
-                    if (e.altKey && e.key.toLowerCase() === 'p') {
+                    // ⌥/Alt + P：暫停 / 繼續本頁
+                    if (e.altKey && code === 'KeyP') {
                         e.preventDefault();
                         if (this.currentPage?.status === 'processing') {
                             this.pauseCurrentPage();
@@ -2810,23 +3181,37 @@
                         return;
                     }
 
-                    // 頁面翻頁快捷鍵
-                    const isPrevKey = (
-                        (e.altKey && (e.key === 'ArrowLeft' || e.key === '[')) ||
-                        (!isEditing && (e.key === 'ArrowLeft' || e.key === '[')) ||
-                        e.key === 'PageUp'
-                    );
+                    // ── 翻頁 ────────────────────────────────────────────
+                    const isPrev = code === 'ArrowLeft' || code === 'BracketLeft'
+                                || key === 'arrowleft' || key === 'pageup' || code === 'PageUp';
+                    const isNext = code === 'ArrowRight' || code === 'BracketRight'
+                                || key === 'arrowright' || key === 'pagedown' || code === 'PageDown';
 
-                    const isNextKey = (
-                        (e.altKey && (e.key === 'ArrowRight' || e.key === ']')) ||
-                        (!isEditing && (e.key === 'ArrowRight' || e.key === ']')) ||
-                        e.key === 'PageDown'
-                    );
+                    if (isEditing) {
+                        // 編輯中不搶單鍵（←/→ 是游標移動、[ ] 是打字）。
+                        //
+                        // macOS 特別處理：⌥←/⌥→ 是系統原生的「逐詞移動游標」，
+                        // 編輯時搶走會嚴重破壞打字體驗，因此改用 ⌥[ / ⌥] 翻頁。
+                        // Windows/Linux 的 Alt+←/→ 沒有這個衝突，維持可用。
+                        const allowAltArrow = !this.isMacPlatform;
+                        const altPrev = e.altKey &&
+                            (code === 'BracketLeft' || (allowAltArrow && code === 'ArrowLeft'));
+                        const altNext = e.altKey &&
+                            (code === 'BracketRight' || (allowAltArrow && code === 'ArrowRight'));
+                        // MacBook 沒有 PageUp/PageDown 實體鍵，需 Fn+↑ / Fn+↓
+                        const pgPrev = isPlain && (key === 'pageup' || code === 'PageUp');
+                        const pgNext = isPlain && (key === 'pagedown' || code === 'PageDown');
 
-                    if (isPrevKey) {
+                        if (altPrev || pgPrev) { e.preventDefault(); this.prevPage(); return; }
+                        if (altNext || pgNext) { e.preventDefault(); this.nextPage(); return; }
+                        return;
+                    }
+
+                    // 非編輯焦點：單鍵或 ⌥/Alt 組合皆可
+                    if (isPrev) {
                         e.preventDefault();
                         this.prevPage();
-                    } else if (isNextKey) {
+                    } else if (isNext) {
                         e.preventDefault();
                         this.nextPage();
                     }

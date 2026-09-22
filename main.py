@@ -57,7 +57,16 @@ async def lifespan(app: FastAPI):
     await database.init_db()
     # API 上線後自動背景抓取最新模型清單
     asyncio.create_task(update_cached_models())
-    yield
+    try:
+        yield
+    finally:
+        # 關閉時脫離 CDP 連線。
+        # 注意：close_cdp_session() 只關閉 Playwright 的連線，
+        # 不會終止使用者手動啟動的 Chrome。
+        try:
+            await web_rpa.close_cdp_session()
+        except Exception:
+            pass
 
 app = FastAPI(title="Google AI Studio Gemini OCR", lifespan=lifespan)
 
@@ -111,13 +120,16 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                 )
                 return
 
+        task_info = await database.get_task(task_id) or {}
+        paid_acc_id = task_info.get("paid_account_id") if task_info.get("is_paid") else None
+
         retries = 0
         while retries < max_retries:
-            # 2. 向智慧排程器索取可用帳號
-            account = await scheduler.get_next_available_account()
+            # 2. 向智慧排程器索取可用帳號（若為付費任務，鎖定指定付費金鑰）
+            account = await scheduler.get_next_available_account(specific_account_id=paid_acc_id)
             if not account:
                 # 等待冷卻中的帳號解除
-                account = await scheduler.wait_for_any_account(max_wait_seconds=60.0)
+                account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=paid_acc_id)
                 
             if not account:
                 await database.update_page_result(
@@ -284,6 +296,7 @@ class ApiKeyAccountCreate(BaseModel):
     name: str
     api_key: str
     rpm_limit: int = 15
+    is_paid: bool = False
 
 class OAuthAccountCreate(BaseModel):
     name: str
@@ -298,7 +311,9 @@ async def list_accounts():
 
 @app.post("/api/accounts/api-key")
 async def create_api_key_account(payload: ApiKeyAccountCreate):
-    acc_id = await database.add_api_key_account(payload.name, payload.api_key, payload.rpm_limit)
+    acc_id = await database.add_api_key_account(
+        payload.name, payload.api_key, payload.rpm_limit, is_paid=1 if payload.is_paid else 0
+    )
     # 新增金鑰後自動觸發更新模型清單
     asyncio.create_task(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
@@ -362,6 +377,9 @@ async def test_account(account_id: int):
 class WebRpaConfigPayload(BaseModel):
     enabled: Optional[bool] = None
     target_service: Optional[str] = None
+    browser_mode: Optional[str] = None      # "cdp" | "launch"
+    cdp_port: Optional[int] = None
+    cdp_user_data_dir: Optional[str] = None
     headless: Optional[bool] = None
     timeout_seconds: Optional[int] = None
     chrome_path: Optional[str] = None
@@ -378,16 +396,19 @@ async def get_web_rpa_config():
 async def update_web_rpa_config(payload: WebRpaConfigPayload):
     """更新網頁自動化設定"""
     cfg = web_rpa.get_web_config()
-    if payload.enabled is not None:
-        cfg["enabled"] = payload.enabled
-    if payload.target_service is not None:
-        cfg["target_service"] = payload.target_service
-    if payload.headless is not None:
-        cfg["headless"] = payload.headless
-    if payload.timeout_seconds is not None:
-        cfg["timeout_seconds"] = payload.timeout_seconds
-    if payload.chrome_path is not None:
-        cfg["chrome_path"] = payload.chrome_path
+    for field in (
+        "enabled", "target_service", "browser_mode", "cdp_port",
+        "cdp_user_data_dir", "headless", "timeout_seconds", "chrome_path",
+    ):
+        value = getattr(payload, field, None)
+        if value is not None:
+            cfg[field] = value
+    # 切換瀏覽器模式時，先把既有的 CDP 連線乾淨地脫離
+    if payload.browser_mode is not None:
+        try:
+            await web_rpa.close_cdp_session()
+        except Exception:
+            pass
     web_rpa.save_web_config(cfg)
     return {"status": "ok", "config": cfg}
 
@@ -447,6 +468,44 @@ async def test_web_rpa(model: Optional[str] = None):
         test_img.unlink(missing_ok=True)
     return {"status": "ok" if success else "error", "message": text, "code": code}
 
+# --- Web RPA: CDP 模式（接入使用者自己開的 Chrome）---
+
+@app.get("/api/web-rpa/chrome-command")
+async def get_chrome_command():
+    """回傳使用者應該執行的 Chrome 啟動指令（供 UI 顯示／複製）"""
+    return {
+        "status": "ok",
+        "chrome_path": web_rpa.get_web_config().get("chrome_path"),
+        "cdp_port": web_rpa.get_cdp_port(),
+        "cdp_endpoint": web_rpa.get_cdp_endpoint(),
+        "profile_dir": str(web_rpa.get_cdp_profile_dir()),
+        "command": web_rpa.get_chrome_launch_command(),
+        "script": "./start_chrome_cdp.sh",
+    }
+
+@app.get("/api/web-rpa/cdp-status")
+async def get_cdp_status():
+    """
+    檢查使用者是否已開好「可被接入的 Chrome」。
+    只讀探測 http://127.0.0.1:<port>/json/version，不會啟動任何瀏覽器。
+    """
+    info = await web_rpa.check_cdp_available()
+    info["browser_mode"] = web_rpa.get_web_config().get("browser_mode", "cdp")
+    return info
+
+@app.post("/api/web-rpa/cdp-connect")
+async def connect_cdp():
+    """
+    實際接入使用者的 Chrome，並開一個 GASOCR 專用分頁驗證 AI Studio 登入狀態。
+    注意：此端點不會關閉使用者的瀏覽器。
+    """
+    return await web_rpa.check_cdp_login()
+
+@app.post("/api/web-rpa/cdp-disconnect")
+async def disconnect_cdp():
+    """主動脫離 CDP 連線（您的 Chrome 會保持開啟）"""
+    return await web_rpa.close_cdp_session()
+
 # --- Task & OCR API ---
 
 @app.get("/api/tasks")
@@ -464,7 +523,9 @@ async def create_ocr_task(
     column: str = Form("auto"),
     custom_prompt: str = Form(""),
     start_page: int = Form(1),
-    end_page: int = Form(0)
+    end_page: int = Form(0),
+    use_paid_model: bool = Form(False),
+    paid_account_id: Optional[int] = Form(None)
 ):
     if not files:
         raise HTTPException(status_code=400, detail="請上傳至少一個 PDF 檔案")
@@ -491,7 +552,9 @@ async def create_ocr_task(
             column=column,
             custom_prompt=custom_prompt,
             start_page=start_page,
-            end_page=end_page
+            end_page=end_page,
+            is_paid=1 if use_paid_model else 0,
+            paid_account_id=paid_account_id if use_paid_model else None
         )
         
         # 立即非同步啟動後台流水線
