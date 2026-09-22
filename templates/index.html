@@ -1,0 +1,3165 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="min-h-screen">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GASOCR - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gemini: {
+                            50: '#f0f4ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        }
+                    }
+                }
+            }
+        };
+        (function() {
+            const saved = localStorage.getItem('ocr_theme') || 'light';
+            document.documentElement.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+            document.documentElement.classList.add('theme-' + saved);
+            document.addEventListener('DOMContentLoaded', function() {
+                document.body.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+                document.body.classList.add('theme-' + saved);
+            });
+        })();
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        html, body {
+            min-height: 100vh;
+        }
+
+        /* === Light Theme === */
+        html.theme-light, body.theme-light {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+        }
+
+        /* === Dark Theme === */
+        html.theme-dark, body.theme-dark {
+            background-color: #0b0f19 !important;
+            color: #e2e8f0 !important;
+        }
+        html.theme-dark {
+            color-scheme: dark;
+        }
+        body.theme-dark header {
+            background-color: #111827 !important;
+            border-color: #1f2937 !important;
+        }
+        body.theme-dark .bg-white {
+            background-color: #151e2e !important;
+            color: #e2e8f0 !important;
+        }
+        body.theme-dark .bg-slate-50 {
+            background-color: #0d1424 !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-dark .bg-slate-100, body.theme-dark .bg-slate-100\/60 {
+            background-color: #1e293b !important;
+        }
+        body.theme-dark .border-slate-200, 
+        body.theme-dark .border-slate-100, 
+        body.theme-dark .border-slate-300 {
+            border-color: #243044 !important;
+        }
+        body.theme-dark .text-slate-800, body.theme-dark .text-slate-700 {
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .text-slate-600, body.theme-dark .text-slate-500 {
+            color: #94a3b8 !important;
+        }
+        body.theme-dark .text-slate-400 {
+            color: #64748b !important;
+        }
+        body.theme-dark input, 
+        body.theme-dark select, 
+        body.theme-dark textarea {
+            background-color: #0d1424 !important;
+            color: #f1f5f9 !important;
+            border-color: #334155 !important;
+        }
+        body.theme-dark tr:hover {
+            background-color: #1a253a !important;
+        }
+        body.theme-dark select.bg-transparent, 
+        body.theme-gruvbox select.bg-transparent {
+            background-color: transparent !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
+        body.theme-dark .bg-slate-100, 
+        body.theme-dark .bg-slate-100\/60,
+        body.theme-dark .bg-slate-100\/70,
+        body.theme-dark .bg-slate-100\/80 {
+            background-color: #1e293b !important;
+            color: #f1f5f9 !important;
+            border-color: #334155 !important;
+        }
+        body.theme-dark .bg-amber-50, body.theme-dark .bg-amber-50\/50, body.theme-dark .bg-amber-50\/60, body.theme-dark .bg-amber-50\/80 {
+            background-color: rgba(245, 158, 11, 0.12) !important;
+            border-color: rgba(245, 158, 11, 0.35) !important;
+            color: #fcd34d !important;
+        }
+        body.theme-dark .text-amber-800, body.theme-dark .text-amber-700, body.theme-dark .text-amber-600 {
+            color: #fcd34d !important;
+        }
+        body.theme-dark .border-amber-400, body.theme-dark .border-amber-300, body.theme-dark .border-amber-200 {
+            border-color: rgba(245, 158, 11, 0.35) !important;
+        }
+        body.theme-dark .bg-purple-100, body.theme-dark .bg-purple-100\/80 {
+            background-color: rgba(168, 85, 247, 0.15) !important;
+            border-color: rgba(168, 85, 247, 0.3) !important;
+            color: #d8b4fe !important;
+        }
+        body.theme-dark .text-purple-800, body.theme-dark .text-purple-700 {
+            color: #e9d5ff !important;
+        }
+        body.theme-dark .bg-indigo-50, body.theme-dark .bg-indigo-50\/50, body.theme-dark .bg-indigo-50\/60 {
+            background-color: rgba(99, 102, 241, 0.15) !important;
+            border-color: rgba(99, 102, 241, 0.35) !important;
+            color: #c7d2fe !important;
+        }
+        body.theme-dark .text-indigo-800, body.theme-dark .text-indigo-700, body.theme-dark .text-indigo-900 {
+            color: #c7d2fe !important;
+        }
+        body.theme-dark .border-indigo-300, body.theme-dark .border-indigo-200 {
+            border-color: rgba(99, 102, 241, 0.35) !important;
+        }
+
+        /* === Gruvbox Theme === */
+        html.theme-gruvbox, body.theme-gruvbox {
+            background-color: #282828 !important;
+            color: #ebdbb2 !important;
+        }
+        html.theme-gruvbox {
+            color-scheme: dark;
+        }
+        body.theme-gruvbox header {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .bg-white {
+            background-color: #32302f !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .bg-slate-50 {
+            background-color: #282828 !important;
+            color: #d5c4a1 !important;
+        }
+        body.theme-gruvbox .bg-slate-100, 
+        body.theme-gruvbox .bg-slate-100\/60,
+        body.theme-gruvbox .bg-slate-100\/70,
+        body.theme-gruvbox .bg-slate-100\/80 {
+            background-color: #3c3836 !important;
+            color: #ebdbb2 !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .border-slate-200, 
+        body.theme-gruvbox .border-slate-100, 
+        body.theme-gruvbox .border-slate-300 {
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .text-slate-800, body.theme-gruvbox .text-slate-700 {
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .text-slate-600, body.theme-gruvbox .text-slate-500 {
+            color: #bdae93 !important;
+        }
+        body.theme-gruvbox .text-slate-400 {
+            color: #928374 !important;
+        }
+        body.theme-gruvbox input, 
+        body.theme-gruvbox select, 
+        body.theme-gruvbox textarea {
+            background-color: #1d2021 !important;
+            color: #ebdbb2 !important;
+            border-color: #665c54 !important;
+        }
+        body.theme-gruvbox tr:hover {
+            background-color: #3c3836 !important;
+        }
+        body.theme-gruvbox .text-blue-600 {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .bg-blue-600 {
+            background-color: #d79921 !important;
+        }
+        body.theme-gruvbox .bg-blue-50 {
+            background-color: #3c3836 !important;
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .text-blue-700 {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .bg-amber-50, body.theme-gruvbox .bg-amber-50\/50, body.theme-gruvbox .bg-amber-50\/60, body.theme-gruvbox .bg-amber-50\/80 {
+            background-color: #3c3836 !important;
+            border-color: #d79921 !important;
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .text-amber-800, body.theme-gruvbox .text-amber-700, body.theme-gruvbox .text-amber-600 {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .border-amber-400, body.theme-gruvbox .border-amber-300, body.theme-gruvbox .border-amber-200 {
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .bg-purple-100, body.theme-gruvbox .bg-purple-100\/80 {
+            background-color: #4a2d3b !important;
+            border-color: #b16286 !important;
+            color: #d3869b !important;
+        }
+        body.theme-gruvbox .text-purple-800 {
+            color: #d3869b !important;
+        }
+        body.theme-gruvbox .bg-indigo-50, body.theme-gruvbox .bg-indigo-50\/50, body.theme-gruvbox .bg-indigo-50\/60 {
+            background-color: #383447 !important;
+            border-color: #83a598 !important;
+            color: #83a598 !important;
+        }
+        body.theme-gruvbox .text-indigo-800, body.theme-gruvbox .text-indigo-700, body.theme-gruvbox .text-indigo-900, body.theme-gruvbox .text-indigo-600 {
+            color: #83a598 !important;
+        }
+        body.theme-gruvbox .border-indigo-300, body.theme-gruvbox .border-indigo-200 {
+            border-color: #83a598 !important;
+        }
+        body.theme-dark .bg-indigo-100 {
+            background-color: rgba(99, 102, 241, 0.25) !important;
+            color: #c7d2fe !important;
+        }
+        body.theme-gruvbox .bg-indigo-100 {
+            background-color: #383447 !important;
+            color: #83a598 !important;
+        }
+        body.theme-dark .bg-slate-200\/60 {
+            background-color: #1e293b !important;
+        }
+        body.theme-gruvbox .bg-slate-200\/60 {
+            background-color: #3c3836 !important;
+        }
+        kbd {
+            background-color: rgba(125, 125, 125, 0.12);
+            border: 1px solid rgba(125, 125, 125, 0.25);
+            border-radius: 4px;
+            padding: 1px 4px;
+            font-size: 10px;
+        }
+        body.theme-dark kbd {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-gruvbox kbd {
+            background-color: #282828 !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+
+        /* ==========================================================================
+           Re-OCR & Upgrade Queue UI Theme Enhancements (Light, Dark, Gruvbox)
+           ========================================================================== */
+        
+        /* --- Light Theme (Default) --- */
+        .reocr-drawer {
+            background-color: #ffffff;
+            border-left-color: #e2e8f0;
+            color: #0f172a;
+        }
+        .reocr-header {
+            background-color: rgba(248, 250, 252, 0.9);
+            border-bottom-color: #e2e8f0;
+        }
+        .reocr-footer {
+            background-color: #f8fafc;
+            border-top-color: #e2e8f0;
+            color: #64748b;
+        }
+        .reocr-filter-bar {
+            background-color: rgba(226, 232, 240, 0.7);
+        }
+        .reocr-filter-btn-active {
+            background-color: #ffffff;
+            color: #0f172a;
+        }
+        .reocr-filter-btn-inactive {
+            color: #475569;
+        }
+        .reocr-filter-btn-inactive:hover {
+            color: #0f172a;
+        }
+        .reocr-filter-processing {
+            color: #2563eb !important;
+        }
+        .reocr-filter-completed {
+            color: #059669 !important;
+        }
+        .reocr-card {
+            background-color: #ffffff;
+            border-color: #e2e8f0;
+        }
+        .reocr-card-processing {
+            background-color: rgba(239, 246, 255, 0.65) !important;
+            border-color: #93c5fd !important;
+        }
+        .reocr-card-completed {
+            background-color: rgba(236, 253, 245, 0.55) !important;
+            border-color: #a7f3d0 !important;
+        }
+        .reocr-card-failed {
+            background-color: rgba(254, 242, 242, 0.65) !important;
+            border-color: #fecaca !important;
+        }
+        .reocr-card-paused {
+            background-color: rgba(254, 243, 199, 0.65) !important;
+            border-color: #fcd34d !important;
+        }
+        .reocr-status-processing {
+            background-color: #dbeafe !important;
+            color: #1e40af !important;
+            border-color: #bfdbfe !important;
+        }
+        .reocr-status-completed {
+            background-color: #d1fae5 !important;
+            color: #065f46 !important;
+            border-color: #a7f3d0 !important;
+        }
+        .reocr-status-failed {
+            background-color: #fee2e2 !important;
+            color: #991b1b !important;
+            border-color: #fecaca !important;
+        }
+        .reocr-status-paused {
+            background-color: #fef3c7 !important;
+            color: #b45309 !important;
+            border-color: #fde68a !important;
+        }
+        .reocr-badge-upgrade {
+            background-color: #e0e7ff !important;
+            color: #4338ca !important;
+            border-color: #c7d2fe !important;
+        }
+        .reocr-badge-standard {
+            background-color: #f1f5f9 !important;
+            color: #334155 !important;
+            border-color: #cbd5e1 !important;
+        }
+        .reocr-badge-page {
+            background-color: #eff6ff !important;
+            color: #1d4ed8 !important;
+            border-color: #bfdbfe !important;
+        }
+        .reocr-btn-jump {
+            background-color: #eef2ff !important;
+            color: #4338ca !important;
+            border: 1px solid #c7d2fe !important;
+        }
+        .reocr-btn-jump:hover {
+            background-color: #e0e7ff !important;
+        }
+        .reocr-btn-pause {
+            background-color: #fef3c7 !important;
+            color: #b45309 !important;
+            border: 1px solid #fde68a !important;
+        }
+        .reocr-btn-pause:hover {
+            background-color: #fde68a !important;
+        }
+        .reocr-btn-resume {
+            background-color: #ecfdf5 !important;
+            color: #047857 !important;
+            border: 1px solid #a7f3d0 !important;
+        }
+        .reocr-btn-resume:hover {
+            background-color: #d1fae5 !important;
+        }
+        .reocr-btn-retry {
+            background-color: #eff6ff !important;
+            color: #1d4ed8 !important;
+            border: 1px solid #bfdbfe !important;
+        }
+        .reocr-btn-retry:hover {
+            background-color: #dbeafe !important;
+        }
+        .reocr-btn-remove {
+            color: #94a3b8 !important;
+        }
+        .reocr-btn-remove:hover {
+            color: #ef4444 !important;
+        }
+        .reocr-error-box {
+            background-color: #fff1f2 !important;
+            color: #e11d48 !important;
+            border-color: #ffe4e6 !important;
+        }
+        .reocr-empty-icon {
+            background-color: #eef2ff !important;
+            color: #6366f1 !important;
+        }
+        .reocr-nav-btn {
+            background-color: #f8fafc !important;
+            border-color: #e2e8f0 !important;
+            color: #334155 !important;
+        }
+        .reocr-nav-btn:hover {
+            background-color: #ffffff !important;
+            border-color: #818cf8 !important;
+        }
+        .reocr-toolbar-btn {
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+            color: #334155 !important;
+        }
+        .reocr-toolbar-btn:hover {
+            background-color: rgba(238, 242, 255, 0.7) !important;
+            border-color: #818cf8 !important;
+        }
+        .reocr-count-badge {
+            background-color: rgba(226, 232, 240, 0.85) !important;
+            color: #334155 !important;
+        }
+        .reocr-toast {
+            background-color: rgba(15, 23, 42, 0.92) !important;
+            border-color: #334155 !important;
+            color: #ffffff !important;
+        }
+        .reocr-toast-icon {
+            color: #fbbf24 !important;
+        }
+        .reocr-icon-btn {
+            color: #94a3b8;
+        }
+        .reocr-icon-btn:hover {
+            color: #334155;
+            background-color: rgba(226, 232, 240, 0.6);
+        }
+
+        /* --- Dark Theme Overrides --- */
+        body.theme-dark .reocr-drawer {
+            background-color: #111827 !important;
+            border-left-color: #1f2937 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .reocr-header {
+            background-color: #0d1424 !important;
+            border-bottom-color: #1f2937 !important;
+        }
+        body.theme-dark .reocr-footer {
+            background-color: #0d1424 !important;
+            border-top-color: #1f2937 !important;
+            color: #94a3b8 !important;
+        }
+        body.theme-dark .reocr-filter-bar {
+            background-color: #1e293b !important;
+        }
+        body.theme-dark .reocr-filter-btn-active {
+            background-color: #151e2e !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .reocr-filter-btn-inactive {
+            color: #94a3b8 !important;
+        }
+        body.theme-dark .reocr-filter-btn-inactive:hover {
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .reocr-filter-processing {
+            color: #60a5fa !important;
+        }
+        body.theme-dark .reocr-filter-completed {
+            color: #34d399 !important;
+        }
+        body.theme-dark .reocr-card {
+            background-color: #151e2e !important;
+            border-color: #243044 !important;
+        }
+        body.theme-dark .reocr-card:hover {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+        }
+        body.theme-dark .reocr-card-processing {
+            background-color: rgba(30, 58, 138, 0.22) !important;
+            border-color: rgba(59, 130, 246, 0.5) !important;
+        }
+        body.theme-dark .reocr-card-completed {
+            background-color: rgba(6, 78, 59, 0.22) !important;
+            border-color: rgba(16, 185, 129, 0.4) !important;
+        }
+        body.theme-dark .reocr-card-failed {
+            background-color: rgba(127, 29, 29, 0.25) !important;
+            border-color: rgba(239, 68, 68, 0.45) !important;
+        }
+        body.theme-dark .reocr-card-paused {
+            background-color: rgba(120, 53, 15, 0.25) !important;
+            border-color: rgba(245, 158, 11, 0.45) !important;
+        }
+        body.theme-dark .reocr-status-processing {
+            background-color: rgba(37, 99, 235, 0.25) !important;
+            color: #93c5fd !important;
+            border-color: rgba(96, 165, 250, 0.4) !important;
+        }
+        body.theme-dark .reocr-status-completed {
+            background-color: rgba(16, 185, 129, 0.22) !important;
+            color: #6ee7b7 !important;
+            border-color: rgba(52, 211, 153, 0.4) !important;
+        }
+        body.theme-dark .reocr-status-failed {
+            background-color: rgba(239, 68, 68, 0.25) !important;
+            color: #fca5a5 !important;
+            border-color: rgba(248, 113, 113, 0.4) !important;
+        }
+        body.theme-dark .reocr-status-paused {
+            background-color: rgba(245, 158, 11, 0.22) !important;
+            color: #fcd34d !important;
+            border-color: rgba(245, 158, 11, 0.4) !important;
+        }
+        body.theme-dark .reocr-badge-upgrade {
+            background-color: rgba(99, 102, 241, 0.25) !important;
+            color: #c7d2fe !important;
+            border-color: rgba(129, 140, 248, 0.4) !important;
+        }
+        body.theme-dark .reocr-badge-standard {
+            background-color: #1e293b !important;
+            color: #cbd5e1 !important;
+            border-color: #334155 !important;
+        }
+        body.theme-dark .reocr-badge-page {
+            background-color: rgba(30, 58, 138, 0.35) !important;
+            color: #93c5fd !important;
+            border-color: rgba(59, 130, 246, 0.45) !important;
+        }
+        body.theme-dark .reocr-btn-jump {
+            background-color: rgba(99, 102, 241, 0.2) !important;
+            color: #c7d2fe !important;
+            border: 1px solid rgba(129, 140, 248, 0.35) !important;
+        }
+        body.theme-dark .reocr-btn-jump:hover {
+            background-color: rgba(99, 102, 241, 0.35) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .reocr-btn-pause {
+            background-color: rgba(245, 158, 11, 0.2) !important;
+            color: #fcd34d !important;
+            border: 1px solid rgba(245, 158, 11, 0.35) !important;
+        }
+        body.theme-dark .reocr-btn-pause:hover {
+            background-color: rgba(245, 158, 11, 0.35) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .reocr-btn-resume {
+            background-color: rgba(16, 185, 129, 0.2) !important;
+            color: #6ee7b7 !important;
+            border: 1px solid rgba(16, 185, 129, 0.35) !important;
+        }
+        body.theme-dark .reocr-btn-resume:hover {
+            background-color: rgba(16, 185, 129, 0.35) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .reocr-btn-retry {
+            background-color: rgba(37, 99, 235, 0.2) !important;
+            color: #93c5fd !important;
+            border: 1px solid rgba(59, 130, 246, 0.35) !important;
+        }
+        body.theme-dark .reocr-btn-retry:hover {
+            background-color: rgba(37, 99, 235, 0.35) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .reocr-btn-remove {
+            color: #64748b !important;
+        }
+        body.theme-dark .reocr-btn-remove:hover {
+            color: #f87171 !important;
+        }
+        body.theme-dark .reocr-error-box {
+            background-color: rgba(127, 29, 29, 0.3) !important;
+            color: #fca5a5 !important;
+            border-color: rgba(239, 68, 68, 0.4) !important;
+        }
+        body.theme-dark .reocr-empty-icon {
+            background-color: rgba(99, 102, 241, 0.2) !important;
+            color: #a5b4fc !important;
+        }
+        body.theme-dark .reocr-nav-btn,
+        body.theme-dark .reocr-toolbar-btn {
+            background-color: #151e2e !important;
+            border-color: #243044 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .reocr-nav-btn:hover,
+        body.theme-dark .reocr-toolbar-btn:hover {
+            background-color: #1e293b !important;
+            border-color: #6366f1 !important;
+        }
+        body.theme-dark .reocr-count-badge {
+            background-color: #1e293b !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-dark .reocr-toast {
+            background-color: #111827 !important;
+            border-color: #374151 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .reocr-toast-icon {
+            color: #fcd34d !important;
+        }
+        body.theme-dark .reocr-icon-btn {
+            color: #94a3b8 !important;
+        }
+        body.theme-dark .reocr-icon-btn:hover {
+            color: #f1f5f9 !important;
+            background-color: #1e293b !important;
+        }
+
+        /* --- Gruvbox Theme Overrides --- */
+        body.theme-gruvbox .reocr-drawer {
+            background-color: #282828 !important;
+            border-left-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-header {
+            background-color: #32302f !important;
+            border-bottom-color: #504945 !important;
+        }
+        body.theme-gruvbox .reocr-footer {
+            background-color: #32302f !important;
+            border-top-color: #504945 !important;
+            color: #bdae93 !important;
+        }
+        body.theme-gruvbox .reocr-filter-bar {
+            background-color: #3c3836 !important;
+        }
+        body.theme-gruvbox .reocr-filter-btn-active {
+            background-color: #282828 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-filter-btn-inactive {
+            color: #928374 !important;
+        }
+        body.theme-gruvbox .reocr-filter-btn-inactive:hover {
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-filter-processing {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .reocr-filter-completed {
+            color: #b8bb26 !important;
+        }
+        body.theme-gruvbox .reocr-card {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .reocr-card:hover {
+            border-color: #fabd2f !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+        }
+        body.theme-gruvbox .reocr-card-processing {
+            background-color: #383428 !important;
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-card-completed {
+            background-color: #2f3428 !important;
+            border-color: #98971a !important;
+        }
+        body.theme-gruvbox .reocr-card-failed {
+            background-color: #382927 !important;
+            border-color: #cc241d !important;
+        }
+        body.theme-gruvbox .reocr-card-paused {
+            background-color: #383428 !important;
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-status-processing {
+            background-color: #3c3836 !important;
+            color: #fabd2f !important;
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-status-completed {
+            background-color: #3c3836 !important;
+            color: #b8bb26 !important;
+            border-color: #98971a !important;
+        }
+        body.theme-gruvbox .reocr-status-failed {
+            background-color: #3c3836 !important;
+            color: #fb4934 !important;
+            border-color: #cc241d !important;
+        }
+        body.theme-gruvbox .reocr-status-paused {
+            background-color: #3c3836 !important;
+            color: #fabd2f !important;
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-badge-upgrade {
+            background-color: #383447 !important;
+            color: #83a598 !important;
+            border-color: #83a598 !important;
+        }
+        body.theme-gruvbox .reocr-badge-standard {
+            background-color: #3c3836 !important;
+            color: #ebdbb2 !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .reocr-badge-page {
+            background-color: #3c3836 !important;
+            color: #fabd2f !important;
+            border-color: #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-btn-jump {
+            background-color: #3c3836 !important;
+            color: #83a598 !important;
+            border: 1px solid #83a598 !important;
+        }
+        body.theme-gruvbox .reocr-btn-jump:hover {
+            background-color: #504945 !important;
+            color: #b8bb26 !important;
+        }
+        body.theme-gruvbox .reocr-btn-pause {
+            background-color: #3c3836 !important;
+            color: #fabd2f !important;
+            border: 1px solid #d79921 !important;
+        }
+        body.theme-gruvbox .reocr-btn-pause:hover {
+            background-color: #504945 !important;
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .reocr-btn-resume {
+            background-color: #3c3836 !important;
+            color: #b8bb26 !important;
+            border: 1px solid #98971a !important;
+        }
+        body.theme-gruvbox .reocr-btn-resume:hover {
+            background-color: #504945 !important;
+            color: #b8bb26 !important;
+        }
+        body.theme-gruvbox .reocr-btn-retry {
+            background-color: #3c3836 !important;
+            color: #83a598 !important;
+            border: 1px solid #83a598 !important;
+        }
+        body.theme-gruvbox .reocr-btn-retry:hover {
+            background-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-btn-remove {
+            color: #928374 !important;
+        }
+        body.theme-gruvbox .reocr-btn-remove:hover {
+            color: #fb4934 !important;
+        }
+        body.theme-gruvbox .reocr-error-box {
+            background-color: #3c3836 !important;
+            color: #fb4934 !important;
+            border-color: #cc241d !important;
+        }
+        body.theme-gruvbox .reocr-empty-icon {
+            background-color: #3c3836 !important;
+            color: #83a598 !important;
+        }
+        body.theme-gruvbox .reocr-nav-btn,
+        body.theme-gruvbox .reocr-toolbar-btn {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-nav-btn:hover,
+        body.theme-gruvbox .reocr-toolbar-btn:hover {
+            background-color: #3c3836 !important;
+            border-color: #fabd2f !important;
+        }
+        body.theme-gruvbox .reocr-count-badge {
+            background-color: #3c3836 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-toast {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .reocr-toast-icon {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .reocr-icon-btn {
+            color: #928374 !important;
+        }
+        body.theme-gruvbox .reocr-icon-btn:hover {
+            color: #ebdbb2 !important;
+            background-color: #3c3836 !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col transition-colors duration-200" :class="'theme-' + currentTheme" x-data="ocrApp()" x-init="initApp()" x-cloak>
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm transition-colors">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-md shrink-0">
+                    <i data-lucide="sparkles" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent tracking-tight">
+                        GASOCR
+                    </h1>
+                    <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
+                </div>
+            </div>
+
+            <!-- Badges, Theme Selector & Account Manager Button -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                
+                <!-- Theme Selector (light / dark / gruvbox) -->
+                <div class="flex items-center p-1 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold shadow-inner">
+                    <button type="button" @click="setTheme('light')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'light' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>☀️</span>
+                        <span class="hidden md:inline">淺色</span>
+                    </button>
+                    <button type="button" @click="setTheme('dark')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'dark' ? 'bg-slate-800 shadow-sm text-amber-300 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>🌙</span>
+                        <span class="hidden md:inline">深色</span>
+                    </button>
+                    <button type="button" @click="setTheme('gruvbox')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'gruvbox' ? 'bg-[#3c3836] shadow-sm text-[#fabd2f] font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>📜</span>
+                        <span class="hidden md:inline">Gruvbox</span>
+                    </button>
+                </div>
+
+                <!-- Zero-cost Safe Badge -->
+                <div class="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                    <span>0 元保護</span>
+                </div>
+
+                <!-- Active Keys Count -->
+                <button @click="openAccountsModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 transition">
+                    <i data-lucide="key" class="w-4 h-4 text-blue-600"></i>
+                    <span>金鑰池: <strong class="text-blue-600" x-text="activeAccountsCount">0</strong></span>
+                </button>
+
+                <!-- NEW: Re-OCR Queue Drawer Button -->
+                <button 
+                    @click="toggleQueueModal()" 
+                    class="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition shadow-xs cursor-pointer reocr-nav-btn"
+                    title="開啟重新辨識與升級佇列 (快捷鍵: Alt + Q 或 Q)"
+                >
+                    <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
+                    <span class="font-semibold hidden sm:inline">重辨佇列</span>
+                    <template x-if="activeReocrCount > 0">
+                        <span class="flex h-2 w-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                    </template>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                          :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : 'reocr-count-badge'"
+                          x-text="reocrQueue.length">0</span>
+                    <kbd class="text-[10px] font-mono hidden md:inline ml-0.5">Alt+Q</kbd>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Global Floating Toast Notification -->
+    <div 
+        x-show="toastMessage" 
+        x-transition:enter="transition ease-out duration-300 transform"
+        x-transition:enter-start="opacity-0 translate-y-3 scale-95"
+        x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+        x-transition:leave="transition ease-in duration-200 transform"
+        x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+        x-transition:leave-end="opacity-0 translate-y-3 scale-95"
+        class="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center space-x-2.5 text-xs font-medium border pointer-events-none reocr-toast"
+        style="display: none;"
+    >
+        <i data-lucide="sparkles" class="w-4 h-4 shrink-0 reocr-toast-icon"></i>
+        <span x-text="toastMessage"></span>
+    </div>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+
+        <!-- Top Row: Upload & Configuration Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left: Multiple File Upload Dropzone (5 cols) -->
+            <div class="lg:col-span-5 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
+                        <i data-lucide="files" class="w-4 h-4 text-blue-600"></i>
+                        <span>1. 選擇待轉譯 PDF 檔案 (可多選)</span>
+                    </h2>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700" x-show="pendingFiles.length > 0" x-text="`已選取 ${pendingFiles.length} 個檔案`"></span>
+                </div>
+
+                <div 
+                    class="flex-1 border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition min-h-[220px]"
+                    :class="pendingFiles.length > 0 ? 'border-blue-500 bg-blue-50/20' : 'border-slate-300 hover:border-blue-400 bg-slate-50/50'"
+                    @dragover.prevent="$el.classList.add('border-blue-500')"
+                    @dragleave.prevent="$el.classList.remove('border-blue-500')"
+                    @drop.prevent="handleFilesDrop($event)"
+                    @click="$refs.fileInput.click()"
+                >
+                    <input type="file" x-ref="fileInput" class="hidden" accept=".pdf" multiple @change="handleFilesSelect($event)">
+                    
+                    <template x-if="pendingFiles.length === 0">
+                        <div class="flex flex-col items-center">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-2">
+                                <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                            </div>
+                            <p class="text-sm font-bold text-slate-700 mb-1">點擊上傳或拖曳多個 PDF 檔案至此</p>
+                            <p class="text-xs text-slate-400">支援一次批次選取多個 PDF，將依序自動進行 OCR 轉譯</p>
+                        </div>
+                    </template>
+
+                    <!-- Selected Files Queue Display -->
+                    <template x-if="pendingFiles.length > 0">
+                        <div class="w-full flex flex-col h-full text-left" @click.stop>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2">
+                                <span class="text-xs font-semibold text-slate-600">待上傳轉譯清單：</span>
+                                <div class="flex items-center space-x-2">
+                                    <button type="button" @click="$refs.fileInput.click()" class="text-xs text-blue-600 hover:underline font-medium">+ 繼續新增</button>
+                                    <button type="button" @click="pendingFiles = []" class="text-xs text-red-500 hover:underline">清空</button>
+                                </div>
+                            </div>
+                            <div class="max-h-[160px] overflow-y-auto custom-scroll space-y-1.5 pr-1">
+                                <template x-for="(file, idx) in pendingFiles" :key="idx">
+                                    <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs hover:border-slate-300">
+                                        <div class="flex items-center space-x-2 truncate mr-2">
+                                            <i data-lucide="file-text" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+                                            <span class="font-medium text-slate-800 truncate" x-text="file.name"></span>
+                                        </div>
+                                        <div class="flex items-center space-x-2 shrink-0">
+                                            <span class="text-[11px] text-slate-400" x-text="formatFileSize(file.size)"></span>
+                                            <button type="button" @click="removePendingFile(idx)" class="text-slate-400 hover:text-red-500">
+                                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Right: Layout & Parameter Controls (7 cols) -->
+            <div class="lg:col-span-7 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                        <i data-lucide="sliders" class="w-4 h-4 text-blue-600"></i>
+                        <span>2. 排版與 OCR 頁面參數配置</span>
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        <!-- Model Selection with Live Refresh -->
+                        <div class="md:col-span-2">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-semibold text-slate-600">Gemini 轉譯模型</label>
+                                <button 
+                                    type="button" 
+                                    @click="refreshModels(true)" 
+                                    :disabled="isLoadingModels" 
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1 font-medium transition disabled:opacity-50"
+                                >
+                                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="{'animate-spin': isLoadingModels}"></i>
+                                    <span x-text="isLoadingModels ? '查詢中...' : '刷新模型清單'"></span>
+                                </button>
+                            </div>
+                            <select x-model="formConfig.model" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700">
+                                <template x-for="m in modelsList" :key="m.id">
+                                    <option :value="m.id" x-text="m.name" :selected="formConfig.model === m.id"></option>
+                                </template>
+                            </select>
+                        </div>
+
+                        <!-- Page Range Selection (start, end) -->
+                        <div class="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-bold text-slate-700 flex items-center space-x-1.5">
+                                    <i data-lucide="book-open" class="w-4 h-4 text-blue-600"></i>
+                                    <span>OCR 頁面範圍選擇 (Page Start ~ Page End)</span>
+                                </label>
+                                <span class="text-[11px] text-slate-400">結束頁填 0 或留空表示轉譯至最後一頁</span>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+                                <div>
+                                    <label class="block text-[11px] text-slate-500 mb-0.5">起始頁 (Start)</label>
+                                    <input type="number" min="1" x-model.number="formConfig.startPage" class="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-500 mb-0.5">結束頁 (End)</label>
+                                    <input type="number" min="0" x-model.number="formConfig.endPage" placeholder="0 (全部)" class="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                </div>
+                                <div class="col-span-2 flex items-center space-x-1.5 pt-3.5">
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=0" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">全本</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=1" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">僅第 1 頁</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=5" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">前 5 頁</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=10" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">前 10 頁</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Language Preference -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">轉譯語言偏好</label>
+                            <select x-model="formConfig.lang" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in languages.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Text Direction -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">文字閱讀方向</label>
+                            <select x-model="formConfig.direction" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in directions.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Column Structure -->
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">分欄排版結構</label>
+                            <select x-model="formConfig.column" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in columns.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Custom Instructions (Large Text Box) -->
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                <span>自訂附加提示詞（選填，多行大輸入框）</span>
+                                <span class="text-[11px] text-slate-400">可自訂格式細節、專有名詞對照、排版過濾規則等</span>
+                            </label>
+                            <textarea rows="4" x-model="formConfig.customPrompt" placeholder="例：&#10;1. 請保留原書古籍頁碼標記。&#10;2. 表格請強制轉為精確之 Markdown 語法輸出。&#10;3. 專有名詞對照：將「AI Studio」統一翻譯為「人工智慧工作坊」。&#10;4. 忽略頁眉與頁腳版權宣告。" class="w-full text-xs rounded-xl border border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 leading-relaxed font-mono custom-scroll resize-y"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div class="text-xs text-slate-500 flex items-center space-x-1">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                        <span>零費用 15 RPM 自動節流防護</span>
+                    </div>
+                    <button 
+                        @click="startBatchOcrTask()"
+                        :disabled="pendingFiles.length === 0 || isSubmitting || activeAccountsCount === 0"
+                        class="px-6 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-sm shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition"
+                    >
+                        <i data-lucide="play" class="w-4 h-4" x-show="!isSubmitting"></i>
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin" x-show="isSubmitting"></i>
+                        <span x-text="isSubmitting ? '啟動中...' : (pendingFiles.length > 0 ? `開始批次轉譯 (${pendingFiles.length} 個檔案)` : '請先選取 PDF 檔案')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Batch Tasks Queue & History Box -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800">批次轉譯檔案列表 (Batch Tasks Box)</h3>
+                        <p class="text-xs text-slate-400">已上傳之所有 PDF 檔案與其轉譯狀態，點擊項目可於下方進行校對與成果下載</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700" x-text="`共 ${allTasks.length} 個任務`"></span>
+                    <button @click="loadTasks()" class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition" title="重新整理任務列表">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Task List Table -->
+            <div class="border border-slate-200 rounded-xl overflow-x-auto custom-scroll">
+                <table class="w-full min-w-[880px] text-left text-xs">
+                    <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                        <tr>
+                            <th class="p-3 w-3/12 min-w-[180px]">檔案名稱</th>
+                            <th class="p-3 whitespace-nowrap min-w-[110px]">轉譯範圍</th>
+                            <th class="p-3 whitespace-nowrap min-w-[180px]">模型與語言</th>
+                            <th class="p-3 whitespace-nowrap min-w-[120px]">進度</th>
+                            <th class="p-3 whitespace-nowrap min-w-[90px]">狀態</th>
+                            <th class="p-3 pr-4 text-right whitespace-nowrap min-w-[260px]">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="task in allTasks" :key="task.id">
+                            <tr class="hover:bg-slate-50/70 transition cursor-pointer" :class="{'bg-blue-50/50': currentTaskId === task.id}" @click="inspectTask(task)">
+                                <td class="p-3 font-medium text-slate-800">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="file-text" class="w-4 h-4 text-blue-600 shrink-0"></i>
+                                        <span class="truncate max-w-[180px] sm:max-w-xs font-semibold" :title="task.filename" x-text="task.filename"></span>
+                                    </div>
+                                </td>
+                                <td class="p-3 font-mono whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded-md bg-slate-100/80 border border-slate-200/60 text-xs font-semibold text-slate-700"
+                                        x-text="task.end_page && task.end_page > 0 ? `P.${task.start_page || 1} ~ P.${task.end_page}` : `P.${task.start_page || 1} ~ 全本`"></span>
+                                </td>
+                                <td class="p-3 whitespace-nowrap" @click.stop>
+                                    <template x-if="task.status === 'paused'">
+                                        <div class="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100/60 transition shadow-xs">
+                                            <span class="text-[11px] text-amber-600 font-bold">⚡</span>
+                                            <div class="relative inline-flex items-center">
+                                                <select 
+                                                    x-model="task.model" 
+                                                    @change="changeTaskModel(task)"
+                                                    class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                                                    title="點擊更換接續執行的模型"
+                                                >
+                                                    <template x-for="m in modelsList" :key="m.id || m">
+                                                        <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === task.model"></option>
+                                                    </template>
+                                                </select>
+                                                <svg class="w-3.5 h-3.5 text-amber-600 absolute right-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template x-if="task.status !== 'paused'">
+                                        <div class="inline-flex items-center space-x-1.5">
+                                            <span class="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60" x-text="task.model"></span>
+                                            <span class="text-slate-400 text-[11px]" x-text="`(${task.lang_pref})`"></span>
+                                        </div>
+                                    </template>
+                                </td>
+                                <td class="p-3 whitespace-nowrap">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-16 bg-slate-200/70 rounded-full h-1.5 overflow-hidden">
+                                            <div class="h-1.5 rounded-full transition-all duration-300"
+                                                :class="{
+                                                    'bg-emerald-500': task.status === 'completed',
+                                                    'bg-blue-600': task.status === 'processing',
+                                                    'bg-amber-500': task.status === 'rendering',
+                                                    'bg-purple-500': task.status === 'paused',
+                                                    'bg-red-500': task.status === 'failed',
+                                                    'bg-slate-300': task.status === 'pending'
+                                                }"
+                                                :style="`width: ${task.total_pages ? Math.round((task.processed_pages || 0)/task.total_pages*100) : 0}%`"></div>
+                                        </div>
+                                        <span class="font-mono text-xs font-semibold text-slate-700" x-text="`${task.processed_pages || 0}/${task.total_pages || 0}`"></span>
+                                    </div>
+                                </td>
+                                <td class="p-3 whitespace-nowrap">
+                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide"
+                                        :class="{
+                                            'bg-blue-100/80 text-blue-800 border border-blue-200': task.status === 'processing',
+                                            'bg-amber-100/80 text-amber-800 border border-amber-200': task.status === 'rendering',
+                                            'bg-purple-100/80 text-purple-800 border border-purple-200': task.status === 'paused',
+                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200': task.status === 'completed',
+                                            'bg-red-100/80 text-red-800 border border-red-200': task.status === 'failed',
+                                            'bg-slate-100 text-slate-600 border border-slate-200': task.status === 'pending'
+                                        }"
+                                    >
+                                        <span class="w-1.5 h-1.5 rounded-full" :class="{
+                                            'bg-blue-500 animate-ping': task.status === 'processing',
+                                            'bg-amber-500 animate-pulse': task.status === 'rendering',
+                                            'bg-purple-500': task.status === 'paused',
+                                            'bg-emerald-500': task.status === 'completed',
+                                            'bg-red-500': task.status === 'failed',
+                                            'bg-slate-400': task.status === 'pending'
+                                        }"></span>
+                                        <span x-text="task.status === 'paused' ? '已暫停' : (task.status === 'processing' ? '轉譯中' : (task.status === 'completed' ? '已完成' : (task.status === 'rendering' ? '切圖中' : task.status)))"></span>
+                                    </span>
+                                </td>
+                                <td class="p-3 pr-4 text-right space-x-1.5 whitespace-nowrap" @click.stop>
+                                    <template x-if="['processing', 'rendering', 'pending'].includes(task.status)">
+                                        <button @click="toggleTaskPause(task)" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-semibold transition" title="暫停轉譯">⏸ 暫停</button>
+                                    </template>
+                                    <template x-if="['paused', 'failed'].includes(task.status)">
+                                        <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition shadow-xs" title="繼續轉譯">▶ 繼續</button>
+                                    </template>
+                                    <button @click="inspectTask(task)" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">校對</button>
+                                    <button @click="downloadTaskExport(task.id, 'docx')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Word">Word</button>
+                                    <button @click="downloadTaskExport(task.id, 'md')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Markdown">MD</button>
+                                    <button @click="deleteTask(task.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-medium transition" title="刪除任務">刪除</button>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="allTasks.length === 0">
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-slate-400">目前尚無任何轉譯任務，請在上方選取 PDF 檔案開始批次轉譯</td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Task In-Progress Banner / Controller -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm" x-show="currentTask">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-xs font-bold px-2.5 py-0.5 rounded-full uppercase"
+                            :class="{
+                                'bg-blue-100 text-blue-800': currentTask?.status === 'processing',
+                                'bg-amber-100 text-amber-800': currentTask?.status === 'rendering',
+                                'bg-purple-100 text-purple-800': currentTask?.status === 'paused',
+                                'bg-emerald-100 text-emerald-800': currentTask?.status === 'completed',
+                                'bg-red-100 text-red-800': currentTask?.status === 'failed'
+                            }"
+                            x-text="currentTask?.status === 'paused' ? '已暫停' : (currentTask?.status === 'completed' ? '已完成' : (currentTask?.status === 'processing' ? '轉譯中' : (currentTask?.status === 'rendering' ? '切圖中' : (currentTask?.status === 'failed' ? '失敗' : currentTask?.status))))"
+                        ></span>
+                        <h3 class="text-base font-bold text-slate-800" x-text="currentTask?.filename"></h3>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                        <span>轉譯進度：<strong class="text-slate-800" x-text="currentTask?.processed_pages || 0"></strong> / <span x-text="currentTask?.total_pages || 0"></span> 頁</span>
+                        <template x-if="currentTask?.status === 'paused'">
+                            <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-lg border border-amber-300/90 bg-amber-50/60 shadow-xs">
+                                <span class="text-amber-600 font-bold text-xs">⚡ 更換模型續傳:</span>
+                                <div class="relative inline-flex items-center">
+                                    <select 
+                                        x-model="currentTask.model" 
+                                        @change="changeTaskModel(currentTask)"
+                                        class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[200px] truncate"
+                                    >
+                                        <template x-for="m in modelsList" :key="m.id || m">
+                                            <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === currentTask.model"></option>
+                                        </template>
+                                    </select>
+                                    <svg class="w-3 h-3 text-amber-600 absolute right-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </div>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status !== 'paused'">
+                            <span class="text-slate-400 text-xs font-mono" x-text="`• 當前模型: ${currentTask?.model || ''}`"></span>
+                        </template>
+                    </p>
+                </div>
+
+                <!-- Export & Control Action Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <template x-if="['processing', 'rendering', 'pending'].includes(currentTask?.status)">
+                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-amber-300 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 text-xs font-medium text-amber-800 transition flex items-center space-x-1.5 shadow-sm">
+                            <span>⏸ 暫停轉譯</span>
+                        </button>
+                    </template>
+                    <template x-if="['paused', 'failed'].includes(currentTask?.status)">
+                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-800 transition flex items-center space-x-1.5 shadow-sm">
+                            <span>▶ 繼續轉譯</span>
+                        </button>
+                    </template>
+                    <button @click="downloadExport('md')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-code" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>下載 Markdown (.md)</span>
+                    </button>
+                    <button @click="downloadExport('docx')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-type-2" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>下載 Word (.docx)</span>
+                    </button>
+                    <button @click="downloadExport('txt')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>純文字 (.txt)</span>
+                    </button>
+                    <button @click="downloadExport('zip')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm">
+                        <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+                        <span>打包 ZIP (含原圖)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-100 rounded-full h-2.5 mt-4 overflow-hidden">
+                <div class="h-2.5 rounded-full transition-all duration-300"
+                    :class="{
+                        'bg-emerald-500': currentTask?.status === 'completed',
+                        'bg-gradient-to-r from-blue-500 to-indigo-600': currentTask?.status === 'processing',
+                        'bg-amber-500': currentTask?.status === 'rendering',
+                        'bg-purple-500': currentTask?.status === 'paused',
+                        'bg-red-500': currentTask?.status === 'failed',
+                        'bg-slate-300': currentTask?.status === 'pending'
+                    }"
+                    :style="`width: ${progressPercent}%`"></div>
+            </div>
+        </div>
+
+        <!-- Side-by-Side Comparison Area -->
+        <div id="proofread-section" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col flex-1" x-show="currentTask">
+            
+            <!-- Page Selector Header -->
+            <div class="px-6 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <!-- Page Navigation Pills & Previous/Next Buttons -->
+                <div class="flex items-center space-x-2 overflow-x-auto py-1 custom-scroll max-w-full">
+                    <!-- 上一頁快捷按鈕 -->
+                    <button 
+                        @click="prevPage()" 
+                        :disabled="isFirstPage"
+                        class="px-2.5 py-1 rounded-md text-xs font-semibold border transition flex items-center space-x-1 shrink-0"
+                        :class="isFirstPage ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-xs cursor-pointer'"
+                        title="切換至前一頁 (快速鍵: Alt + ← 或 ←)"
+                    >
+                        <span>◀ 上一頁</span>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline">Alt+←</kbd>
+                    </button>
+
+                    <span class="text-xs font-semibold text-slate-500 mr-1 shrink-0">頁碼：</span>
+                    <template x-for="p in pages" :key="p.page_num">
+                        <button 
+                            @click="selectPage(p.page_num)"
+                            :data-page-btn="p.page_num"
+                            class="px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center space-x-1 shrink-0"
+                            :class="selectedPageNum === p.page_num 
+                                ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-400/40' 
+                                : (p.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100/70' : (p.status === 'failed' ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100/70' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'))"
+                        >
+                            <span x-text="`P.${p.page_num}`"></span>
+                            <span x-show="p.status === 'completed'">✓</span>
+                            <span x-show="p.status === 'failed'">✗</span>
+                            <span x-show="p.status === 'processing'" class="animate-spin text-[10px]">⏳</span>
+                        </button>
+                    </template>
+
+                    <!-- 下一頁快捷按鈕 -->
+                    <button 
+                        @click="nextPage()" 
+                        :disabled="isLastPage"
+                        class="px-2.5 py-1 rounded-md text-xs font-semibold border transition flex items-center space-x-1 shrink-0"
+                        :class="isLastPage ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-xs cursor-pointer'"
+                        title="切換至後一頁 (快速鍵: Alt + → 或 →)"
+                    >
+                        <span>下一頁 ▶</span>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline">Alt+→</kbd>
+                    </button>
+                </div>
+
+                <!-- Page Operations -->
+                <div class="flex items-center flex-wrap gap-2" x-show="currentPage">
+                    <!-- 當前辨識模型標記 -->
+                    <span class="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 shrink-0" x-show="currentPage?.used_model">
+                        <span>辨識模型: </span>
+                        <strong class="font-mono text-blue-600" x-text="currentPage.used_model"></strong>
+                    </span>
+
+                    <!-- 原模型重新辨識按鈕 -->
+                    <button 
+                        @click="retryCurrentPage()" 
+                        :disabled="isRetryingPage"
+                        class="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-amber-400 bg-white hover:bg-amber-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer"
+                        :class="{'opacity-50 cursor-not-allowed': isRetryingPage}"
+                        title="使用初始任務模型重新辨識本頁（快捷鍵: Alt + R）"
+                    >
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-600" :class="{'animate-spin': isRetryingPage && !isRetryingUpgrade}"></i>
+                        <span x-text="currentPage?.status === 'processing' && !isRetryingUpgrade ? '辨識中 (點擊重試)' : '重新辨識本頁'"></span>
+                        <kbd class="text-[10px] text-slate-400 font-mono hidden sm:inline ml-0.5">Alt+R</kbd>
+                    </button>
+
+                    <!-- 當前頁面轉譯中時的暫停按鈕 / 暫停中的繼續按鈕 -->
+                    <template x-if="currentPage?.status === 'processing'">
+                        <button 
+                            @click="pauseCurrentPage()" 
+                            class="px-2 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-pause"
+                            title="暫停當前頁面的轉譯"
+                        >
+                            <i data-lucide="pause" class="w-3 h-3"></i>
+                            <span>暫停</span>
+                        </button>
+                    </template>
+                    <template x-if="currentPage?.status === 'paused'">
+                        <button 
+                            @click="retryCurrentPage()" 
+                            class="px-2 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-resume"
+                            title="繼續當前頁面的轉譯"
+                        >
+                            <i data-lucide="play" class="w-3 h-3"></i>
+                            <span>繼續轉譯</span>
+                        </button>
+                    </template>
+
+                    <!-- 升級模型組合 (upgrademodel 下拉選單 + 升級重新辨識按鈕) -->
+                    <div class="flex items-center space-x-1.5 p-0.5 rounded-lg border border-indigo-200 bg-indigo-50/50 shadow-xs shrink-0">
+                        <div class="relative inline-flex items-center pl-2">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-600 mr-1 shrink-0"></i>
+                            <select 
+                                name="upgrademodel" 
+                                id="upgrademodel" 
+                                x-model="upgradeModel" 
+                                class="appearance-none bg-transparent pr-5 text-xs font-semibold text-indigo-900 focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[190px] truncate py-0.5"
+                                title="選擇升級模型"
+                            >
+                                <template x-for="m in modelsList" :key="m.id || m">
+                                    <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === upgradeModel"></option>
+                                </template>
+                            </select>
+                            <svg class="w-3.5 h-3.5 text-indigo-600 absolute right-1 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                        <button 
+                            @click="retryWithUpgradeModel()" 
+                            :disabled="isRetryingPage"
+                            class="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer"
+                            :class="{'opacity-50 cursor-not-allowed': isRetryingPage}"
+                            title="使用所選的升級模型重新辨識本頁（快捷鍵: Alt + U）"
+                        >
+                            <i data-lucide="zap" class="w-3 h-3 text-amber-300" :class="{'animate-spin': isRetryingPage && isRetryingUpgrade}"></i>
+                            <span x-text="currentPage?.status === 'processing' && isRetryingUpgrade ? '升級中 (點擊重試)' : '升級重新辨識'"></span>
+                            <kbd class="text-[10px] text-indigo-200 font-mono hidden sm:inline ml-0.5">Alt+U</kbd>
+                        </button>
+                    </div>
+
+                    <!-- 佇列快捷按鈕 -->
+                    <button 
+                        @click="toggleQueueModal()" 
+                        class="px-2.5 py-1 rounded-lg border text-xs font-medium transition flex items-center space-x-1 shadow-xs shrink-0 cursor-pointer reocr-toolbar-btn"
+                        title="查看重新辨識與升級佇列 (快捷鍵: Alt + Q 或 Q)"
+                    >
+                        <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-600"></i>
+                        <span>重辨佇列</span>
+                        <template x-if="activeReocrCount > 0">
+                            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        </template>
+                        <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold reocr-count-badge" x-text="reocrQueue.length">0</span>
+                        <kbd class="text-[10px] font-mono hidden sm:inline ml-0.5">Q</kbd>
+                    </button>
+
+                    <!-- 儲存修改按鈕 -->
+                    <button @click="saveCurrentPageText()" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition flex items-center space-x-1 shadow-sm shrink-0" title="儲存修改 (快速鍵: Ctrl+S 或 Cmd+S)">
+                        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                        <span>儲存修改</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Left Image & Right Editor Workspace -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 min-h-[550px] flex-1">
+                
+                <!-- Left: Rendered PDF Page Image -->
+                <div class="p-6 bg-slate-100/60 flex flex-col items-center justify-center overflow-auto custom-scroll max-h-[750px]">
+                    <template x-if="currentPage && currentPage.image_url">
+                        <div class="relative max-w-full shadow-lg rounded-lg border border-slate-300 overflow-hidden bg-white">
+                            <img :src="currentPage.image_url" :alt="`Page ${currentPage.page_num}`" class="max-w-full h-auto object-contain">
+                            <div class="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[11px] px-2 py-0.5 rounded">
+                                原文 PDF 渲染圖 (300 DPI)
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="!currentPage">
+                        <div class="text-center text-slate-400 py-12">
+                            <i data-lucide="image" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                            <p class="text-sm">請選擇上方頁碼預覽</p>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Right: OCR Editable Text Area -->
+                <div class="p-6 flex flex-col bg-white">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">OCR 轉譯結果（可直接編輯修正）</span>
+                        <span class="text-xs text-slate-400" x-show="currentPage?.duration_seconds" x-text="`辨識耗時: ${currentPage?.duration_seconds}s`"></span>
+                    </div>
+
+                    <!-- Error Alert if any -->
+                    <div x-show="currentPage?.status === 'failed'" class="p-3 mb-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start space-x-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4 text-red-500 shrink-0 mt-0.5"></i>
+                        <div class="flex-1" x-text="currentPage?.error_message"></div>
+                    </div>
+
+                    <textarea 
+                        x-model="currentPageText" 
+                        placeholder="OCR 內容將即時顯示於此..."
+                        class="flex-1 w-full p-4 text-sm font-mono border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 custom-scroll resize-none bg-slate-50/50 leading-relaxed"
+                    ></textarea>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- NEW: Re-OCR & Upgrade Jobs Queue Drawer -->
+    <div 
+        x-show="showQueueModal" 
+        class="fixed inset-0 z-50 overflow-hidden" 
+        style="display: none;"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+    >
+        <!-- Backdrop -->
+        <div 
+            class="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
+            @click="showQueueModal = false"
+        ></div>
+
+        <div class="fixed inset-y-0 right-0 max-w-full flex pl-8 sm:pl-12 pointer-events-none">
+            <div 
+                class="w-screen max-w-md sm:max-w-lg shadow-2xl border-l flex flex-col pointer-events-auto transition ease-in-out duration-300 transform reocr-drawer"
+                x-show="showQueueModal"
+                x-transition:enter="transform transition ease-in-out duration-300"
+                x-transition:enter-start="translate-x-full"
+                x-transition:enter-end="translate-x-0"
+                x-transition:leave="transform transition ease-in-out duration-200"
+                x-transition:leave-start="translate-x-0"
+                x-transition:leave-end="translate-x-full"
+                @click.stop
+            >
+                <!-- Drawer Header -->
+                <div class="p-4 sm:p-5 border-b flex flex-col gap-3 reocr-header">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 reocr-badge-upgrade">
+                                <i data-lucide="layers" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold flex items-center space-x-2">
+                                    <span>重新辨識與升級佇列</span>
+                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full reocr-badge-upgrade" x-text="`${reocrQueue.length} 項`"></span>
+                                </h3>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">每頁僅保留最新辨識成果，點擊項目自動前往校對並關閉佇列</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            <kbd class="text-[10px] font-mono px-1.5 py-0.5 rounded shadow-2xs hidden sm:inline">Esc 關閉</kbd>
+                            <button @click="showQueueModal = false" class="reocr-icon-btn cursor-pointer" title="關閉佇列 (Esc)">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filter Tabs & Batch Actions -->
+                    <div class="flex items-center justify-between pt-1 gap-2 flex-wrap">
+                        <div class="flex items-center space-x-1 p-0.5 rounded-lg text-xs shrink-0 reocr-filter-bar">
+                            <button 
+                                @click="reocrFilter = 'all'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                                :class="reocrFilter === 'all' ? 'reocr-filter-btn-active shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                全部 (<span x-text="reocrQueue.length"></span>)
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'processing'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition flex items-center space-x-1 cursor-pointer"
+                                :class="reocrFilter === 'processing' ? 'reocr-filter-btn-active reocr-filter-processing shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500" :class="{'animate-ping': activeReocrCount > 0}"></span>
+                                <span>執行中 (<span x-text="activeReocrCount"></span>)</span>
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'paused'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition flex items-center space-x-1 cursor-pointer"
+                                :class="reocrFilter === 'paused' ? 'reocr-filter-btn-active text-amber-600 shadow-xs' : 'reocr-filter-btn-inactive'"
+                                x-show="pausedReocrCount > 0"
+                            >
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                <span>已暫停 (<span x-text="pausedReocrCount"></span>)</span>
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'completed'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                                :class="reocrFilter === 'completed' ? 'reocr-filter-btn-active reocr-filter-completed shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                完成 (<span x-text="completedReocrCount"></span>)
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2 text-xs">
+                            <button 
+                                @click="clearCompletedReocrQueue()" 
+                                x-show="completedReocrCount > 0 || failedReocrCount > 0"
+                                class="text-[11px] text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition underline cursor-pointer"
+                                title="清除所有已完成與失敗的項目"
+                            >
+                                清除已完成
+                            </button>
+                            <button 
+                                @click="clearAllReocrQueue()" 
+                                x-show="reocrQueue.length > 0"
+                                class="text-[11px] text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium transition cursor-pointer"
+                                title="清空全部佇列"
+                            >
+                                全部清空
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drawer Content List -->
+                <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-2.5">
+                    <template x-for="job in filteredReocrQueue" :key="job.id">
+                        <div 
+                            class="p-3.5 rounded-xl border transition shadow-xs flex flex-col gap-2 hover:shadow-md cursor-pointer reocr-card"
+                            :class="{
+                                'reocr-card-processing': job.status === 'processing',
+                                'reocr-card-completed': job.status === 'completed',
+                                'reocr-card-failed': job.status === 'failed',
+                                'reocr-card-paused': job.status === 'paused'
+                            }"
+                            @click="goToReocrJob(job)"
+                        >
+                            <!-- Top: Status & Model -->
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                                    <!-- Status Pill -->
+                                    <template x-if="job.status === 'processing'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-processing">
+                                            <i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>
+                                            <span>轉譯中...</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'paused'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-paused">
+                                            <i data-lucide="pause-circle" class="w-3 h-3"></i>
+                                            <span>已暫停</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'completed'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-completed">
+                                            <i data-lucide="check" class="w-3 h-3"></i>
+                                            <span>已完成</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'failed'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-failed">
+                                            <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                                            <span>失敗</span>
+                                        </span>
+                                    </template>
+
+                                    <!-- Model Badge -->
+                                    <template x-if="job.isUpgrade">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border font-mono reocr-badge-upgrade">
+                                            <i data-lucide="sparkles" class="w-3 h-3"></i>
+                                            <span x-text="`升級: ${job.model}`"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="!job.isUpgrade">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border font-mono reocr-badge-standard">
+                                            <span x-text="job.model"></span>
+                                        </span>
+                                    </template>
+                                </div>
+
+                                <!-- Time / Duration -->
+                                <div class="text-[11px] text-slate-400 font-mono shrink-0">
+                                    <span x-text="job.formattedTime || ''"></span>
+                                    <template x-if="job.duration">
+                                        <span class="font-semibold text-slate-500 dark:text-slate-400" x-text="` (${job.duration}s)`"></span>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Middle: Task Filename and Page Num -->
+                            <div class="flex items-center justify-between text-xs pt-0.5">
+                                <div class="flex items-center space-x-1.5 truncate max-w-[260px] sm:max-w-xs">
+                                    <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 truncate" :title="job.taskFilename" x-text="job.taskFilename"></span>
+                                </div>
+                                <span class="px-2 py-0.5 rounded-md font-bold text-xs border shrink-0 reocr-badge-page" x-text="`第 ${job.pageNum} 頁`"></span>
+                            </div>
+
+                            <!-- Error info if failed or paused -->
+                            <template x-if="(job.status === 'failed' || job.status === 'paused') && job.error">
+                                <p class="text-[11px] p-2 rounded-lg border font-mono truncate" :class="job.status === 'paused' ? 'reocr-status-paused' : 'reocr-error-box'" :title="job.error" x-text="job.error"></p>
+                            </template>
+
+                            <!-- Bottom Action: Pause/Resume, Jump, Remove -->
+                            <div class="flex items-center justify-between pt-1 border-t border-slate-100/70 dark:border-slate-800/80">
+                                <div class="flex items-center space-x-1.5">
+                                    <!-- 暫停 / 繼續按鈕 -->
+                                    <template x-if="job.status === 'processing'">
+                                        <button 
+                                            @click.stop="pauseReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-pause"
+                                            title="暫停此項重新轉譯"
+                                        >
+                                            <i data-lucide="pause" class="w-3 h-3"></i>
+                                            <span>暫停</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="job.status === 'paused'">
+                                        <button 
+                                            @click.stop="resumeReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-resume"
+                                            title="繼續此項重新轉譯"
+                                        >
+                                            <i data-lucide="play" class="w-3 h-3"></i>
+                                            <span>繼續</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="job.status === 'failed'">
+                                        <button 
+                                            @click.stop="resumeReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-retry"
+                                            title="重試此項重新轉譯"
+                                        >
+                                            <i data-lucide="rotate-cw" class="w-3 h-3"></i>
+                                            <span>重試</span>
+                                        </button>
+                                    </template>
+                                    <span class="text-[11px] text-slate-400 hidden sm:inline" x-show="job.status === 'completed'">已完成</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <button 
+                                        @click.stop="goToReocrJob(job)" 
+                                        class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-jump"
+                                    >
+                                        <span>🔍 前往校對</span>
+                                    </button>
+                                    <button 
+                                        @click.stop="removeReocrJob(job.id)" 
+                                        class="p-1 rounded transition cursor-pointer reocr-btn-remove" 
+                                        title="從清單移除"
+                                    >
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Empty State -->
+                    <template x-if="filteredReocrQueue.length === 0">
+                        <div class="py-12 px-4 text-center flex flex-col items-center justify-center">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center mb-3 reocr-empty-icon">
+                                <i data-lucide="layers" class="w-6 h-6"></i>
+                            </div>
+                            <h4 class="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">重辨佇列中尚無紀錄</h4>
+                            <p class="text-xs text-slate-400 max-w-xs leading-relaxed">
+                                在下方校對區點選「重新辨識本頁」或「升級重新辨識」，系統將自動加入此佇列並在背景追蹤成果。
+                            </p>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Drawer Footer: Quick Key Hints -->
+                <div class="p-3.5 border-t text-[11px] flex flex-wrap items-center justify-between gap-2 reocr-footer">
+                    <div class="flex items-center space-x-3">
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+Q</kbd> / <kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Q</kbd> 開關佇列</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Esc</kbd> 關閉</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+R</kbd> 原模重辨</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Alt+U</kbd> 升級重辨</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Accounts Management -->
+    <div x-show="showAccountsModal" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-3xl w-full border border-slate-200 shadow-2xl p-6" @click.outside="showAccountsModal = false">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="key-round" class="w-5 h-5 text-blue-600"></i>
+                    <h3 class="text-base font-bold text-slate-800">Google 帳號與 API Key 管理池</h3>
+                </div>
+                <button @click="showAccountsModal = false" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Zero-cost Info Box -->
+            <div class="my-4 p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-start space-x-2.5">
+                <i data-lucide="info" class="w-4 h-4 text-blue-600 shrink-0 mt-0.5"></i>
+                <div class="leading-relaxed">
+                    <strong>如何達成 0 元費用？</strong> 請直接使用多個 Google 帳號分別登入 
+                    <a href="https://aistudio.google.com/" target="_blank" class="underline font-semibold hover:text-blue-900">Google AI Studio</a> 
+                    建立免費 API Key。在此處新增多組金鑰後，系統會自動分配請求，避開單一帳號 15 RPM 限制，且絕不觸發付費扣款。
+                </div>
+            </div>
+
+            <!-- Current Accounts Table -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden mb-6">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                        <tr>
+                            <th class="p-3">帳號備註</th>
+                            <th class="p-3">類型</th>
+                            <th class="p-3">金鑰識別</th>
+                            <th class="p-3">今日請求</th>
+                            <th class="p-3">狀態</th>
+                            <th class="p-3 text-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="acc in accounts" :key="acc.id">
+                            <tr class="hover:bg-slate-50/60 transition">
+                                <td class="p-3 font-medium text-slate-800" x-text="acc.name"></td>
+                                <td class="p-3 uppercase text-slate-500" x-text="acc.auth_type"></td>
+                                <td class="p-3 font-mono text-slate-600" x-text="acc.masked_key || 'OAuth Token'"></td>
+                                <td class="p-3 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
+                                <td class="p-3">
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                        :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                                        x-text="acc.is_active ? '啟用中' : '已停用'"></span>
+                                </td>
+                                <td class="p-3 text-right space-x-1.5">
+                                    <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px]">測試</button>
+                                    <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px]" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
+                                    <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px]">刪除</button>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="accounts.length === 0">
+                            <tr>
+                                <td colspan="6" class="p-6 text-center text-slate-400">目前尚無任何金鑰，請於下方新增</td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tabs: Add API Key, OAuth, or Web RPA -->
+            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div class="flex items-center space-x-3 mb-3 border-b border-slate-200 pb-2">
+                    <button @click="authTab = 'api_key'" class="text-xs font-bold pb-1 cursor-pointer" :class="authTab === 'api_key' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'">+ 新增 API Key</button>
+                    <button @click="authTab = 'oauth'" class="text-xs font-bold pb-1 cursor-pointer" :class="authTab === 'oauth' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'">+ 新增 Google OAuth 帳號</button>
+                    <button @click="authTab = 'web_rpa'; checkWebRpaStatus();" class="text-xs font-bold pb-1 flex items-center space-x-1.5 cursor-pointer ml-auto" :class="authTab === 'web_rpa' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-slate-500 hover:text-purple-600'">
+                        <span>🌐 網頁自動化 (Web RPA)</span>
+                        <span class="w-2 h-2 rounded-full" :class="webRpaStatus.logged_in ? 'bg-emerald-500' : 'bg-amber-400'"></span>
+                    </button>
+                </div>
+
+                <!-- Form: Add API Key -->
+                <form x-show="authTab === 'api_key'" @submit.prevent="submitApiKeyAccount()" class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">帳號備註名稱</label>
+                            <input type="text" x-model="newKey.name" required placeholder="例：我的帳號 1 (Gmail)" class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Google AI Studio API Key</label>
+                            <input type="password" x-model="newKey.api_key" required placeholder="AIzaSy..." class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer">確認新增金鑰</button>
+                    </div>
+                </form>
+
+                <!-- Form: Add OAuth Account -->
+                <form x-show="authTab === 'oauth'" @submit.prevent="submitOAuthAccount()" class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">帳號名稱</label>
+                            <input type="text" x-model="newOAuth.name" required placeholder="Google OAuth 帳號" class="w-full text-xs rounded-lg border border-slate-300 p-2">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Client ID</label>
+                            <input type="text" x-model="newOAuth.client_id" required placeholder="...apps.googleusercontent.com" class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Client Secret</label>
+                            <input type="password" x-model="newOAuth.client_secret" required placeholder="GOCSPX-..." class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Refresh Token</label>
+                        <input type="text" x-model="newOAuth.refresh_token" required placeholder="1//0..." class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer">儲存 OAuth 憑證</button>
+                    </div>
+                </form>
+
+                <!-- Panel: Web RPA Settings -->
+                <div x-show="authTab === 'web_rpa'" class="space-y-3">
+
+                    <!-- Login Status Card -->
+                    <div class="rounded-xl border p-3.5"
+                        :class="webRpaStatus.logged_in 
+                            ? 'border-emerald-200 bg-emerald-50/60' 
+                            : 'border-amber-200 bg-amber-50/60'">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-start space-x-2.5 min-w-0">
+                                <div class="p-1.5 rounded-lg shrink-0 mt-0.5"
+                                    :class="webRpaStatus.logged_in ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
+                                    <i :data-lucide="webRpaStatus.logged_in ? 'shield-check' : 'shield-alert'" class="w-4 h-4"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="text-xs font-bold text-slate-800">登入狀態</span>
+                                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1"
+                                            :class="webRpaStatus.logged_in 
+                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                                : 'bg-amber-100 text-amber-800 border border-amber-300'">
+                                            <span class="w-1.5 h-1.5 rounded-full"
+                                                :class="webRpaStatus.logged_in ? 'bg-emerald-500' : 'bg-amber-500'"></span>
+                                            <span x-text="webRpaStatus.logged_in ? '✅ Cookie 有效，就緒' : '⚠️ 尚未登入'"></span>
+                                        </span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-600 mt-1 leading-relaxed break-words"
+                                        x-text="webRpaStatus.message || '請完成下方登入流程以啟用 [Web] 模型。'"></p>
+                                </div>
+                            </div>
+                            <!-- Refresh status button -->
+                            <button type="button" @click="checkWebRpaStatus()" :disabled="webRpaStatus.loading"
+                                class="shrink-0 px-2 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 bg-white text-slate-600 text-xs transition flex items-center gap-1 cursor-pointer"
+                                title="刷新登入快取狀態">
+                                <i data-lucide="refresh-cw" class="w-3 h-3" :class="{'animate-spin': webRpaStatus.loading}"></i>
+                                <span class="hidden sm:inline">刷新</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Login Flow Steps -->
+                    <div class="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i data-lucide="key-round" class="w-3.5 h-3.5 text-purple-600"></i>
+                            <span class="text-xs font-bold text-purple-800">一次性登入設定流程</span>
+                        </div>
+
+                        <!-- Step 1 -->
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-purple-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-semibold text-slate-700 mb-1">開啟登入視窗，在瀏覽器中登入 Google 帳號</p>
+                                <p class="text-[11px] text-slate-500 leading-relaxed mb-2">
+                                    系統會用 Playwright 開啟一個可見的 Chrome 視窗（獨立 Profile），請在視窗中完成 Google 帳號登入。
+                                </p>
+                                <button type="button" @click="launchWebLogin()" :disabled="webRpaStatus.launching"
+                                    class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                    <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+                                    <span x-text="webRpaStatus.launching ? '正在開啟...' : '① 開啟登入視窗'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="flex justify-center text-purple-300">
+                            <i data-lucide="arrow-down" class="w-4 h-4"></i>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-semibold text-slate-700 mb-1">登入完成後，儲存登入狀態</p>
+                                <p class="text-[11px] text-slate-500 leading-relaxed mb-2">
+                                    在瀏覽器中確認已登入 Google AI Studio 後，點此按鈕提取並儲存 Session Cookies，視窗自動關閉。
+                                </p>
+                                <button type="button" @click="saveWebRpaState()" :disabled="webRpaStatus.saving"
+                                    class="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                    <i data-lucide="save" class="w-3.5 h-3.5" :class="{'animate-spin': webRpaStatus.saving}"></i>
+                                    <span x-text="webRpaStatus.saving ? '儲存中...' : '② 儲存登入狀態'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Verify button -->
+                        <div class="pt-1.5 border-t border-purple-100 flex items-center gap-2">
+                            <button type="button" @click="verifyWebRpa()" :disabled="webRpaStatus.verifying"
+                                class="px-3 py-1.5 rounded-lg border border-teal-300 bg-white hover:bg-teal-50 text-teal-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                <i data-lucide="shield-check" class="w-3.5 h-3.5" :class="{'animate-spin': webRpaStatus.verifying}"></i>
+                                <span x-text="webRpaStatus.verifying ? '驗證中 (headless)...' : '🔍 驗證 Session 有效性'"></span>
+                            </button>
+                            <span class="text-[11px] text-slate-400">用 headless 瀏覽器實際進入 AI Studio 確認</span>
+                        </div>
+                    </div>
+
+                    <!-- Config Form -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="flex items-center space-x-2 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
+                            <input type="checkbox" id="web_rpa_enabled" x-model="webRpaConfig.enabled"
+                                @change="saveWebRpaConfig()" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
+                            <label for="web_rpa_enabled" class="text-xs font-semibold text-slate-700 cursor-pointer">啟用 [Web] 模型選單</label>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">目標網頁服務</label>
+                            <select x-model="webRpaConfig.target_service" @change="saveWebRpaConfig()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer">
+                                <option value="gemini">Gemini 官方網頁 (免 GCP 專案·最穩定推薦)</option>
+                                <option value="aistudio">Google AI Studio (需 GCP 專案權限)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">單頁超時 (秒)</label>
+                            <input type="number" min="20" max="180" x-model="webRpaConfig.timeout_seconds"
+                                @change="saveWebRpaConfig()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Bottom: headless toggle + test -->
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-200">
+                        <label class="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer">
+                            <input type="checkbox" x-model="webRpaConfig.headless" @change="saveWebRpaConfig()"
+                                class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
+                            <span>背景靜默執行 (Headless 無頭模式)</span>
+                        </label>
+                        <button type="button" @click="testWebRpa()" :disabled="isTestingWebRpa"
+                            class="px-3 py-1.5 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold transition flex items-center gap-1 cursor-pointer disabled:opacity-60">
+                            <i data-lucide="flask-conical" class="w-3 h-3"></i>
+                            <span x-text="isTestingWebRpa ? '測試中 (最長90秒)...' : '🧪 測試 OCR 運作'"></span>
+                        </button>
+                    </div>
+
+                    <!-- Supported Models -->
+                    <div>
+                        <span class="text-[11px] font-semibold text-slate-500 block mb-1.5">已注入模型選單之 [Web] 模型：</span>
+                        <div class="flex flex-wrap gap-1.5">
+                            <template x-for="m in (webRpaConfig.supported_models || [])" :key="m">
+                                <span class="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-purple-100/80 text-purple-900 border border-purple-300">
+                                    🌐 [Web] <span x-text="m"></span>
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        function ocrApp() {
+            return {
+                currentTheme: localStorage.getItem('ocr_theme') || 'light',
+                pendingFiles: [],
+                allTasks: [],
+                isSubmitting: false,
+                formConfig: {
+                    model: 'gemini-2.5-flash',
+                    lang: 'traditional',
+                    direction: 'auto',
+                    column: 'auto',
+                    customPrompt: '',
+                    startPage: 1,
+                    endPage: 0
+                },
+                modelsList: {{ models | tojson }},
+                isLoadingModels: false,
+                accounts: [],
+                showAccountsModal: false,
+                showQueueModal: false,
+                reocrQueue: (function() {
+                    try {
+                        const raw = JSON.parse(localStorage.getItem('gasocr_reocr_queue') || '[]');
+                        const seen = new Set();
+                        return raw.filter(j => {
+                            const key = `${j.taskId}_${j.pageNum}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                        });
+                    } catch (e) {
+                        return [];
+                    }
+                })(),
+                reocrFilter: 'all',
+                toastMessage: '',
+                toastTimeout: null,
+                authTab: 'api_key',
+                newKey: { name: '', api_key: '' },
+                newOAuth: { name: '', client_id: '', client_secret: '', refresh_token: '' },
+                webRpaConfig: {
+                    enabled: true,
+                    target_service: 'aistudio',
+                    headless: true,
+                    timeout_seconds: 60,
+                    chrome_path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                    supported_models: ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-3-pro-preview']
+                },
+                webRpaStatus: {
+                    logged_in: false,
+                    loading: false,
+                    launching: false,
+                    saving: false,
+                    verifying: false,
+                    message: ''
+                },
+                isTestingWebRpa: false,
+                
+                // Active task state
+                currentTaskId: null,
+                currentTask: null,
+                pages: [],
+                selectedPageNum: 1,
+                currentPageText: '',
+                eventSource: null,
+                isRetryingPage: false,
+                isRetryingUpgrade: false,
+                upgradeModel: 'gemini-2.5-pro',
+
+                setTheme(theme) {
+                    this.currentTheme = theme;
+                    localStorage.setItem('ocr_theme', theme);
+                    document.documentElement.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+                    document.documentElement.classList.add('theme-' + theme);
+                    document.body.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+                    document.body.classList.add('theme-' + theme);
+                },
+
+                get activeAccountsCount() {
+                    return this.accounts.filter(a => a.is_active).length;
+                },
+
+                get activeReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'processing').length;
+                },
+
+                get completedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'completed').length;
+                },
+
+                get pausedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'paused').length;
+                },
+
+                get failedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'failed').length;
+                },
+
+                get filteredReocrQueue() {
+                    if (this.reocrFilter === 'processing') {
+                        return this.reocrQueue.filter(j => j.status === 'processing');
+                    }
+                    if (this.reocrFilter === 'paused') {
+                        return this.reocrQueue.filter(j => j.status === 'paused');
+                    }
+                    if (this.reocrFilter === 'completed') {
+                        return this.reocrQueue.filter(j => j.status === 'completed');
+                    }
+                    if (this.reocrFilter === 'failed') {
+                        return this.reocrQueue.filter(j => j.status === 'failed');
+                    }
+                    return this.reocrQueue;
+                },
+
+                get progressPercent() {
+                    if (!this.currentTask || !this.currentTask.total_pages) return 0;
+                    return Math.round(((this.currentTask.processed_pages || 0) / this.currentTask.total_pages) * 100);
+                },
+
+                get currentPage() {
+                    return this.pages.find(p => p.page_num === this.selectedPageNum) || null;
+                },
+
+                get isFirstPage() {
+                    if (!this.pages || this.pages.length === 0) return true;
+                    return this.selectedPageNum === this.pages[0].page_num;
+                },
+
+                get isLastPage() {
+                    if (!this.pages || this.pages.length === 0) return true;
+                    return this.selectedPageNum === this.pages[this.pages.length - 1].page_num;
+                },
+
+                initApp() {
+                    this.setTheme(this.currentTheme);
+                    this.loadAccounts();
+                    this.loadWebRpaConfig();
+                    this.loadTasks();
+                    // 頁面上線後先自動抓取/更新最新模型清單
+                    this.refreshModels(false);
+                    // 週期性檢查任務狀態 (2秒輪詢一次，讓批次多任務進行時進度條絲滑更新)
+                    setInterval(() => {
+                        if (this.allTasks.some(t => ['rendering', 'processing', 'pending'].includes(t.status))) {
+                            this.loadTasks();
+                        }
+                    }, 2000);
+                    // 週期性檢查重辨佇列中執行中任務的狀態
+                    setInterval(() => {
+                        if (this.activeReocrCount > 0) {
+                            this.checkActiveReocrJobs();
+                        }
+                    }, 2000);
+                    // 全域快速鍵監聽（佇列開關、校對翻頁、儲存、重辨）
+                    window.addEventListener('keydown', (e) => {
+                        this.handleKeyDown(e);
+                    });
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async refreshModels(manual = false) {
+                    this.isLoadingModels = true;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                    try {
+                        const res = await fetch(`/api/models?refresh=${manual}`);
+                        const data = await res.json();
+                        if (data.models && data.models.length > 0) {
+                            this.modelsList = data.models;
+                            if (!this.upgradeModel) {
+                                const pro = this.modelsList.find(m => (m.id || m) === 'gemini-2.5-pro');
+                                this.upgradeModel = pro ? (pro.id || pro) : (this.modelsList[0].id || this.modelsList[0]);
+                            }
+                            if (manual) {
+                                alert(data.message || `已成功載入 ${data.models.length} 個 Google AI Studio 模型！`);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('刷新模型清單失敗:', err);
+                        if (manual) alert('刷新模型清單失敗: ' + err);
+                    } finally {
+                        this.isLoadingModels = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                handleFilesSelect(event) {
+                    const files = Array.from(event.target.files);
+                    const validPdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+                    if (validPdfs.length > 0) {
+                        this.pendingFiles.push(...validPdfs);
+                    } else {
+                        alert('請選擇有效的 PDF 檔案！');
+                    }
+                    event.target.value = '';
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                handleFilesDrop(event) {
+                    const files = Array.from(event.dataTransfer.files);
+                    const validPdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+                    if (validPdfs.length > 0) {
+                        this.pendingFiles.push(...validPdfs);
+                    } else {
+                        alert('請拖曳有效的 PDF 檔案！');
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                removePendingFile(index) {
+                    this.pendingFiles.splice(index, 1);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                formatFileSize(bytes) {
+                    if (!bytes) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                },
+
+                async loadAccounts() {
+                    try {
+                        const res = await fetch('/api/accounts');
+                        const data = await res.json();
+                        this.accounts = data.accounts || [];
+                    } catch (err) {
+                        console.error('Failed to load accounts:', err);
+                    }
+                },
+
+                async loadTasks() {
+                    try {
+                        const res = await fetch('/api/tasks');
+                        const data = await res.json();
+                        this.allTasks = data.tasks || [];
+                        if (this.currentTaskId) {
+                            const match = this.allTasks.find(t => t.id === this.currentTaskId);
+                            if (match && this.currentTask) {
+                                this.currentTask.status = match.status;
+                                this.currentTask.total_pages = match.total_pages;
+                                this.currentTask.processed_pages = match.processed_pages;
+                                this.currentTask.model = match.model;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to load tasks:', err);
+                    }
+                },
+
+                openAccountsModal() {
+                    this.loadAccounts();
+                    this.loadWebRpaConfig();
+                    this.checkWebRpaStatus();
+                    this.showAccountsModal = true;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async submitApiKeyAccount() {
+                    if (!this.newKey.name || !this.newKey.api_key) return;
+                    try {
+                        const res = await fetch('/api/accounts/api-key', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newKey)
+                        });
+                        if (res.ok) {
+                            this.newKey = { name: '', api_key: '' };
+                            await this.loadAccounts();
+                            alert('API Key 新增成功！');
+                            this.refreshModels(false);
+                        }
+                    } catch (err) {
+                        alert('新增失敗: ' + err);
+                    }
+                },
+
+                async submitOAuthAccount() {
+                    try {
+                        const res = await fetch('/api/accounts/oauth', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newOAuth)
+                        });
+                        if (res.ok) {
+                            this.newOAuth = { name: '', client_id: '', client_secret: '', refresh_token: '' };
+                            await this.loadAccounts();
+                            alert('OAuth 帳號新增成功！');
+                            this.refreshModels(false);
+                        }
+                    } catch (err) {
+                        alert('新增失敗: ' + err);
+                    }
+                },
+
+                async toggleAccount(accId) {
+                    await fetch(`/api/accounts/${accId}/toggle`, { method: 'POST' });
+                    await this.loadAccounts();
+                },
+
+                async testAccount(accId) {
+                    const btnText = event.target;
+                    btnText.innerText = '測試中...';
+                    const res = await fetch(`/api/accounts/${accId}/test`, { method: 'POST' });
+                    const data = await res.json();
+                    alert(data.message);
+                    btnText.innerText = '測試';
+                },
+
+                async deleteAccount(accId) {
+                    if (!confirm('確定要刪除這組帳號嗎？')) return;
+                    await fetch(`/api/accounts/${accId}`, { method: 'DELETE' });
+                    await this.loadAccounts();
+                },
+
+                async loadWebRpaConfig() {
+                    try {
+                        const res = await fetch('/api/web-rpa/config');
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.config) {
+                                this.webRpaConfig = data.config;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('載入 Web RPA 設定失敗:', err);
+                    }
+                },
+
+                async saveWebRpaConfig() {
+                    try {
+                        const res = await fetch('/api/web-rpa/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.webRpaConfig)
+                        });
+                        if (res.ok) {
+                            await this.refreshModels(false);
+                            this.showToast('✅ 網頁自動化設定已儲存！');
+                        }
+                    } catch (err) {
+                        alert('儲存 Web RPA 設定失敗: ' + err);
+                    }
+                },
+
+                async launchWebLogin() {
+                    this.webRpaStatus.launching = true;
+                    this.showToast('🌐 正在啟動專屬登入視窗...');
+                    try {
+                        const target = this.webRpaConfig.target_service || 'aistudio';
+                        const res = await fetch(`/api/web-rpa/launch-login?service=${target}`, {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.status === 'ok') {
+                            this.showToast('🌐 登入視窗已開啟！');
+                            alert('已為您開啟專屬 Chrome 登入視窗！\n\n【操作步驟】\n1. 請在彈出的瀏覽器視窗中完成 Google 帳號登入。\n2. 登入完成並確認進入 AI Studio / Gemini 首頁後。\n3. 回到此處點選「② 儲存登入狀態」即可！');
+                        } else {
+                            alert('啟動登入視窗失敗: ' + (data.detail || data.message || '未知錯誤'));
+                        }
+                    } catch (err) {
+                        alert('啟動視窗網路錯誤: ' + err);
+                    } finally {
+                        this.webRpaStatus.launching = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async saveWebRpaState() {
+                    this.webRpaStatus.saving = true;
+                    this.showToast('💾 正在提取並儲存登入憑證...');
+                    try {
+                        const res = await fetch('/api/web-rpa/save-state', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.showToast('✅ 登入狀態儲存成功！');
+                            alert('🎉 登入狀態儲存成功！\n\n' + data.message + '\n\n現在您可以在批次任務或重新辨識下拉選單中使用 [Web] 模型了！');
+                            await this.checkWebRpaStatus();
+                        } else {
+                            alert('⚠️ 儲存登入狀態失敗: ' + (data.message || '未知錯誤') + '\n\n請確認：\n1. 已在瀏覽器視窗完成 Google 登入\n2. 瀏覽器視窗未被提前手動關閉');
+                        }
+                    } catch (err) {
+                        alert('儲存請求失敗: ' + err);
+                    } finally {
+                        this.webRpaStatus.saving = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async verifyWebRpa() {
+                    this.webRpaStatus.verifying = true;
+                    this.showToast('🔍 正在以無頭瀏覽器驗證 Session 有效性...');
+                    try {
+                        const res = await fetch('/api/web-rpa/verify', { method: 'POST' });
+                        const data = await res.json();
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || (data.logged_in ? '✅ 登入驗證成功' : '⚠️ 登入已失效');
+                        if (data.logged_in) {
+                            alert('✅ 驗證成功！Session 運作正常，可直接進行 [Web] OCR。');
+                        } else {
+                            alert('⚠️ 驗證未通過: ' + (data.message || '無法連線至 AI Studio') + '\n\n請點選「① 開啟登入視窗」重新登入。');
+                        }
+                    } catch (err) {
+                        alert('驗證請求異常: ' + err);
+                    } finally {
+                        this.webRpaStatus.verifying = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async checkWebRpaStatus() {
+                    this.webRpaStatus.loading = true;
+                    try {
+                        const res = await fetch('/api/web-rpa/status');
+                        const data = await res.json();
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || (data.logged_in ? '✅ 已連線 Google 帳號' : '尚未登入');
+                    } catch (err) {
+                        this.webRpaStatus.logged_in = false;
+                        this.webRpaStatus.message = '狀態檢測異常: ' + err;
+                    } finally {
+                        this.webRpaStatus.loading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async testWebRpa() {
+                    if (this.isTestingWebRpa) return;
+                    this.isTestingWebRpa = true;
+                    this.showToast('🧪 正在向網頁端發送測試 OCR 請求，請稍候...');
+                    try {
+                        const res = await fetch('/api/web-rpa/test', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok && data.status === 'ok') {
+                            alert('🎉 網頁自動化 OCR 測試成功！\n回傳內容:\n' + data.message);
+                        } else {
+                            alert('⚠️ 測試未完全成功: ' + (data.message || '未知原因') + '\n\n提示：請確認已完成「① 開啟瀏覽器登入」＋「② 同步登入狀態」兩個步驟。');
+                        }
+                    } catch (err) {
+                        alert('測試請求失敗: ' + err);
+                    } finally {
+                        this.isTestingWebRpa = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async startBatchOcrTask() {
+                    if (this.pendingFiles.length === 0) return;
+                    this.isSubmitting = true;
+
+                    const formData = new FormData();
+                    for (const f of this.pendingFiles) {
+                        formData.append('files', f);
+                    }
+                    formData.append('model', this.formConfig.model);
+                    formData.append('lang', this.formConfig.lang);
+                    formData.append('direction', this.formConfig.direction);
+                    formData.append('column', this.formConfig.column);
+                    formData.append('custom_prompt', this.formConfig.customPrompt);
+                    formData.append('start_page', this.formConfig.startPage || 1);
+                    formData.append('end_page', this.formConfig.endPage || 0);
+
+                    try {
+                        const res = await fetch('/api/tasks', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            this.pendingFiles = [];
+                            await this.loadTasks();
+                            if (data.task_id) {
+                                const firstTask = this.allTasks.find(t => t.id === data.task_id);
+                                if (firstTask) {
+                                    this.inspectTask(firstTask);
+                                }
+                            }
+                            alert(`已成功排入 ${data.count} 個檔案進行批次 OCR 轉譯！`);
+                        } else {
+                            alert('啟動任務失敗: ' + (data.detail || '未知原因'));
+                        }
+                    } catch (err) {
+                        alert('送出任務錯誤: ' + err);
+                    } finally {
+                        this.isSubmitting = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                inspectTask(task) {
+                    // 立即關閉先前的 SSE 連線，防止背景舊任務事件污染當前校對任務
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    this.currentTaskId = task.id;
+                    this.currentTask = { ...task };
+                    this.selectedPageNum = null;
+                    this.pollTaskDetail();
+                    if (['processing', 'rendering', 'pending'].includes(task.status)) {
+                        this.listenTaskEvents(task.id);
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async toggleTaskPause(task) {
+                    if (!task) return;
+                    const isResuming = ['paused', 'failed'].includes(task.status);
+                    const action = isResuming ? 'resume' : 'pause';
+                    const fetchOpts = { method: 'POST' };
+                    if (isResuming && task.model) {
+                        fetchOpts.headers = { 'Content-Type': 'application/json' };
+                        fetchOpts.body = JSON.stringify({ model: task.model });
+                    }
+                    try {
+                        const res = await fetch(`/api/tasks/${task.id}/${action}`, fetchOpts);
+                        if (res.ok) {
+                            const data = await res.json();
+                            task.status = data.task_status;
+                            if (data.model) task.model = data.model;
+
+                            const row = this.allTasks.find(t => t.id === task.id);
+                            if (row) {
+                                row.status = data.task_status;
+                                if (data.model) row.model = data.model;
+                            }
+
+                            if (this.currentTask && this.currentTask.id === task.id) {
+                                this.currentTask.status = data.task_status;
+                                if (data.model) this.currentTask.model = data.model;
+                                if (action === 'resume') {
+                                    this.listenTaskEvents(task.id);
+                                } else if (action === 'pause') {
+                                    if (this.eventSource) {
+                                        this.eventSource.close();
+                                        this.eventSource = null;
+                                    }
+                                }
+                            }
+                            await this.loadTasks();
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert(`操作失敗: ${errData.detail || res.statusText}`);
+                        }
+                    } catch (err) {
+                        alert(`操作失敗: ${err}`);
+                    }
+                },
+
+                async changeTaskModel(task) {
+                    if (!task || !task.model) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${task.id}/model`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model: task.model })
+                        });
+                        if (res.ok) {
+                            if (this.currentTask && this.currentTask.id === task.id) {
+                                this.currentTask.model = task.model;
+                            }
+                            const match = this.allTasks.find(t => t.id === task.id);
+                            if (match) match.model = task.model;
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            console.error('更新模型失敗:', errData);
+                        }
+                    } catch (err) {
+                        console.error('更新任務模型網路錯誤:', err);
+                    }
+                },
+
+                async deleteTask(taskId) {
+                    if (!confirm('確定要刪除此轉譯任務與相關檔案嗎？')) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            if (this.currentTaskId === taskId) {
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                                this.currentTaskId = null;
+                                this.currentTask = null;
+                                this.pages = [];
+                                this.selectedPageNum = null;
+                            }
+                            await this.loadTasks();
+                        }
+                    } catch (err) {
+                        alert('刪除失敗: ' + err);
+                    }
+                },
+
+                downloadTaskExport(taskId, fmt) {
+                    window.open(`/api/tasks/${taskId}/download/${fmt}`, '_blank');
+                },
+
+                async pollTaskDetail() {
+                    if (!this.currentTaskId) return;
+                    const reqTaskId = this.currentTaskId;
+                    try {
+                        const res = await fetch(`/api/tasks/${reqTaskId}`);
+                        const data = await res.json();
+                        // 確保返回的結果依然是當前選取的任務，防止異步競態
+                        if (this.currentTaskId === reqTaskId && data.task) {
+                            this.currentTask = data.task;
+                            this.pages = data.pages || [];
+                            if (this.pages.length > 0) {
+                                if (!this.selectedPageNum || !this.pages.some(p => p.page_num === this.selectedPageNum)) {
+                                    this.selectedPageNum = this.pages[0].page_num;
+                                }
+                            } else {
+                                this.selectedPageNum = null;
+                            }
+                            if (this.currentPage) {
+                                this.currentPageText = this.currentPage.ocr_text || '';
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to fetch task detail:', err);
+                    }
+                },
+
+                listenTaskEvents(taskId) {
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    this.eventSource = new EventSource(`/api/tasks/${taskId}/events`);
+                    this.eventSource.onmessage = async (event) => {
+                        try {
+                            const payload = JSON.parse(event.data);
+                            // 1. 精準更新任務清單中對應的 task 項目
+                            const targetTask = this.allTasks.find(t => t.id === payload.task_id);
+                            if (targetTask) {
+                                targetTask.status = payload.status;
+                                targetTask.total_pages = payload.total_pages;
+                                targetTask.processed_pages = payload.processed_pages;
+                            }
+
+                            // 2. 只有當前檢視/校對的任務 ID 與事件的 task_id 一致時，才更新校對區塊與重新拉取頁面細節
+                            if (this.currentTaskId === payload.task_id && this.currentTask) {
+                                this.currentTask.status = payload.status;
+                                this.currentTask.total_pages = payload.total_pages;
+                                this.currentTask.processed_pages = payload.processed_pages;
+                                await this.pollTaskDetail();
+                            }
+
+                            // 3. 同步更新重新辨識佇列中屬於此任務的單頁狀態
+                            if (payload.pages && Array.isArray(payload.pages)) {
+                                for (const p of payload.pages) {
+                                    const matchedJob = this.reocrQueue.find(j => j.taskId === payload.task_id && j.pageNum === p.page_num && j.status === 'processing');
+                                    if (matchedJob) {
+                                        if (p.status === 'completed') {
+                                            matchedJob.status = 'completed';
+                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                            if (p.used_model) matchedJob.model = p.used_model;
+                                            this.saveReocrQueue();
+                                            this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
+                                        } else if (p.status === 'failed') {
+                                            matchedJob.status = 'failed';
+                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                            matchedJob.error = p.error_message || '辨識失敗';
+                                            this.saveReocrQueue();
+                                            this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
+                                        } else if (p.status === 'paused') {
+                                            matchedJob.status = 'paused';
+                                            matchedJob.error = '已手動暫停';
+                                            this.saveReocrQueue();
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. 若該任務已結束或暫停，且目前無任何單頁在 processing，關閉此連線
+                            const hasProcessingPage = payload.pages && payload.pages.some(p => p.status === 'processing');
+                            if (['completed', 'failed', 'paused'].includes(payload.status) && !hasProcessingPage) {
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('SSE onmessage error:', err);
+                        }
+                    };
+                    this.eventSource.onerror = () => {
+                        if (this.eventSource) {
+                            this.eventSource.close();
+                            this.eventSource = null;
+                        }
+                    };
+                },
+
+                prevPage() {
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+                    const currentIndex = this.pages.findIndex(p => p.page_num === this.selectedPageNum);
+                    if (currentIndex > 0) {
+                        this.selectPage(this.pages[currentIndex - 1].page_num);
+                    }
+                },
+
+                nextPage() {
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+                    const currentIndex = this.pages.findIndex(p => p.page_num === this.selectedPageNum);
+                    if (currentIndex !== -1 && currentIndex < this.pages.length - 1) {
+                        this.selectPage(this.pages[currentIndex + 1].page_num);
+                    }
+                },
+
+                handleKeyDown(e) {
+                    const target = e.target;
+                    const isEditing = target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT');
+
+                    // 1. Esc 關閉佇列或帳號彈窗
+                    if (e.key === 'Escape') {
+                        if (this.showQueueModal) {
+                            e.preventDefault();
+                            this.showQueueModal = false;
+                            return;
+                        }
+                        if (this.showAccountsModal) {
+                            e.preventDefault();
+                            this.showAccountsModal = false;
+                            return;
+                        }
+                    }
+
+                    // 2. Alt + Q 或非文字輸入焦點下的 Q: 開關重辨佇列
+                    if ((e.altKey && e.key.toLowerCase() === 'q') || (!isEditing && !e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'q')) {
+                        e.preventDefault();
+                        this.toggleQueueModal();
+                        return;
+                    }
+
+                    // 3. 只有在校對狀態下（已開啟任務且有頁面）才作用的校對快捷鍵
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+
+                    // 支援 Ctrl+S / Cmd+S 快速儲存
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                        if (this.selectedPageNum) {
+                            e.preventDefault();
+                            this.saveCurrentPageText();
+                            return;
+                        }
+                    }
+
+                    // 支援 Alt + R: 原模型重新辨識本頁
+                    if (e.altKey && e.key.toLowerCase() === 'r') {
+                        e.preventDefault();
+                        this.retryCurrentPage();
+                        return;
+                    }
+
+                    // 支援 Alt + U: 升級重新辨識本頁
+                    if (e.altKey && e.key.toLowerCase() === 'u') {
+                        e.preventDefault();
+                        this.retryWithUpgradeModel();
+                        return;
+                    }
+
+                    // 支援 Alt + P: 暫停 / 繼續當前頁面轉譯
+                    if (e.altKey && e.key.toLowerCase() === 'p') {
+                        e.preventDefault();
+                        if (this.currentPage?.status === 'processing') {
+                            this.pauseCurrentPage();
+                        } else if (this.currentPage?.status === 'paused') {
+                            this.retryCurrentPage();
+                        }
+                        return;
+                    }
+
+                    // 頁面翻頁快捷鍵
+                    const isPrevKey = (
+                        (e.altKey && (e.key === 'ArrowLeft' || e.key === '[')) ||
+                        (!isEditing && (e.key === 'ArrowLeft' || e.key === '[')) ||
+                        e.key === 'PageUp'
+                    );
+
+                    const isNextKey = (
+                        (e.altKey && (e.key === 'ArrowRight' || e.key === ']')) ||
+                        (!isEditing && (e.key === 'ArrowRight' || e.key === ']')) ||
+                        e.key === 'PageDown'
+                    );
+
+                    if (isPrevKey) {
+                        e.preventDefault();
+                        this.prevPage();
+                    } else if (isNextKey) {
+                        e.preventDefault();
+                        this.nextPage();
+                    }
+                },
+
+                showToast(msg) {
+                    this.toastMessage = msg;
+                    if (this.toastTimeout) clearTimeout(this.toastTimeout);
+                    this.toastTimeout = setTimeout(() => {
+                        this.toastMessage = '';
+                    }, 3500);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                saveReocrQueue() {
+                    try {
+                        const seen = new Set();
+                        this.reocrQueue = this.reocrQueue.filter(j => {
+                            const key = `${j.taskId}_${j.pageNum}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                        });
+                        localStorage.setItem('gasocr_reocr_queue', JSON.stringify(this.reocrQueue.slice(0, 50)));
+                    } catch (e) {
+                        console.error('Failed to save reocrQueue:', e);
+                    }
+                },
+
+                clearCompletedReocrQueue() {
+                    this.reocrQueue = this.reocrQueue.filter(j => j.status === 'processing' || j.status === 'paused');
+                    this.saveReocrQueue();
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                clearAllReocrQueue() {
+                    if (this.reocrQueue.length === 0) return;
+                    if (confirm('確定要清空所有重新辨識紀錄嗎？')) {
+                        this.reocrQueue = [];
+                        this.saveReocrQueue();
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                removeReocrJob(jobId) {
+                    this.reocrQueue = this.reocrQueue.filter(j => j.id !== jobId);
+                    this.saveReocrQueue();
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                toggleQueueModal() {
+                    this.showQueueModal = !this.showQueueModal;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async goToReocrJob(job) {
+                    if (!job || !job.taskId) return;
+                    if (this.currentTaskId !== job.taskId) {
+                        let targetTask = this.allTasks.find(t => t.id === job.taskId);
+                        if (!targetTask) {
+                            await this.loadTasks();
+                            targetTask = this.allTasks.find(t => t.id === job.taskId);
+                        }
+                        if (targetTask) {
+                            await this.inspectTask(targetTask);
+                        } else {
+                            this.currentTaskId = job.taskId;
+                            await this.pollTaskDetail();
+                        }
+                    }
+                    if (job.pageNum) {
+                        this.selectPage(job.pageNum);
+                    }
+                    // 點選前往校對本頁之後，自動關閉 重新辨識UI
+                    this.showQueueModal = false;
+                    this.$nextTick(() => {
+                        const section = document.getElementById('proofread-section');
+                        if (section) {
+                            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                        lucide.createIcons();
+                    });
+                },
+
+                async checkActiveReocrJobs() {
+                    const activeJobs = this.reocrQueue.filter(j => j.status === 'processing');
+                    if (activeJobs.length === 0) return;
+
+                    const taskIds = [...new Set(activeJobs.map(j => j.taskId))];
+                    for (const tid of taskIds) {
+                        try {
+                            const res = await fetch(`/api/tasks/${tid}`);
+                            if (!res.ok) continue;
+                            const data = await res.json();
+                            const pages = data.pages || [];
+                            for (const page of pages) {
+                                const matchedJob = this.reocrQueue.find(j => j.taskId === tid && j.pageNum === page.page_num && j.status === 'processing');
+                                if (matchedJob) {
+                                    if (page.status === 'completed') {
+                                        matchedJob.status = 'completed';
+                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                        if (page.used_model) matchedJob.model = page.used_model;
+                                        this.saveReocrQueue();
+                                        this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'completed';
+                                                currP.ocr_text = page.ocr_text;
+                                                currP.used_model = page.used_model;
+                                                currP.duration_seconds = page.duration_seconds;
+                                                if (this.selectedPageNum === page.page_num) {
+                                                    this.currentPageText = page.ocr_text || '';
+                                                }
+                                            }
+                                        }
+                                    } else if (page.status === 'failed') {
+                                        matchedJob.status = 'failed';
+                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                        matchedJob.error = page.error_message || '辨識失敗';
+                                        this.saveReocrQueue();
+                                        this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'failed';
+                                                currP.error_message = page.error_message;
+                                            }
+                                        }
+                                    } else if (page.status === 'paused') {
+                                        matchedJob.status = 'paused';
+                                        matchedJob.error = page.error_message || '已手動暫停';
+                                        this.saveReocrQueue();
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'paused';
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Error polling reocr jobs for task', tid, err);
+                        }
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                selectPage(pageNum) {
+                    this.selectedPageNum = pageNum;
+                    if (this.currentPage) {
+                        this.currentPageText = this.currentPage.ocr_text || '';
+                    }
+                    this.$nextTick(() => {
+                        lucide.createIcons();
+                        // 選取按鈕自動平滑滾動至可見區域
+                        const activeBtn = document.querySelector(`[data-page-btn="${pageNum}"]`);
+                        if (activeBtn) {
+                            activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        }
+                    });
+                },
+
+                async saveCurrentPageText() {
+                    if (!this.currentTaskId || !this.selectedPageNum) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${this.currentTaskId}/pages/${this.selectedPageNum}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: this.currentPageText })
+                        });
+                        if (res.ok) {
+                            if (this.currentPage) {
+                                this.currentPage.ocr_text = this.currentPageText;
+                            }
+                            alert(`第 ${this.selectedPageNum} 頁修改儲存成功！`);
+                        }
+                    } catch (err) {
+                        alert('儲存失敗: ' + err);
+                    }
+                },
+
+                async retryCurrentPage(modelOverride = null) {
+                    if (!this.currentTaskId || !this.selectedPageNum || this.isRetryingPage) return;
+                    this.isRetryingPage = true;
+                    this.isRetryingUpgrade = !!modelOverride;
+                    if (this.currentPage) {
+                        this.currentPage.status = 'processing';
+                    }
+
+                    const pageNum = this.selectedPageNum;
+                    const taskId = this.currentTaskId;
+                    const taskFilename = (this.currentTask && this.currentTask.filename) || '未命名任務';
+                    const targetModel = modelOverride || this.currentPage?.used_model || this.currentTask?.model || 'gemini-2.5-flash';
+                    const isUpgrade = !!modelOverride;
+
+                    // 1. 登記至重辨佇列：對每一頁只保留最新結果的一個 item
+                    this.reocrQueue = this.reocrQueue.filter(j => !(j.taskId === taskId && j.pageNum === pageNum));
+                    const newJob = {
+                        id: 'reocr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                        taskId: taskId,
+                        taskFilename: taskFilename,
+                        pageNum: pageNum,
+                        model: targetModel,
+                        isUpgrade: isUpgrade,
+                        status: 'processing',
+                        startedAt: Date.now(),
+                        formattedTime: new Date().toLocaleTimeString(),
+                        duration: null,
+                        error: null
+                    };
+                    this.reocrQueue.unshift(newJob);
+                    this.saveReocrQueue();
+
+                    const toastMsg = isUpgrade 
+                        ? `✨ 已啟動「升級重新辨識」：第 ${pageNum} 頁 (模型: ${targetModel})` 
+                        : `⚡ 已啟動重新辨識：第 ${pageNum} 頁 (模型: ${targetModel})`;
+                    this.showToast(toastMsg);
+
+                    const payload = modelOverride ? { model: modelOverride } : {};
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/retry`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            // 直接執行重新轉譯，不跳出 message 彈窗
+                            this.listenTaskEvents(taskId);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            console.error('重新轉譯失敗:', errData);
+                            newJob.status = 'failed';
+                            newJob.error = errData.detail || '發起重試失敗';
+                            this.saveReocrQueue();
+                            if (this.currentPage) {
+                                this.currentPage.status = 'failed';
+                            }
+                        }
+                    } catch (err) {
+                        console.error('重新轉譯網路錯誤:', err);
+                        newJob.status = 'failed';
+                        newJob.error = String(err);
+                        this.saveReocrQueue();
+                        if (this.currentPage) {
+                            this.currentPage.status = 'failed';
+                        }
+                    } finally {
+                        this.isRetryingPage = false;
+                        this.isRetryingUpgrade = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                retryWithUpgradeModel() {
+                    const target = this.upgradeModel || (this.currentTask ? this.currentTask.model : 'gemini-2.5-pro');
+                    this.retryCurrentPage(target);
+                },
+
+                async pauseCurrentPage() {
+                    if (!this.currentTaskId || !this.selectedPageNum) return;
+                    const taskId = this.currentTaskId;
+                    const pageNum = this.selectedPageNum;
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/pause`, { method: 'POST' });
+                        if (res.ok) {
+                            if (this.currentPage) {
+                                this.currentPage.status = 'paused';
+                            }
+                            const matchedJob = this.reocrQueue.find(j => j.taskId === taskId && j.pageNum === pageNum);
+                            if (matchedJob) {
+                                matchedJob.status = 'paused';
+                                matchedJob.error = '已手動暫停';
+                                this.saveReocrQueue();
+                            }
+                            this.showToast(`⏸️ 第 ${pageNum} 頁轉譯已暫停`);
+                        }
+                    } catch (err) {
+                        console.error('暫停單頁失敗:', err);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async pauseReocrJob(job) {
+                    if (!job || !job.taskId || !job.pageNum) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${job.taskId}/pages/${job.pageNum}/pause`, { method: 'POST' });
+                        if (res.ok) {
+                            job.status = 'paused';
+                            job.error = '已手動暫停';
+                            this.saveReocrQueue();
+                            if (this.currentTaskId === job.taskId) {
+                                const p = this.pages.find(page => page.page_num === job.pageNum);
+                                if (p) p.status = 'paused';
+                            }
+                            this.showToast(`⏸️ [${job.taskFilename}] 第 ${job.pageNum} 頁已暫停`);
+                        }
+                    } catch (err) {
+                        console.error('暫停重辨任務失敗:', err);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async resumeReocrJob(job) {
+                    if (!job || !job.taskId || !job.pageNum) return;
+                    try {
+                        const payload = job.model ? { model: job.model } : {};
+                        const res = await fetch(`/api/tasks/${job.taskId}/pages/${job.pageNum}/resume`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            job.status = 'processing';
+                            job.error = null;
+                            job.startedAt = Date.now();
+                            this.saveReocrQueue();
+                            if (this.currentTaskId === job.taskId) {
+                                const p = this.pages.find(page => page.page_num === job.pageNum);
+                                if (p) p.status = 'processing';
+                            }
+                            this.listenTaskEvents(job.taskId);
+                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已繼續轉譯`);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            job.status = 'failed';
+                            job.error = errData.detail || '繼續轉譯失敗';
+                            this.saveReocrQueue();
+                        }
+                    } catch (err) {
+                        console.error('繼續重辨任務失敗:', err);
+                        job.status = 'failed';
+                        job.error = String(err);
+                        this.saveReocrQueue();
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                downloadExport(fmt) {
+                    if (!this.currentTaskId) return;
+                    window.open(`/api/tasks/${this.currentTaskId}/download/${fmt}`, '_blank');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
