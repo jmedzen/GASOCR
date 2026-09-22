@@ -86,7 +86,7 @@ async def test_fastapi_endpoints():
             ("files", ("batch_doc_2.pdf", test_pdf_content, "application/pdf")),
         ]
         data = {
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash",
             "lang": "traditional",
             "direction": "auto",
             "column": "auto",

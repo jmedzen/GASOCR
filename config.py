@@ -1,6 +1,11 @@
 import os
 from pathlib import Path
 
+# Application & Version Control
+APP_NAME = "GASOCR"
+APP_VERSION = "1.0.0"
+BUILD_NUMBER = "Build 002"
+
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"

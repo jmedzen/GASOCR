@@ -238,12 +238,24 @@ async def process_task_pipeline(task_id: str):
 
 # --- Web UI Routes ---
 
+@app.get("/api/version")
+async def get_version():
+    """取得當前應用程式版本與建置號"""
+    return {
+        "app_name": config.APP_NAME,
+        "version": config.APP_VERSION,
+        "build": config.BUILD_NUMBER,
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
+            "app_name": config.APP_NAME,
+            "app_version": config.APP_VERSION,
+            "build_number": config.BUILD_NUMBER,
             "models": get_combined_models(),
             "languages": config.LANGUAGE_OPTIONS,
             "directions": config.DIRECTION_OPTIONS,
