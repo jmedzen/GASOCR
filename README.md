@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-004-indigo?style=for-the-badge" alt="Build 004" />
+  <img src="https://img.shields.io/badge/Build-005-indigo?style=for-the-badge" alt="Build 005" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
   <img src="https://img.shields.io/badge/Cost-Strict%200%20Free%20Tier-success?style=for-the-badge" alt="Zero Cost" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python" alt="Python" />

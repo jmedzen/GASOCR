@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 004') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 005') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -815,7 +815,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 004') }}
+                            {{ build_number | default('Build 005') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -940,7 +940,7 @@
                                 </div>
                             </div>
                             <div class="max-h-[160px] overflow-y-auto custom-scroll space-y-1.5 pr-1">
-                                <template x-for="(item, idx) in pendingFiles" :key="idx">
+                                <template x-for="(item, idx) in pendingFiles" :key="item.id || idx">
                                     <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs hover:border-slate-300">
                                         <div class="flex items-center space-x-2 truncate mr-2">
                                             <i data-lucide="file-text" class="w-4 h-4 text-emerald-600 shrink-0"></i>
@@ -954,6 +954,11 @@
                                             <template x-if="!item.isCheckingHash && item.isCached">
                                                 <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold flex items-center space-x-1 shrink-0" title="此檔案在伺服器端已有快取，按下轉譯時將秒傳免除上傳！">
                                                     <span>⚡ 已快取 (秒傳免上傳)</span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!item.isCheckingHash && !item.isCached">
+                                                <span class="text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 flex items-center space-x-1 shrink-0" title="伺服器端無快取，按下轉譯時將自動上傳">
+                                                    <span>待上傳</span>
                                                 </span>
                                             </template>
                                         </div>
@@ -1511,7 +1516,7 @@
                     <!-- 當前辨識模型標記 -->
                     <span class="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 shrink-0" x-show="currentPage?.used_model">
                         <span>辨識模型: </span>
-                        <strong class="font-mono text-blue-600" x-text="currentPage.used_model"></strong>
+                        <strong class="font-mono text-blue-600" x-text="currentPage?.used_model || ''"></strong>
                     </span>
 
                     <!-- 原模型重新辨識按鈕 -->
@@ -1662,7 +1667,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 004') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 005') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -2643,7 +2648,9 @@
                         return;
                     }
                     for (const f of validPdfs) {
+                        const fileId = 'f_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now();
                         const item = {
+                            id: fileId,
                             file: f,
                             name: f.name,
                             size: f.size,
@@ -2656,34 +2663,51 @@
 
                         // 非同步計算 SHA-256 並向伺服器檢查是否已有快取（免上傳）
                         (async () => {
+                            let calculatedHash = '';
+                            let isCached = false;
+                            let cachedPath = '';
                             try {
-                                const arrayBuffer = await f.arrayBuffer();
-                                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-                                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                                const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                                if (window.crypto && window.crypto.subtle) {
+                                    const arrayBuffer = await f.arrayBuffer();
+                                    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                                    calculatedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                                }
                                 
-                                item.hash = hash;
-                                const res = await fetch('/api/files/check-hash', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ hash: hash, filename: f.name, size: f.size })
-                                });
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    if (data.exists) {
-                                        item.isCached = true;
-                                        item.cachedPath = data.filepath;
+                                if (calculatedHash) {
+                                    const res = await fetch('/api/files/check-hash', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ hash: calculatedHash, filename: f.name, size: f.size })
+                                    });
+                                    if (res.ok) {
+                                        const data = await res.json();
+                                        if (data.exists) {
+                                            isCached = true;
+                                            cachedPath = data.filepath;
+                                        }
                                     }
                                 }
                             } catch (e) {
-                                console.error('Hash check error:', e);
+                                console.error('Hash check error for ' + f.name + ':', e);
                             } finally {
-                                item.isCheckingHash = false;
-                                this.$nextTick(() => { lucide.createIcons(); });
+                                // 核心修正：直接定位 Alpine 響應式陣列中的 Proxy 物件進行更新
+                                const target = this.pendingFiles.find(p => p.id === fileId);
+                                if (target) {
+                                    target.hash = calculatedHash;
+                                    target.isCached = isCached;
+                                    target.cachedPath = cachedPath;
+                                    target.isCheckingHash = false;
+                                }
+                                // 重新賦值 pendingFiles，確保觸發 Alpine 深度 DOM 重新計算與渲染
+                                this.pendingFiles = [...this.pendingFiles];
+                                this.$nextTick(() => { 
+                                    if (window.lucide) lucide.createIcons(); 
+                                });
                             }
                         })();
                     }
-                    this.$nextTick(() => { lucide.createIcons(); });
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
                 },
 
                 handleFilesSelect(event) {
@@ -2699,7 +2723,8 @@
 
                 removePendingFile(index) {
                     this.pendingFiles.splice(index, 1);
-                    this.$nextTick(() => { lucide.createIcons(); });
+                    this.pendingFiles = [...this.pendingFiles];
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
                 },
 
                 formatFileSize(bytes) {
