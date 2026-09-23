@@ -1,0 +1,25 @@
+services:
+  gasocr:
+    image: ghcr.io/jmedzen/gasocr:latest
+    # 若需本地自行構建，可取消註解下行：
+    # build: .
+    container_name: gasocr
+    restart: unless-stopped
+    ports:
+      - "8610:8610"
+    volumes:
+      # 資料持久化掛載：保存帳號金鑰、SQLite 資料庫、上傳 PDF 與匯出成品
+      - ./data:/app/data
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8610
+      - DATA_DIR=/app/data
+    # 允許容器透過 host.docker.internal 連線至宿主機執行的 Chrome CDP (Port 9222)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8610/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
