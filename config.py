@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 004"
+BUILD_NUMBER = "Build 005"
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,6 +25,7 @@ DEFAULT_RPM_LIMIT = 15
 MIN_REQUEST_INTERVAL_SECONDS = 4.2  # 60s / 15 = 4s; 4.2s for safe margin
 DEFAULT_COOLDOWN_SECONDS = 60       # If 429 occurs, cooldown key for 60s
 DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_RENDER_DPI = 300            # 高清渲染解析度 (預設 300 DPI，文獻印刷級清晰度)
 
 # Model options
 AVAILABLE_MODELS = [

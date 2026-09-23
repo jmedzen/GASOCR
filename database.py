@@ -1,6 +1,7 @@
 import aiosqlite
 import time
 import datetime
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from config import DB_PATH
@@ -56,6 +57,16 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS file_hashes (
+                file_hash TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                file_size INTEGER DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+        """)
+
         # 資料表遷移檢查
         cursor = await db.execute("PRAGMA table_info(accounts)")
         acc_cols = [row["name"] for row in await cursor.fetchall()]
@@ -72,6 +83,12 @@ async def init_db():
             await db.execute("ALTER TABLE tasks ADD COLUMN is_paid INTEGER DEFAULT 0")
         if "paid_account_id" not in cols:
             await db.execute("ALTER TABLE tasks ADD COLUMN paid_account_id INTEGER DEFAULT NULL")
+        if "pdf_total_pages" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN pdf_total_pages INTEGER DEFAULT 0")
+        if "bg_render_status" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN bg_render_status TEXT DEFAULT 'idle'")
+        if "file_hash" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN file_hash TEXT DEFAULT ''")
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS task_pages (
@@ -79,7 +96,7 @@ async def init_db():
                 task_id TEXT NOT NULL,
                 page_num INTEGER NOT NULL,
                 image_path TEXT NOT NULL,
-                status TEXT DEFAULT 'pending', -- pending, processing, completed, failed
+                status TEXT DEFAULT 'pending', -- pending, processing, completed, failed, rendered
                 ocr_text TEXT DEFAULT '',
                 error_message TEXT DEFAULT '',
                 used_account_id INTEGER,
@@ -105,6 +122,51 @@ async def init_db():
         """, (now,))
 
         await db.commit()
+
+    # 自動建立 uploads 目錄現有檔案的 Hash 索引
+    await index_existing_uploads()
+
+def compute_file_sha256(filepath: Any) -> str:
+    """計算檔案的 SHA-256 哈希值"""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+async def save_file_hash(file_hash: str, filename: str, filepath: str, file_size: int = 0):
+    """儲存或更新檔案 Hash 索引"""
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("""
+            INSERT OR REPLACE INTO file_hashes (file_hash, filename, filepath, file_size, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (file_hash, filename, str(filepath), file_size, now))
+        await db.commit()
+
+async def get_file_by_hash(file_hash: str) -> Optional[Dict[str, Any]]:
+    """根據 Hash 查詢是否已有快取檔案，並驗證實體檔案是否依然存在"""
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM file_hashes WHERE file_hash = ?", (file_hash,))
+        row = await cursor.fetchone()
+        if row:
+            d = dict(row)
+            if Path(d["filepath"]).exists():
+                return d
+        return None
+
+async def index_existing_uploads():
+    """伺服器啟動時，自動為 uploads 目錄內的現有檔案建立 Hash 索引"""
+    from config import UPLOADS_DIR
+    upload_path = Path(UPLOADS_DIR)
+    if not upload_path.exists():
+        return
+    for f in upload_path.glob("*.pdf"):
+        try:
+            h = compute_file_sha256(f)
+            await save_file_hash(h, f.name, str(f), f.stat().st_size)
+        except Exception as e:
+            print(f"Error indexing upload {f}: {e}")
 
 async def reset_orphan_processing_pages() -> int:
     """伺服器啟動時將所有處於 processing 的中斷頁面重設為 pending，避免卡死"""
@@ -227,14 +289,16 @@ async def create_task(
     start_page: int = 1,
     end_page: int = 0,
     is_paid: int = 0,
-    paid_account_id: Optional[int] = None
+    paid_account_id: Optional[int] = None,
+    pdf_total_pages: int = 0,
+    file_hash: str = ""
 ):
     now = time.time()
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO tasks (id, filename, original_filepath, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, filename, filepath, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, now, now))
+            INSERT INTO tasks (id, filename, original_filepath, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, filename, filepath, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, now, now))
         await db.commit()
 
 async def delete_task(task_id: str):
@@ -249,11 +313,22 @@ async def update_task_model(task_id: str, model: str):
         await db.execute("UPDATE tasks SET model = ?, updated_at = ? WHERE id = ?", (model, now, task_id))
         await db.commit()
 
-async def update_task_status(task_id: str, status: str, total_pages: Optional[int] = None, processed_pages: Optional[int] = None, model: Optional[str] = None):
+async def update_task_status(
+    task_id: str, 
+    status: Optional[str] = None, 
+    total_pages: Optional[int] = None, 
+    processed_pages: Optional[int] = None, 
+    model: Optional[str] = None,
+    pdf_total_pages: Optional[int] = None,
+    bg_render_status: Optional[str] = None
+):
     now = time.time()
     async with get_db() as db:
-        updates = ["status = ?", "updated_at = ?"]
-        params = [status, now]
+        updates = ["updated_at = ?"]
+        params = [now]
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
         if total_pages is not None:
             updates.append("total_pages = ?")
             params.append(total_pages)
@@ -263,6 +338,12 @@ async def update_task_status(task_id: str, status: str, total_pages: Optional[in
         if model:
             updates.append("model = ?")
             params.append(model)
+        if pdf_total_pages is not None:
+            updates.append("pdf_total_pages = ?")
+            params.append(pdf_total_pages)
+        if bg_render_status is not None:
+            updates.append("bg_render_status = ?")
+            params.append(bg_render_status)
         params.append(task_id)
         
         query = f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?"
@@ -290,6 +371,16 @@ async def create_task_pages(pages_data: List[Dict[str, Any]]):
             await db.execute("""
                 INSERT OR IGNORE INTO task_pages (task_id, page_num, image_path, status, updated_at)
                 VALUES (?, ?, ?, 'pending', ?)
+            """, (page["task_id"], page["page_num"], page["image_path"], now))
+        await db.commit()
+
+async def add_background_rendered_pages(pages_data: List[Dict[str, Any]]):
+    now = time.time()
+    async with get_db() as db:
+        for page in pages_data:
+            await db.execute("""
+                INSERT OR IGNORE INTO task_pages (task_id, page_num, image_path, status, updated_at)
+                VALUES (?, ?, ?, 'rendered', ?)
             """, (page["task_id"], page["page_num"], page["image_path"], now))
         await db.commit()
 

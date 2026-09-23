@@ -2,6 +2,8 @@ import os
 import time
 import uuid
 import asyncio
+import json
+import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import asynccontextmanager
@@ -16,7 +18,7 @@ import httpx
 import database
 import config
 from scheduler import scheduler
-from pdf_engine import render_pdf_to_images, render_single_page
+from pdf_engine import render_pdf_to_images, render_single_page, get_pdf_page_count, render_remaining_pdf_pages
 import gemini_ocr
 from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
 import exporters
@@ -83,21 +85,57 @@ app.mount("/renders", StaticFiles(directory=str(config.RENDERS_DIR)), name="rend
 
 active_page_tasks: Dict[str, asyncio.Task] = {}
 
-async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str, prompt: str, max_retries: int = 3):
-    """執行單頁 OCR 並配合排程器冷卻切換，支援任務追蹤與即時暫停"""
+async def background_render_task_pages(task_id: str, pdf_path: Path, target_pages: set):
+    """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，不阻塞使用者當前轉譯與校對工作"""
+    try:
+        await database.update_task_status(task_id, bg_render_status="rendering")
+        print(f"🎨 [Background Render] 任務 {task_id} 開始背景渲染其餘頁面...")
+        
+        # 使用 asyncio.to_thread 避免 PDF 渲染 CPU 密集運算阻塞 asyncio event loop
+        remaining_rendered = await asyncio.to_thread(
+            render_remaining_pdf_pages, pdf_path, task_id, target_pages
+        )
+        
+        if remaining_rendered:
+            pages_data = [
+                {"task_id": task_id, "page_num": p_num, "image_path": str(img_path)}
+                for p_num, img_path in remaining_rendered
+            ]
+            await database.add_background_rendered_pages(pages_data)
+            
+        await database.update_task_status(task_id, bg_render_status="completed")
+        print(f"✅ [Background Render] 任務 {task_id} 其餘 {len(remaining_rendered)} 頁高清渲染全部完成！")
+    except Exception as e:
+        print(f"❌ [Background Render] 任務 {task_id} 背景渲染異常: {e}")
+        await database.update_task_status(task_id, bg_render_status="failed")
+
+async def run_page_ocr(
+    task_id: str, 
+    page_num: int, 
+    image_path: Path, 
+    model: str, 
+    prompt: str, 
+    max_retries: int = 3,
+    specific_account_id: Optional[int] = None
+):
+    """執行單頁 OCR 並配合排程器冷卻切換，支援 503 自動重試 5 次與任務暫停"""
     task_key = f"{task_id}_{page_num}"
     active_page_tasks[task_key] = asyncio.current_task()
+    
+    clean_model = model.replace("[PAID]", "").strip()
+    is_paid_call = "[PAID]" in model or specific_account_id is not None
+    used_model_display = f"{clean_model} 💎" if is_paid_call else clean_model
     
     try:
         await database.update_page_status(task_id, page_num, "processing")
         
         # 1. 若為網頁自動化模型，調用本機網頁自動化 RPA
-        if web_rpa.is_web_model(model):
+        if web_rpa.is_web_model(clean_model):
             start_time = time.time()
-            print(f"🌐 [Page OCR Web RPA] 任務 {task_id} 第 {page_num} 頁透過網頁自動化調用: {model}")
+            print(f"🌐 [Page OCR Web RPA] 任務 {task_id} 第 {page_num} 頁透過網頁自動化調用: {clean_model}")
             success, text_or_err, status_code = await web_rpa.run_web_ocr(
                 image_path=image_path,
-                model_name=model,
+                model_name=clean_model,
                 prompt=prompt
             )
             duration = round(time.time() - start_time, 2)
@@ -107,7 +145,7 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                     ocr_text=text_or_err,
                     account_id=None,
                     duration=duration,
-                    used_model=model
+                    used_model=used_model_display
                 )
                 return
             else:
@@ -116,20 +154,25 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                     error_message=f"[Web RPA] {text_or_err}",
                     account_id=None,
                     duration=duration,
-                    used_model=model
+                    used_model=used_model_display
                 )
                 return
 
         task_info = await database.get_task(task_id) or {}
-        paid_acc_id = task_info.get("paid_account_id") if task_info.get("is_paid") else None
+        target_account_id = specific_account_id
+        if target_account_id is None and task_info.get("is_paid"):
+            target_account_id = task_info.get("paid_account_id")
 
         retries = 0
+        retries_503 = 0
+        max_retries_503 = 5
+
         while retries < max_retries:
             # 2. 向智慧排程器索取可用帳號（若為付費任務，鎖定指定付費金鑰）
-            account = await scheduler.get_next_available_account(specific_account_id=paid_acc_id)
+            account = await scheduler.get_next_available_account(specific_account_id=target_account_id)
             if not account:
                 # 等待冷卻中的帳號解除
-                account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=paid_acc_id)
+                account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=target_account_id)
                 
             if not account:
                 await database.update_page_result(
@@ -139,8 +182,8 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                 return
                 
             start_time = time.time()
-            print(f"🚀 [Page OCR] 任務 {task_id} 第 {page_num} 頁使用模型: {model} (帳號: {account['name']})")
-            success, text_or_err, status_code = await call_gemini_ocr(account, image_path, model, prompt)
+            print(f"🚀 [Page OCR] 任務 {task_id} 第 {page_num} 頁使用模型: {clean_model} (帳號: {account['name']})")
+            success, text_or_err, status_code = await call_gemini_ocr(account, image_path, clean_model, prompt)
             duration = round(time.time() - start_time, 2)
             
             if success:
@@ -150,9 +193,29 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                     ocr_text=text_or_err,
                     account_id=account["id"],
                     duration=duration,
-                    used_model=model
+                    used_model=used_model_display
                 )
                 return
+            elif status_code == 503 or "503" in str(text_or_err) or "UNAVAILABLE" in str(text_or_err).upper() or "OVERLOADED" in str(text_or_err).upper():
+                # 503 伺服器忙碌 / 模型超載，自動重試 5 次
+                retries_503 += 1
+                delay = 2.0 * retries_503
+                print(f"⚠️ [503 Service Unavailable] 任務 {task_id} 第 {page_num} 頁遭遇 503，第 {retries_503}/5 次自動重試，等待 {delay:.1f} 秒...")
+                await database.update_page_status(
+                    task_id, page_num, "processing", 
+                    error_message=f"[503 伺服器忙碌] 正在進行第 {retries_503}/5 次自動重試 (等待 {delay:.1f}s)..."
+                )
+                await asyncio.sleep(delay)
+                if retries_503 >= max_retries_503:
+                    await database.update_page_result(
+                        task_id, page_num, "failed",
+                        error_message=f"[503 重試 5 次皆忙碌] {text_or_err}",
+                        account_id=account["id"],
+                        duration=duration,
+                        used_model=used_model_display
+                    )
+                    return
+                continue
             elif status_code == 429:
                 # 觸發 429 限額，登記該帳號冷卻，並以其他帳號重試本頁
                 await scheduler.report_rate_limited(account["id"])
@@ -167,7 +230,7 @@ async def run_page_ocr(task_id: str, page_num: int, image_path: Path, model: str
                         error_message=f"[{account['name']}] {text_or_err}",
                         account_id=account["id"],
                         duration=duration,
-                        used_model=model
+                        used_model=used_model_display
                     )
                     return
                 await asyncio.sleep(2.0)
@@ -189,12 +252,17 @@ async def process_task_pipeline(task_id: str):
         
     try:
         pages = await database.get_task_pages(task_id)
+        pdf_path = Path(task["original_filepath"])
+        pdf_total_pages = get_pdf_page_count(pdf_path) if pdf_path.exists() else 0
+        s_page = task.get("start_page", 1) or 1
+        e_page = task.get("end_page", 0) or 0
+        if e_page <= 0 or e_page > pdf_total_pages:
+            e_page = pdf_total_pages
+        target_page_nums = set(range(s_page, e_page + 1))
+
         if not pages:
-            # 1. 初次啟動：渲染 PDF 頁面為圖片
-            await database.update_task_status(task_id, "rendering")
-            pdf_path = Path(task["original_filepath"])
-            s_page = task.get("start_page", 1) or 1
-            e_page = task.get("end_page", 0) or 0
+            # 1. 初次啟動：僅渲染指定範圍的頁面為圖片（大幅節省時間）
+            await database.update_task_status(task_id, "rendering", pdf_total_pages=pdf_total_pages)
             rendered_pages = render_pdf_to_images(pdf_path, task_id, start_page=s_page, end_page=e_page)
             
             total_pages = len(rendered_pages)
@@ -209,11 +277,16 @@ async def process_task_pipeline(task_id: str):
             if not check_task or check_task.get("status") in ["paused", "failed"]:
                 return
 
-            await database.update_task_status(task_id, "processing", total_pages=total_pages, processed_pages=0)
+            await database.update_task_status(
+                task_id, "processing", 
+                total_pages=total_pages, 
+                processed_pages=0,
+                pdf_total_pages=pdf_total_pages
+            )
             pages = await database.get_task_pages(task_id)
         else:
             # 2. 暫停接續：直接切換為 processing
-            await database.update_task_status(task_id, "processing")
+            await database.update_task_status(task_id, "processing", pdf_total_pages=pdf_total_pages)
         
         # 3. 準備 Prompt (重新拉取 task 以取得最新可能被變更之模型與設定)
         task = await database.get_task(task_id) or task
@@ -224,8 +297,10 @@ async def process_task_pipeline(task_id: str):
             custom_prompt=task.get("custom_prompt", "")
         )
         
-        # 4. 逐頁進行 OCR 辨識（跳過已完成的頁面）
+        # 4. 逐頁進行 OCR 辨識（跳過已完成的頁面與非本次目標頁面）
         for p in pages:
+            if p["page_num"] not in target_page_nums:
+                continue
             if p["status"] == "completed":
                 continue
                 
@@ -237,11 +312,18 @@ async def process_task_pipeline(task_id: str):
             model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
             await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
             
-        # 5. 全部處理完成檢查
-        if await database.get_task(task_id):
+        # 5. 全部目標頁面處理完成檢查
+        latest_task = await database.get_task(task_id)
+        if latest_task and latest_task["status"] not in ["paused", "failed"]:
             latest_pages = await database.get_task_pages(task_id)
-            if all(lp["status"] == "completed" for lp in latest_pages):
+            target_pages_status = [lp for lp in latest_pages if lp["page_num"] in target_page_nums]
+            if all(lp["status"] == "completed" for lp in target_pages_status):
                 await database.update_task_status(task_id, "completed")
+                
+                # 6. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
+                if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
+                    print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
+                    asyncio.create_task(background_render_task_pages(task_id, pdf_path, target_page_nums))
         
     except Exception as e:
         if await database.get_task(task_id):
@@ -508,6 +590,25 @@ async def disconnect_cdp():
 
 # --- Task & OCR API ---
 
+class FileHashCheckRequest(BaseModel):
+    hash: str
+    filename: Optional[str] = ""
+    size: Optional[int] = 0
+
+@app.post("/api/files/check-hash")
+async def check_file_hash(payload: FileHashCheckRequest):
+    """檢查伺服器端是否已存在完全相同的檔案快取（基於 SHA-256）"""
+    cached = await database.get_file_by_hash(payload.hash)
+    if cached:
+        return {
+            "exists": True,
+            "hash": payload.hash,
+            "filename": cached["filename"],
+            "filepath": cached["filepath"],
+            "size": cached.get("file_size", 0)
+        }
+    return {"exists": False, "hash": payload.hash}
+
 @app.get("/api/tasks")
 async def get_all_tasks():
     tasks = await database.list_tasks()
@@ -516,7 +617,8 @@ async def get_all_tasks():
 @app.post("/api/tasks")
 async def create_ocr_task(
     background_tasks: BackgroundTasks,
-    files: List[UploadFile] = File(...),
+    files: Optional[List[UploadFile]] = File(default=None),
+    existing_files: Optional[str] = Form(None),
     model: str = Form(config.DEFAULT_MODEL),
     lang: str = Form("traditional"),
     direction: str = Form("auto"),
@@ -527,42 +629,87 @@ async def create_ocr_task(
     use_paid_model: bool = Form(False),
     paid_account_id: Optional[int] = Form(None)
 ):
-    if not files:
-        raise HTTPException(status_code=400, detail="請上傳至少一個 PDF 檔案")
-        
     created_tasks = []
-    for file in files:
-        if not file.filename.lower().endswith(".pdf"):
-            continue
+    
+    # 1. 處理伺服器端已快取的免上傳檔案
+    if existing_files:
+        try:
+            cached_list = json.loads(existing_files)
+            for item in cached_list:
+                f_hash = item.get("hash")
+                cached = await database.get_file_by_hash(f_hash) if f_hash else None
+                if cached:
+                    task_id = f"task_{uuid.uuid4().hex[:10]}"
+                    filename = item.get("filename") or cached["filename"]
+                    filepath = cached["filepath"]
+                    pdf_total_pages = get_pdf_page_count(Path(filepath)) if Path(filepath).exists() else 0
+                    
+                    await database.create_task(
+                        task_id=task_id,
+                        filename=filename,
+                        filepath=filepath,
+                        model=model,
+                        lang=lang,
+                        direction=direction,
+                        column=column,
+                        custom_prompt=custom_prompt,
+                        start_page=start_page,
+                        end_page=end_page,
+                        is_paid=1 if use_paid_model else 0,
+                        paid_account_id=paid_account_id if use_paid_model else None,
+                        pdf_total_pages=pdf_total_pages,
+                        file_hash=f_hash
+                    )
+                    asyncio.create_task(process_task_pipeline(task_id))
+                    created_tasks.append(task_id)
+        except Exception as e:
+            print(f"Error processing existing_files: {e}")
+
+    # 2. 處理使用者新上傳的檔案
+    if files:
+        for file in files:
+            if not file.filename or not file.filename.lower().endswith(".pdf"):
+                continue
+                
+            task_id = f"task_{uuid.uuid4().hex[:10]}"
+            content = await file.read()
+            f_hash = hashlib.sha256(content).hexdigest()
             
-        task_id = f"task_{uuid.uuid4().hex[:10]}"
-        saved_filename = f"{task_id}_{file.filename}"
-        saved_path = config.UPLOADS_DIR / saved_filename
-        
-        content = await file.read()
-        saved_path.write_bytes(content)
-        
-        await database.create_task(
-            task_id=task_id,
-            filename=file.filename,
-            filepath=str(saved_path),
-            model=model,
-            lang=lang,
-            direction=direction,
-            column=column,
-            custom_prompt=custom_prompt,
-            start_page=start_page,
-            end_page=end_page,
-            is_paid=1 if use_paid_model else 0,
-            paid_account_id=paid_account_id if use_paid_model else None
-        )
-        
-        # 立即非同步啟動後台流水線
-        asyncio.create_task(process_task_pipeline(task_id))
-        created_tasks.append(task_id)
-        
+            # 檢查檔案是否已在資料庫快取
+            cached = await database.get_file_by_hash(f_hash)
+            if cached and Path(cached["filepath"]).exists():
+                saved_path = Path(cached["filepath"])
+            else:
+                saved_filename = f"{task_id}_{file.filename}"
+                saved_path = config.UPLOADS_DIR / saved_filename
+                saved_path.write_bytes(content)
+                await database.save_file_hash(f_hash, file.filename, str(saved_path), len(content))
+                
+            pdf_total_pages = get_pdf_page_count(saved_path) if saved_path.exists() else 0
+            
+            await database.create_task(
+                task_id=task_id,
+                filename=file.filename,
+                filepath=str(saved_path),
+                model=model,
+                lang=lang,
+                direction=direction,
+                column=column,
+                custom_prompt=custom_prompt,
+                start_page=start_page,
+                end_page=end_page,
+                is_paid=1 if use_paid_model else 0,
+                paid_account_id=paid_account_id if use_paid_model else None,
+                pdf_total_pages=pdf_total_pages,
+                file_hash=f_hash
+            )
+            
+            # 立即非同步啟動後台流水線
+            asyncio.create_task(process_task_pipeline(task_id))
+            created_tasks.append(task_id)
+            
     if not created_tasks:
-        raise HTTPException(status_code=400, detail="未上傳有效的 PDF 檔案")
+        raise HTTPException(status_code=400, detail="未收到有效的 PDF 檔案或快取資訊")
         
     return {
         "status": "ok", 
@@ -698,8 +845,24 @@ async def retry_single_page(
         custom_prompt=task.get("custom_prompt", "")
     )
     
+    specific_acc_id = None
+    if "[PAID]" in target_model:
+        accounts = await database.get_accounts()
+        paid_acc = next((a for a in accounts if a.get("is_paid") == 1 and a.get("is_active") == 1), None)
+        if paid_acc:
+            specific_acc_id = paid_acc["id"]
+    elif task.get("is_paid") and task.get("paid_account_id"):
+        specific_acc_id = task.get("paid_account_id")
+
     img_path = Path(target_page["image_path"])
-    asyncio.create_task(run_page_ocr(task_id, page_num, img_path, target_model, prompt))
+    asyncio.create_task(run_page_ocr(
+        task_id=task_id, 
+        page_num=page_num, 
+        image_path=img_path, 
+        model=target_model, 
+        prompt=prompt,
+        specific_account_id=specific_acc_id
+    ))
     
     return {
         "status": "ok", 
@@ -744,11 +907,35 @@ async def sse_task_events(task_id: str):
                 break
                 
             pages = await database.get_task_pages(task_id)
+            
+            # 計算富資訊指標
+            durations = [p["duration_seconds"] for p in pages if p["status"] == "completed" and p.get("duration_seconds", 0) > 0]
+            avg_speed = round(sum(durations) / len(durations), 1) if durations else 0.0
+            
+            total = task.get("total_pages") or 0
+            processed = task.get("processed_pages") or 0
+            remaining = max(0, total - processed)
+            eta_seconds = round(remaining * avg_speed) if (avg_speed > 0 and remaining > 0) else 0
+            
+            active_p = next((p for p in pages if p["status"] == "processing"), None)
+            active_page_num = active_p["page_num"] if active_p else None
+            active_msg = active_p["error_message"] if active_p else ""
+
             data_payload = {
                 "task_id": task_id,
                 "status": task["status"],
-                "total_pages": task["total_pages"],
-                "processed_pages": task["processed_pages"],
+                "total_pages": total,
+                "processed_pages": processed,
+                "pdf_total_pages": task.get("pdf_total_pages") or total,
+                "bg_render_status": task.get("bg_render_status", "idle"),
+                "start_page": task.get("start_page", 1),
+                "end_page": task.get("end_page", 0),
+                "model": task.get("model", ""),
+                "is_paid": task.get("is_paid", 0),
+                "avg_speed": avg_speed,
+                "eta_seconds": eta_seconds,
+                "active_page": active_page_num,
+                "active_msg": active_msg,
                 "pages": [
                     {
                         "page_num": p["page_num"],
@@ -761,14 +948,13 @@ async def sse_task_events(task_id: str):
                     for p in pages
                 ]
             }
-            import json
             yield f"data: {json.dumps(data_payload)}\n\n"
             
             # 若任務已完成或失敗，且目前沒有任何頁面仍在 processing，才結束串流
             if task["status"] in ["completed", "failed"]:
                 if not any(p.get("status") == "processing" for p in pages):
                     break
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1.2)
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
