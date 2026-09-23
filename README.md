@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-013-indigo?style=for-the-badge" alt="Build 013" />
+  <img src="https://img.shields.io/badge/Build-014-indigo?style=for-the-badge" alt="Build 014" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/Security-Access%20Gate%20%7C%20Admin-emerald?style=for-the-badge&logo=auth0" alt="Security" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
@@ -237,7 +237,7 @@ uvicorn main:app --host 0.0.0.0 --port 8610 --reload
 
 ### 步驟 2：上傳 PDF 並設定轉譯選項
 1. 將一或多個 PDF 檔案拖曳至上傳區（支援批次上傳）。
-2. **選擇模型**：預設推薦 `gemini-2.5-flash` 或 `gemini-2.0-flash`。
+2. **選擇模型**：預設推薦 `gemini-3.5-flash-lite`（極速超低延遲）或 `gemini-2.5-flash`。
 3. **設定頁碼範圍**：預設為全本，亦可指定起始頁與結束頁（例如 P.1 ~ P.10）。
 4. **選擇排版結構**：
    - 語言：繁體中文、簡體中文、保持原文

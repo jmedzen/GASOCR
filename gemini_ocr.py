@@ -223,11 +223,18 @@ async def fetch_google_models(account: Dict[str, Any]) -> Tuple[bool, List[Dict[
                         "description": description
                     })
             
-            # 智慧排序：優先推薦 Flash 模型，其次 Pro 等
+            # 智慧排序：優先推薦 3.5-flash-lite 與 Flash-Lite 模型，其次 Flash，再次 Pro 等
             def sort_key(item):
                 mid = item["id"].lower()
-                is_flash = 0 if "flash" in mid else 1
-                return (is_flash, item["name"])
+                if "3.5-flash-lite" in mid:
+                    tier = 0
+                elif "flash-lite" in mid:
+                    tier = 1
+                elif "flash" in mid:
+                    tier = 2
+                else:
+                    tier = 3
+                return (tier, item["name"])
                 
             parsed_models.sort(key=sort_key)
             return True, parsed_models, "成功"

@@ -56,7 +56,7 @@ async def init_db():
                 total_pages INTEGER DEFAULT 0,
                 processed_pages INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'pending', -- pending, rendering, processing, completed, paused, failed
-                model TEXT DEFAULT 'gemini-2.5-flash',
+                model TEXT DEFAULT 'gemini-3.5-flash-lite',
                 lang_pref TEXT DEFAULT 'traditional',
                 direction_pref TEXT DEFAULT 'auto',
                 column_pref TEXT DEFAULT 'auto',
@@ -173,6 +173,12 @@ async def get_file_by_hash(file_hash: str) -> Optional[Dict[str, Any]]:
             if Path(d["filepath"]).exists():
                 return d
         return None
+
+async def delete_file_hash_by_path(filepath: str):
+    """清理失效檔案路徑的 Hash 記錄"""
+    async with get_db() as db:
+        await db.execute("DELETE FROM file_hashes WHERE filepath = ?", (str(filepath),))
+        await db.commit()
 
 async def index_existing_uploads():
     """伺服器啟動時，自動為 uploads 目錄內的現有檔案建立 Hash 索引"""

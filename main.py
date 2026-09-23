@@ -762,6 +762,7 @@ async def index(request: Request):
             "app_name": config.APP_NAME,
             "app_version": config.APP_VERSION,
             "build_number": config.BUILD_NUMBER,
+            "default_model": config.DEFAULT_MODEL,
             "models": get_combined_models(),
             "languages": config.LANGUAGE_OPTIONS,
             "directions": config.DIRECTION_OPTIONS,
@@ -1053,10 +1054,13 @@ async def create_ocr_task(
                 f_hash = item.get("hash")
                 cached = await database.get_file_by_hash(f_hash) if f_hash else None
                 if cached:
+                    filepath = cached["filepath"]
+                    if not Path(filepath).exists():
+                        await database.delete_file_hash_by_path(filepath)
+                        continue
                     task_id = f"task_{uuid.uuid4().hex[:10]}"
                     filename = item.get("filename") or cached["filename"]
-                    filepath = cached["filepath"]
-                    pdf_total_pages = get_pdf_page_count(Path(filepath)) if Path(filepath).exists() else 0
+                    pdf_total_pages = get_pdf_page_count(Path(filepath))
                     
                     await database.create_task(
                         task_id=task_id,
@@ -1139,8 +1143,15 @@ async def delete_ocr_task(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     await database.delete_task(task_id)
     try:
-        if os.path.exists(task["original_filepath"]):
-            os.remove(task["original_filepath"])
+        orig_fp = task.get("original_filepath")
+        if orig_fp:
+            async with database.get_db() as db:
+                c = await db.execute("SELECT COUNT(*) FROM tasks WHERE original_filepath = ? AND id != ?", (orig_fp, task_id))
+                other_count = (await c.fetchone())[0]
+            if other_count == 0:
+                await database.delete_file_hash_by_path(orig_fp)
+                if os.path.exists(orig_fp):
+                    os.remove(orig_fp)
         render_dir = config.RENDERS_DIR / task_id
         if render_dir.exists():
             import shutil

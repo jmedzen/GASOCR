@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 013"
+BUILD_NUMBER = "Build 014"
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -28,7 +28,7 @@ DB_PATH = DATA_DIR / "ocr.db"
 DEFAULT_RPM_LIMIT = 15
 MIN_REQUEST_INTERVAL_SECONDS = 4.2  # 60s / 15 = 4s; 4.2s for safe margin
 DEFAULT_COOLDOWN_SECONDS = 60       # If 429 occurs, cooldown key for 60s
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_RENDER_DPI = 300            # 高清渲染解析度 (預設 300 DPI，文獻印刷級清晰度)
 
 # PDF 渲染並發與執行緒控制 (CPU Core - 2，保底至少 1；單一 PDF 使用單一執行緒)
@@ -37,7 +37,8 @@ MAX_RENDER_WORKERS = max(1, int(os.environ.get("MAX_RENDER_WORKERS", _detected_c
 
 # Model options
 AVAILABLE_MODELS = [
-    {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (預設推薦，極速免費)"},
+    {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite (預設推薦，極速超低延遲)"},
+    {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (極速高精度)"},
     {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (穩定高辨識)"},
     {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite (極低延遲)"},
     {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (經典版本)"},
