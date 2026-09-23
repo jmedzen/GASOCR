@@ -1347,20 +1347,11 @@
                     @click="openAdminModal()" 
                     class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs admin-nav-btn"
                     :class="authStatus.is_admin ? 'admin-nav-btn-admin font-semibold' : ''"
-                    title="系統管理與通關安全設定"
+                    :title="authStatus.is_admin ? '管理員後台 (已登入)' : '系統管理與通關安全設定'"
                 >
                     <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
-                    <span class="font-semibold hidden sm:inline">系統管理</span>
-                    <template x-if="authStatus.access_gate_enabled">
-                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold admin-badge-gate-on">
-                            🔒 守護中
-                        </span>
-                    </template>
-                    <template x-if="authStatus.is_admin">
-                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold admin-badge-admin">
-                            Admin
-                        </span>
-                    </template>
+                    <span class="font-semibold hidden sm:inline" x-text="authStatus.is_admin ? '管理員' : '系統管理'">系統管理</span>
+                    <span x-show="authStatus.access_gate_enabled" class="text-[11px]" title="全站通關保護中" style="display: none;">🔒</span>
                 </button>
             </div>
         </div>
