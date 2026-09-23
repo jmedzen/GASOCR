@@ -5,8 +5,9 @@ import asyncio
 import json
 import hashlib
 import hmac
+import shutil
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Set
 import concurrent.futures
 from contextlib import asynccontextmanager
 
@@ -26,13 +27,137 @@ from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if
 import exporters
 import web_rpa
 
-# PDF 渲染專屬執行緒池與並發信號量 (CPU Core - 2，單一 PDF 限制單一線程循序切圖)
+# PDF 渲染專屬執行緒池與並發信號量
+# - PDF_RENDER_EXECUTOR 管 CPU（執行緒數）
+# - RENDER_SEMAPHORE 管記憶體（同時持有全頁點陣圖的文件數），兩者刻意分開
 PDF_RENDER_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=config.MAX_RENDER_WORKERS,
     thread_name_prefix="pdf_render_"
 )
-RENDER_SEMAPHORE = asyncio.Semaphore(config.MAX_RENDER_WORKERS)
-print(f"🚀 [Config] PDF 渲染並發限制初始化完成: 最大 {config.MAX_RENDER_WORKERS} 檔同時切圖 (CPU: {os.cpu_count()})")
+RENDER_SEMAPHORE = asyncio.Semaphore(config.MAX_CONCURRENT_RENDERS)
+print(f"🚀 [Config] PDF 渲染初始化：CPU 執行緒 {config.MAX_RENDER_WORKERS} / "
+      f"同時切圖檔案數 {config.MAX_CONCURRENT_RENDERS} (CPU: {os.cpu_count()})")
+
+# 應用程式是否正在關閉。
+# ⚠️ 用途：阻止關閉期間再啟動新的 PDFium 渲染。
+#    PDFium 在直譯器收尾階段仍在渲染會造成 SIGSEGV（見下方 lifespan 的說明）。
+SHUTTING_DOWN = False
+
+# ══════════════════════════════════════════════════════════════
+#  背景任務管理
+#
+#  ⚠️ asyncio.create_task() 的回傳值若沒有被保留強引用，任務可能在執行中途
+#     被垃圾回收（Python 官方文件明載的陷阱），造成「任務隨機沒開始／沒跑完」。
+#     所有 fire-and-forget 的背景任務都必須走 spawn_background()。
+# ══════════════════════════════════════════════════════════════
+_background_tasks: Set[asyncio.Task] = set()
+
+
+def spawn_background(coro) -> asyncio.Task:
+    """建立背景任務並保留強引用，避免被 GC 回收。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
+def shutdown_render_executor(wait: bool = True) -> None:
+    """
+    安全關閉 PDF 渲染執行緒池。
+
+    ⚠️ 為什麼一定要 wait=True：
+      ThreadPoolExecutor 會註冊 atexit 處理器，在直譯器收尾時 join 它的執行緒。
+      若此時 PDFium 仍在渲染，C++ 端會存取已被釋放的記憶體 → SIGSEGV
+      （實測 faulthandler 追蹤：pdf_render__ 執行緒在 page.render()，
+        主執行緒在 concurrent.futures.thread._python_exit 的 join）。
+      這就是使用者回報的「python 當機」。
+    cancel_futures 先丟棄尚未開始的工作，只等待正在跑的那一頁（通常 <2 秒）。
+    可安全重複呼叫。
+    """
+    try:
+        PDF_RENDER_EXECUTOR.shutdown(wait=wait, cancel_futures=True)
+    except Exception:
+        pass
+
+
+def _free_disk_bytes(path: Path) -> int:
+    """取得指定路徑所在磁碟的可用位元組數；失敗時回傳 -1（代表未知，不阻擋流程）。"""
+    try:
+        return shutil.disk_usage(str(path)).free
+    except Exception:
+        return -1
+
+
+def _safe_filename(name: str) -> str:
+    """去除路徑分隔與危險字元，避免上傳檔名造成路徑穿越。"""
+    base = os.path.basename(name or "").replace("\\", "/").split("/")[-1]
+    base = base.replace("\x00", "").strip()
+    cleaned = "".join(c for c in base if c not in '<>:"|?*' and ord(c) >= 32)
+    return cleaned or "upload.pdf"
+
+
+async def _stream_upload_to_disk(
+    upload: UploadFile, dest: Path, chunk_size: int = 1024 * 1024
+) -> Tuple[str, int]:
+    """
+    以串流方式把上傳檔寫入磁碟，同時增量計算 SHA-256。
+
+    為什麼不用 file.read()／write_bytes()：
+      先前做法會把整個檔案讀進記憶體（使用者的 PDF 單檔可達 250MB），
+      5 個檔案時記憶體壓力極大，且同步寫入會長時間卡住事件迴圈
+      （導致其他請求包含上傳本身逾時 → 「有時候沒辦法上傳」）。
+    回傳 (sha256_hex, 位元組數)。
+    """
+    limit_bytes = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024 if config.MAX_UPLOAD_SIZE_MB > 0 else 0
+    reserve = config.MIN_FREE_DISK_MB * 1024 * 1024
+    hasher = hashlib.sha256()
+    total = 0
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # 先檢查：連一個位元組都還沒寫之前，磁碟是否已經太滿
+    free = _free_disk_bytes(config.DATA_DIR)
+    if free >= 0 and free < reserve:
+        raise HTTPException(
+            status_code=507,
+            detail=f"伺服器磁碟空間不足（剩餘 {free / 1048576:.0f} MB，"
+                   f"需保留至少 {config.MIN_FREE_DISK_MB} MB）。"
+                   "請清理 data/renders 或 data/uploads 後再試。"
+        )
+
+    try:
+        with open(dest, "wb") as fh:
+            while True:
+                chunk = await upload.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if limit_bytes and total > limit_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"檔案「{upload.filename}」超過單檔上限 "
+                               f"{config.MAX_UPLOAD_SIZE_MB} MB"
+                    )
+                # 每 16MB 檢查一次剩餘空間，避免寫到磁碟爆掉（先前會直接 OSError 中斷整批）
+                if total % (16 * 1024 * 1024) < chunk_size:
+                    free = _free_disk_bytes(config.DATA_DIR)
+                    if free >= 0 and free < reserve:
+                        raise HTTPException(
+                            status_code=507,
+                            detail=f"寫入「{upload.filename}」時磁碟空間不足"
+                                   f"（剩餘 {free / 1048576:.0f} MB）。"
+                                   "已中止本次上傳，請清理磁碟後再試。"
+                        )
+                hasher.update(chunk)
+                fh.write(chunk)
+    except BaseException:
+        # 任何失敗都不要留下半截檔案
+        try:
+            dest.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+    return hasher.hexdigest(), total
+
 
 # 模型快取清單（預設先載入內建清單）
 CACHED_MODELS: List[Dict[str, Any]] = list(config.AVAILABLE_MODELS)
@@ -67,16 +192,45 @@ async def update_cached_models(force: bool = False) -> Tuple[bool, str]:
 async def lifespan(app: FastAPI):
     # 初始化資料庫
     await database.init_db()
+
+    # 清理上次異常中斷（例如當機）留下的半截上傳暫存檔，避免持續佔用磁碟。
+    # 磁碟只剩個位數 GB 時，這些孤兒檔會讓後續上傳直接被拒。
+    try:
+        stale = list(config.UPLOADS_DIR.glob(".incoming_*.part"))
+        for f in stale:
+            try:
+                f.unlink()
+            except Exception:
+                pass
+        if stale:
+            print(f"🧹 [Startup] 清理 {len(stale)} 個未完成的上傳暫存檔")
+    except Exception:
+        pass
+
     # API 上線後自動背景抓取最新模型清單
-    asyncio.create_task(update_cached_models())
+    spawn_background(update_cached_models())
     try:
         yield
     finally:
-        # 關閉專屬切圖執行緒池
+        global SHUTTING_DOWN
+        SHUTTING_DOWN = True
+
+        # ⚠️ 這裡必須 wait=True，這是修掉「python 當機」的關鍵。
+        #
+        # ThreadPoolExecutor 會註冊 atexit 處理器，在直譯器收尾時 join 它的執行緒。
+        # 若此時 PDFium 還在渲染，C++ 端會存取已被釋放的記憶體 → SIGSEGV。
+        # faulthandler 實測追蹤（修正前）：
+        #   thread pdf_render__1 : pypdfium2 page.py:481 render ← 正在渲染
+        #   main thread          : concurrent/futures/thread.py:31 _python_exit ← 正在 join
+        #   → Fatal Python error: Segmentation fault
+        # 先前的 wait=False 只是不再收新工作，完全沒有等待進行中的渲染，因此必崩。
+        # cancel_futures 先丟棄「還沒開始」的工作，只等「正在跑」的那一頁（通常 <2 秒）。
         try:
-            PDF_RENDER_EXECUTOR.shutdown(wait=False)
-        except Exception:
-            pass
+            await asyncio.to_thread(shutdown_render_executor, True)
+            print("🧹 [Shutdown] PDF 渲染執行緒已安全結束")
+        except Exception as e:
+            print(f"⚠️ [Shutdown] 關閉渲染執行緒時發生問題: {e}")
+
         # 關閉時脫離 CDP 連線。
         # 注意：close_cdp_session() 只關閉 Playwright 的連線，
         # 不會終止使用者手動啟動的 Chrome。
@@ -202,6 +356,8 @@ async def background_render_task_pages(task_id: str, pdf_path: Path, target_page
     """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，受 RENDER_SEMAPHORE 控管總 CPU 並發"""
     try:
         async with RENDER_SEMAPHORE:
+            if SHUTTING_DOWN:
+                return
             check_task = await database.get_task(task_id)
             if not check_task or check_task.get("status") in ["paused", "failed"]:
                 return
@@ -248,7 +404,32 @@ async def run_page_ocr(
     
     try:
         await database.update_page_status(task_id, page_num, "processing")
-        
+
+        # 0. 切圖可能還沒渲染完成（例如剛上傳就按「重新辨識本頁」，或背景渲染尚未排到）。
+        #    先前會直接以 FileNotFoundError 失敗，使用者只看到隨機錯誤。
+        #    這裡改成即時補渲染該頁，讓重試在任何時機都能成功。
+        if not image_path.exists():
+            page_task = await database.get_task(task_id)
+            pdf_path = Path(page_task["original_filepath"]) if page_task else None
+            if pdf_path and pdf_path.exists():
+                try:
+                    await asyncio.to_thread(
+                        render_single_page, pdf_path, page_num, image_path
+                    )
+                    print(f"🖼️ [Page OCR] 任務 {task_id} 第 {page_num} 頁切圖不存在，已即時補渲染")
+                except Exception as e:
+                    await database.update_page_result(
+                        task_id, page_num, "failed",
+                        error_message=f"頁面切圖不存在且即時補渲染失敗: {e}"
+                    )
+                    return
+            else:
+                await database.update_page_result(
+                    task_id, page_num, "failed",
+                    error_message=f"頁面切圖不存在，且找不到原始 PDF: {image_path}"
+                )
+                return
+
         # 1. 若為網頁自動化模型，調用本機網頁自動化 RPA
         if web_rpa.is_web_model(clean_model):
             start_time = time.time()
@@ -373,12 +554,30 @@ async def process_task_pipeline(task_id: str):
     try:
         pages = await database.get_task_pages(task_id)
         pdf_path = Path(task["original_filepath"])
-        pdf_total_pages = get_pdf_page_count(pdf_path) if pdf_path.exists() else 0
+        # 同步 PDF 解析丟到執行緒，避免大檔解析時卡住整個事件迴圈
+        pdf_total_pages = (
+            await asyncio.to_thread(get_pdf_page_count, pdf_path)
+            if pdf_path.exists() else 0
+        )
         s_page = task.get("start_page", 1) or 1
         e_page = task.get("end_page", 0) or 0
         if e_page <= 0 or e_page > pdf_total_pages:
             e_page = pdf_total_pages
         target_page_nums = set(range(s_page, e_page + 1))
+
+        # 開工前先確認磁碟空間。300 DPI 的頁面 PNG 很大（實測單一任務可累積 1.3GB），
+        # 磁碟寫爆會讓渲染中途以 OSError 崩潰、任務卡在 rendering。
+        # 這裡改成事前檢查並給出明確訊息。
+        _free = _free_disk_bytes(config.DATA_DIR)
+        if _free >= 0 and _free < config.MIN_FREE_DISK_MB * 1024 * 1024:
+            print(f"❌ [Task {task_id}] 磁碟空間不足（剩餘 {_free/1048576:.0f} MB），中止切圖")
+            await database.update_task_status(task_id, "failed")
+            return
+
+        # 關閉中就不再啟動新的 PDFium 渲染（避免收尾階段 SIGSEGV）
+        if SHUTTING_DOWN:
+            print(f"⏹️ [Task {task_id}] 應用程式正在關閉，不啟動新的切圖")
+            return
 
         if not pages:
             # 1. 初次啟動：僅渲染指定範圍的頁面為圖片（大幅節省時間）
@@ -490,7 +689,7 @@ async def process_task_pipeline(task_id: str):
                 # 6. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
                 if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
                     print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
-                    asyncio.create_task(background_render_task_pages(task_id, pdf_path, target_page_nums))
+                    spawn_background(background_render_task_pages(task_id, pdf_path, target_page_nums))
         
     except Exception as e:
         if await database.get_task(task_id):
@@ -812,14 +1011,14 @@ async def create_api_key_account(payload: ApiKeyAccountCreate):
         payload.name, payload.api_key, payload.rpm_limit, is_paid=1 if payload.is_paid else 0
     )
     # 新增金鑰後自動觸發更新模型清單
-    asyncio.create_task(update_cached_models())
+    spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/oauth")
 async def create_oauth_account(payload: OAuthAccountCreate):
     acc_id = await database.add_oauth_account(payload.name, payload.client_id, payload.client_secret, payload.refresh_token)
     # 新增 OAuth 後自動觸發更新模型清單
-    asyncio.create_task(update_cached_models())
+    spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/{account_id}/toggle")
@@ -1046,65 +1245,117 @@ async def create_ocr_task(
 ):
     created_tasks = []
     
+    failed_files: List[Dict[str, str]] = []
+
     # 1. 處理伺服器端已快取的免上傳檔案
     if existing_files:
         try:
             cached_list = json.loads(existing_files)
-            for item in cached_list:
-                f_hash = item.get("hash")
-                cached = await database.get_file_by_hash(f_hash) if f_hash else None
-                if cached:
-                    filepath = cached["filepath"]
-                    if not Path(filepath).exists():
-                        await database.delete_file_hash_by_path(filepath)
-                        continue
-                    task_id = f"task_{uuid.uuid4().hex[:10]}"
-                    filename = item.get("filename") or cached["filename"]
-                    pdf_total_pages = get_pdf_page_count(Path(filepath))
-                    
-                    await database.create_task(
-                        task_id=task_id,
-                        filename=filename,
-                        filepath=filepath,
-                        model=model,
-                        lang=lang,
-                        direction=direction,
-                        column=column,
-                        custom_prompt=custom_prompt,
-                        start_page=start_page,
-                        end_page=end_page,
-                        is_paid=1 if use_paid_model else 0,
-                        paid_account_id=paid_account_id if use_paid_model else None,
-                        pdf_total_pages=pdf_total_pages,
-                        file_hash=f_hash
-                    )
-                    asyncio.create_task(process_task_pipeline(task_id))
-                    created_tasks.append(task_id)
         except Exception as e:
-            print(f"Error processing existing_files: {e}")
+            raise HTTPException(status_code=400, detail=f"existing_files 格式錯誤: {e}")
+
+        for item in cached_list:
+            f_hash = item.get("hash")
+            cached = await database.get_file_by_hash(f_hash) if f_hash else None
+            if not cached:
+                failed_files.append({
+                    "name": item.get("filename") or "(未命名)",
+                    "error": "伺服器端找不到此快取，請重新上傳該檔案"
+                })
+                continue
+
+            filepath = cached["filepath"]
+            if not Path(filepath).exists():
+                await database.delete_file_hash_by_path(filepath)
+                failed_files.append({
+                    "name": item.get("filename") or "(未命名)",
+                    "error": "快取檔案已不存在，請重新上傳"
+                })
+                continue
+
+            task_id = f"task_{uuid.uuid4().hex[:10]}"
+            filename = item.get("filename") or cached["filename"]
+
+            # PDF 解析是同步且可能耗時（大檔可達數秒），丟到執行緒避免卡住事件迴圈
+            pdf_total_pages = await asyncio.to_thread(get_pdf_page_count, Path(filepath))
+            if pdf_total_pages <= 0:
+                failed_files.append({
+                    "name": filename,
+                    "error": "PDF 無法解析或頁數為 0（檔案可能損毀、加密或非 PDF）"
+                })
+                continue
+
+            await database.create_task(
+                task_id=task_id,
+                filename=filename,
+                filepath=filepath,
+                model=model,
+                lang=lang,
+                direction=direction,
+                column=column,
+                custom_prompt=custom_prompt,
+                start_page=start_page,
+                end_page=end_page,
+                is_paid=1 if use_paid_model else 0,
+                paid_account_id=paid_account_id if use_paid_model else None,
+                pdf_total_pages=pdf_total_pages,
+                file_hash=f_hash
+            )
+            spawn_background(process_task_pipeline(task_id))
+            created_tasks.append(task_id)
 
     # 2. 處理使用者新上傳的檔案
-    if files:
-        for file in files:
-            if not file.filename or not file.filename.lower().endswith(".pdf"):
-                continue
-                
-            task_id = f"task_{uuid.uuid4().hex[:10]}"
-            content = await file.read()
-            f_hash = hashlib.sha256(content).hexdigest()
-            
-            # 檢查檔案是否已在資料庫快取
+    for file in (files or []):
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            failed_files.append({
+                "name": file.filename or "(未命名)",
+                "error": "只接受 .pdf 檔案"
+            })
+            continue
+
+        task_id = f"task_{uuid.uuid4().hex[:10]}"
+        tmp_path = config.UPLOADS_DIR / f".incoming_{task_id}.part"
+
+        # 串流寫入暫存檔並同時計算 SHA-256（不把整個檔案讀進記憶體）
+        try:
+            f_hash, total_bytes = await _stream_upload_to_disk(file, tmp_path)
+        except HTTPException as he:
+            failed_files.append({"name": file.filename, "error": str(he.detail)})
+            continue
+        except Exception as e:
+            failed_files.append({"name": file.filename, "error": f"寫入檔案失敗: {e}"})
+            continue
+
+        created_new = False
+        try:
             cached = await database.get_file_by_hash(f_hash)
             if cached and Path(cached["filepath"]).exists():
+                # 伺服器已有相同內容 → 直接重用，丟棄這次上傳的暫存檔
                 saved_path = Path(cached["filepath"])
+                tmp_path.unlink(missing_ok=True)
             else:
-                saved_filename = f"{task_id}_{file.filename}"
-                saved_path = config.UPLOADS_DIR / saved_filename
-                saved_path.write_bytes(content)
-                await database.save_file_hash(f_hash, file.filename, str(saved_path), len(content))
-                
-            pdf_total_pages = get_pdf_page_count(saved_path) if saved_path.exists() else 0
-            
+                saved_path = config.UPLOADS_DIR / f"{task_id}_{_safe_filename(file.filename)}"
+                tmp_path.replace(saved_path)
+                created_new = True
+                await database.save_file_hash(
+                    f_hash, file.filename, str(saved_path), total_bytes
+                )
+
+            pdf_total_pages = await asyncio.to_thread(get_pdf_page_count, saved_path)
+            if pdf_total_pages <= 0:
+                # 不要建立一個永遠不會完成的任務（先前會留下 pending 卡死）
+                if created_new:
+                    try:
+                        saved_path.unlink(missing_ok=True)
+                        await database.delete_file_hash_by_path(str(saved_path))
+                    except Exception:
+                        pass
+                failed_files.append({
+                    "name": file.filename,
+                    "error": "PDF 無法解析或頁數為 0（檔案可能損毀、加密或非 PDF）"
+                })
+                continue
+
             await database.create_task(
                 task_id=task_id,
                 filename=file.filename,
@@ -1121,19 +1372,30 @@ async def create_ocr_task(
                 pdf_total_pages=pdf_total_pages,
                 file_hash=f_hash
             )
-            
-            # 立即非同步啟動後台流水線
-            asyncio.create_task(process_task_pipeline(task_id))
+            spawn_background(process_task_pipeline(task_id))
             created_tasks.append(task_id)
-            
+        except Exception as e:
+            failed_files.append({"name": file.filename, "error": f"建立任務失敗: {e}"})
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
     if not created_tasks:
-        raise HTTPException(status_code=400, detail="未收到有效的 PDF 檔案或快取資訊")
+        detail = "未收到有效的 PDF 檔案或快取資訊"
+        if failed_files:
+            detail += "；" + "；".join(
+                f"{f['name']}: {f['error']}" for f in failed_files[:5]
+            )
+        raise HTTPException(status_code=400, detail=detail)
         
     return {
         "status": "ok", 
         "task_ids": created_tasks, 
         "count": len(created_tasks), 
-        "task_id": created_tasks[0]
+        "task_id": created_tasks[0],
+        "failed": failed_files,
+        "failed_count": len(failed_files)
     }
 
 @app.delete("/api/tasks/{task_id}")
@@ -1196,7 +1458,7 @@ async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None)
         await database.update_task_model(task_id, new_model)
     if task["status"] in ["paused", "failed", "pending"]:
         await database.update_task_status(task_id, "processing", model=new_model)
-        asyncio.create_task(process_task_pipeline(task_id))
+        spawn_background(process_task_pipeline(task_id))
     return {
         "status": "ok", 
         "task_status": "processing", 
@@ -1280,7 +1542,7 @@ async def retry_single_page(
         specific_acc_id = task.get("paid_account_id")
 
     img_path = Path(target_page["image_path"])
-    asyncio.create_task(run_page_ocr(
+    spawn_background(run_page_ocr(
         task_id=task_id, 
         page_num=page_num, 
         image_path=img_path, 

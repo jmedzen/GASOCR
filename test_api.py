@@ -213,3 +213,16 @@ async def test_fastapi_endpoints():
 
 if __name__ == "__main__":
     asyncio.run(test_fastapi_endpoints())
+
+    # ⚠️ 必須在直譯器結束前安全關閉 PDF 渲染執行緒池。
+    #
+    # ThreadPoolExecutor 會註冊 atexit 處理器，在直譯器收尾時 join 它的執行緒；
+    # 若此時 PDFium 仍在渲染，C++ 端會存取已釋放的記憶體 → SIGSEGV
+    # （本測試先前就是這樣以 exit code 139 崩潰的）。
+    # 這同時也是伺服器端「python 當機」的同一根因，main.py 的 lifespan 已同步修正。
+    try:
+        import main
+        main.shutdown_render_executor(wait=True)
+        print("🧹 已安全關閉 PDF 渲染執行緒池")
+    except Exception as e:
+        print(f"⚠️ 關閉渲染執行緒池失敗: {e}")

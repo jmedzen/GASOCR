@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 014"
+BUILD_NUMBER = "Build 015"
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -34,6 +34,20 @@ DEFAULT_RENDER_DPI = 300            # 高清渲染解析度 (預設 300 DPI，�
 # PDF 渲染並發與執行緒控制 (CPU Core - 2，保底至少 1；單一 PDF 使用單一執行緒)
 _detected_cores = os.cpu_count() or 4
 MAX_RENDER_WORKERS = max(1, int(os.environ.get("MAX_RENDER_WORKERS", _detected_cores - 2)))
+
+# ⚠️ 同時「持有全頁點陣圖」的文件數上限 —— 這是記憶體限制，不是 CPU 限制。
+#    300 DPI 的大尺寸掃描，單頁點陣圖就可能佔 100MB 以上；
+#    先前此值等於 MAX_RENDER_WORKERS（本機為 8），一次上傳 5~6 個大 PDF 時
+#    會同時渲染 5~6 份全頁點陣圖，把記憶體吃爆導致 Python 被 OOM 終止。
+#    因此獨立出來並預設保守值 2，可用環境變數 MAX_CONCURRENT_RENDERS 調整。
+MAX_CONCURRENT_RENDERS = max(1, int(os.environ.get("MAX_CONCURRENT_RENDERS", 2)))
+
+# 上傳限制：單檔大小上限（MB）。0 表示不限制。
+MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", 4096))
+
+# 保留的可用磁碟空間（MB）。低於此值就拒收上傳／停止切圖，
+# 避免把磁碟寫爆導致 OSError 中斷整批上傳或讓背景渲染崩潰。
+MIN_FREE_DISK_MB = int(os.environ.get("MIN_FREE_DISK_MB", 2048))
 
 # Model options
 AVAILABLE_MODELS = [

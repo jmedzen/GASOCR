@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 014') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 015') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -1283,7 +1283,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 014') }}
+                            {{ build_number | default('Build 015') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -1402,12 +1402,12 @@
                 </div>
 
                 <div 
-                    class="flex-1 border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition min-h-[220px]"
-                    :class="pendingFiles.length > 0 ? 'border-blue-500 bg-blue-50/20' : 'border-slate-300 hover:border-blue-400 bg-slate-50/50'"
+                    class="flex-1 border-2 border-dashed rounded-xl flex flex-col transition min-h-[220px]"
+                    :class="pendingFiles.length > 0 ? 'border-blue-500 bg-blue-50/20 cursor-default p-4' : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 items-center justify-center text-center cursor-pointer p-5'"
                     @dragover.prevent="$el.classList.add('border-blue-500')"
                     @dragleave.prevent="$el.classList.remove('border-blue-500')"
                     @drop.prevent="handleFilesDrop($event)"
-                    @click="$refs.fileInput.click()"
+                    @click="pendingFiles.length === 0 ? $refs.fileInput.click() : null"
                 >
                     <input type="file" x-ref="fileInput" class="hidden" accept=".pdf" multiple @change="handleFilesSelect($event)">
                     
@@ -1423,17 +1423,24 @@
 
                     <!-- Selected Files Queue Display -->
                     <template x-if="pendingFiles.length > 0">
-                        <div class="w-full flex flex-col h-full text-left" @click.stop>
-                            <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2">
-                                <span class="text-xs font-semibold text-slate-600">待上傳轉譯清單：</span>
+                        <div class="w-full flex-1 flex flex-col h-full text-left min-h-0" @click.stop>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2 shrink-0">
                                 <div class="flex items-center space-x-2">
-                                    <button type="button" @click="$refs.fileInput.click()" class="text-xs text-blue-600 hover:underline font-medium">+ 繼續新增</button>
-                                    <button type="button" @click="pendingFiles = []" class="text-xs text-red-500 hover:underline">清空</button>
+                                    <span class="text-xs font-semibold text-slate-700">待上傳轉譯清單</span>
+                                    <span class="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700" x-text="`${pendingFiles.length} 個檔案`"></span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button type="button" @click="$refs.fileInput.click()" class="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center space-x-1 transition cursor-pointer">
+                                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                        <span>繼續新增</span>
+                                    </button>
+                                    <span class="text-slate-300">|</span>
+                                    <button type="button" @click="pendingFiles = []" class="text-xs text-red-500 hover:text-red-600 font-medium transition cursor-pointer">清空</button>
                                 </div>
                             </div>
-                            <div class="max-h-[160px] overflow-y-auto custom-scroll space-y-1.5 pr-1">
+                            <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-1.5 pr-1">
                                 <template x-for="(item, idx) in pendingFiles" :key="item.id || idx">
-                                    <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs hover:border-slate-300">
+                                    <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs hover:border-slate-300 transition shadow-xs">
                                         <div class="flex items-center space-x-2 truncate mr-2">
                                             <i data-lucide="file-text" class="w-4 h-4 text-emerald-600 shrink-0"></i>
                                             <span class="font-medium text-slate-800 truncate" x-text="item.name"></span>
@@ -1455,8 +1462,8 @@
                                             </template>
                                         </div>
                                         <div class="flex items-center space-x-2 shrink-0">
-                                            <span class="text-[11px] text-slate-400" x-text="formatFileSize(item.size)"></span>
-                                            <button type="button" @click="removePendingFile(idx)" class="text-slate-400 hover:text-red-500">
+                                            <span class="text-[11px] text-slate-400 font-mono" x-text="formatFileSize(item.size)"></span>
+                                            <button type="button" @click="removePendingFile(idx)" class="text-slate-400 hover:text-red-500 transition cursor-pointer" title="移除此檔案">
                                                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                                             </button>
                                         </div>
@@ -2194,7 +2201,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 014') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 015') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -3818,7 +3825,10 @@
                     }
                     this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
 
-                    // 採用佇列排程，最多同時並行 2 個檔案計算 SHA-256，防止多個百 MB 大檔同時配置 ArrayBuffer 導致瀏覽器記憶體崩潰
+                    // 採用佇列排程，一次只處理 1 個檔案的 SHA-256。
+                    // crypto.subtle.digest 不支援串流，必須先把整個檔案讀成 ArrayBuffer
+                    // （使用者的 PDF 單檔可達 250MB），因此並行 2 個就會同時佔用 500MB+
+                    // 的瀏覽器記憶體，容易讓分頁卡死或崩潰。序列化最保險。
                     const queue = [...newItems];
                     const processItem = async (item) => {
                         const f = item.file;
@@ -3864,7 +3874,7 @@
                         }
                     };
 
-                    const maxWorkers = 2;
+                    const maxWorkers = 1;
                     const workers = Array.from({ length: Math.min(maxWorkers, queue.length) }, async () => {
                         while (queue.length > 0) {
                             const nextItem = queue.shift();
@@ -4204,73 +4214,157 @@
                     this.isSubmitting = true;
                     this.uploadProgress = 0;
 
-                    const formData = new FormData();
-                    const cachedFilesList = [];
+                    // ── 分批上傳設定 ─────────────────────────────────────
+                    // 為什麼要分批：先前把所有檔案塞進「同一個」FormData 一次送出。
+                    // 5 個 200MB+ 的 PDF 等於一個 1GB+ 的單一請求，結果是
+                    //   1. 兩端記憶體都被吃爆（Python 被 OOM 殺掉）
+                    //   2. 任何一個檔案出錯，整批一起失敗
+                    //   3. 無法顯示個別檔案的進度與錯誤
+                    // 因此改成依「檔案數」與「總位元組」切成多個請求，序列送出。
+                    const MAX_FILES_PER_REQUEST = 2;
+                    const MAX_BYTES_PER_REQUEST = 200 * 1024 * 1024;
 
-                    for (const item of this.pendingFiles) {
-                        const fileObj = item.file || item;
-                        if (item.isCached && item.hash) {
-                            cachedFilesList.push({
-                                hash: item.hash,
-                                filename: item.name,
-                                filepath: item.cachedPath
-                            });
-                        } else {
-                            formData.append('files', fileObj);
+                    const cachedItems = this.pendingFiles.filter(i => i.isCached && i.hash);
+                    const newItems = this.pendingFiles.filter(i => !(i.isCached && i.hash));
+
+                    const batches = [];
+                    let cur = [];
+                    let curBytes = 0;
+                    for (const it of newItems) {
+                        const sz = (it.file && it.file.size) || 0;
+                        const wouldExceed = cur.length > 0 &&
+                            (cur.length >= MAX_FILES_PER_REQUEST ||
+                             curBytes + sz > MAX_BYTES_PER_REQUEST);
+                        if (wouldExceed) {
+                            batches.push(cur);
+                            cur = [];
+                            curBytes = 0;
                         }
+                        cur.push(it);
+                        curBytes += sz;
                     }
+                    if (cur.length > 0) batches.push(cur);
 
-                    if (cachedFilesList.length > 0) {
-                        formData.append('existing_files', JSON.stringify(cachedFilesList));
-                    }
+                    const totalBytes = newItems.reduce((s, i) => s + ((i.file && i.file.size) || 0), 0);
+                    let uploadedBytes = 0;
+                    let totalCreated = 0;
+                    let firstTaskId = null;
+                    const failures = [];
 
-                    formData.append('model', this.formConfig.model);
-                    formData.append('lang', this.formConfig.lang);
-                    formData.append('direction', this.formConfig.direction);
-                    formData.append('column', this.formConfig.column);
-                    formData.append('custom_prompt', this.formConfig.customPrompt);
-                    formData.append('start_page', this.formConfig.startPage || 1);
-                    formData.append('end_page', this.formConfig.endPage || 0);
-                    formData.append('use_paid_model', this.formConfig.usePaidModel ? 'true' : 'false');
-                    if (this.formConfig.usePaidModel && this.formConfig.paidAccountId) {
-                        formData.append('paid_account_id', this.formConfig.paidAccountId);
-                    }
+                    const buildFormData = (files, cached) => {
+                        const fd = new FormData();
+                        for (const it of files) {
+                            fd.append('files', it.file || it);
+                        }
+                        if (cached && cached.length > 0) {
+                            fd.append('existing_files', JSON.stringify(cached.map(i => ({
+                                hash: i.hash,
+                                filename: i.name,
+                                filepath: i.cachedPath
+                            }))));
+                        }
+                        fd.append('model', this.formConfig.model);
+                        fd.append('lang', this.formConfig.lang);
+                        fd.append('direction', this.formConfig.direction);
+                        fd.append('column', this.formConfig.column);
+                        fd.append('custom_prompt', this.formConfig.customPrompt);
+                        fd.append('start_page', this.formConfig.startPage || 1);
+                        fd.append('end_page', this.formConfig.endPage || 0);
+                        fd.append('use_paid_model', this.formConfig.usePaidModel ? 'true' : 'false');
+                        if (this.formConfig.usePaidModel && this.formConfig.paidAccountId) {
+                            fd.append('paid_account_id', this.formConfig.paidAccountId);
+                        }
+                        return fd;
+                    };
+
+                    const postBatch = (formData) => new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', '/api/tasks');
+                        // 先前沒有設定 timeout，導致 ontimeout 永遠是死碼。
+                        // 設太短會誤殺慢速上傳，因此給 15 分鐘上限。
+                        xhr.timeout = 15 * 60 * 1000;
+                        xhr.upload.onprogress = (e) => {
+                            if (e.lengthComputable && e.total > 0) {
+                                const denom = totalBytes > 0 ? totalBytes : 1;
+                                const done = uploadedBytes + e.loaded;
+                                this.uploadProgress = Math.min(99, Math.round((done / denom) * 100));
+                            }
+                        };
+                        xhr.onload = () => {
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                resolve({ status: xhr.status, data });
+                            } catch (err) {
+                                reject(new Error('伺服器回應格式錯誤: ' +
+                                    (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error('網路傳輸失敗，請檢查連線狀態'));
+                        xhr.ontimeout = () => reject(new Error('請求超時（15 分鐘），檔案過大或伺服器處理時間過長'));
+                        xhr.send(formData);
+                    });
+
+                    const absorb = (res, items) => {
+                        if (res.status === 200 && res.data && res.data.status === 'ok') {
+                            totalCreated += res.data.count || 0;
+                            if (!firstTaskId) firstTaskId = res.data.task_id;
+                            (res.data.failed || []).forEach(f => failures.push(f));
+                        } else {
+                            const m = (res.data && (res.data.detail || res.data.message)) || '未知原因';
+                            items.forEach(it => failures.push({ name: it.name, error: m }));
+                        }
+                    };
 
                     try {
-                        const res = await new Promise((resolve, reject) => {
-                            const xhr = new XMLHttpRequest();
-                            xhr.open('POST', '/api/tasks');
-                            xhr.upload.onprogress = (e) => {
-                                if (e.lengthComputable && e.total > 0) {
-                                    this.uploadProgress = Math.min(99, Math.round((e.loaded / e.total) * 100));
-                                }
-                            };
-                            xhr.onload = () => {
-                                try {
-                                    const data = JSON.parse(xhr.responseText);
-                                    resolve({ status: xhr.status, data });
-                                } catch (err) {
-                                    reject(new Error('伺服器回應格式錯誤: ' + (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
-                                }
-                            };
-                            xhr.onerror = () => reject(new Error('網路傳輸失敗，請檢查連線狀態'));
-                            xhr.ontimeout = () => reject(new Error('請求超時，檔案過大或伺服器處理時間過長'));
-                            xhr.send(formData);
-                        });
-
-                        if (res.status === 200 && res.data && res.data.status === 'ok') {
-                            this.pendingFiles = [];
-                            await this.loadTasks();
-                            if (res.data.task_id) {
-                                const firstTask = this.allTasks.find(t => t.id === res.data.task_id);
-                                if (firstTask) {
-                                    this.inspectTask(firstTask);
-                                }
+                        // 1) 已快取（免上傳）的檔案：單獨送一次請求建立任務
+                        if (cachedItems.length > 0) {
+                            try {
+                                absorb(await postBatch(buildFormData([], cachedItems)), cachedItems);
+                            } catch (err) {
+                                cachedItems.forEach(it => failures.push({
+                                    name: it.name, error: err.message || String(err)
+                                }));
                             }
-                            this.showToast(`🎉 已成功排入 ${res.data.count} 個檔案進行批次 OCR 轉譯！`);
+                        }
+
+                        // 2) 新上傳的檔案：逐批序列送出，避免同時佔用大量記憶體
+                        for (const batch of batches) {
+                            const bytesInBatch = batch.reduce(
+                                (s, it) => s + ((it.file && it.file.size) || 0), 0);
+                            try {
+                                absorb(await postBatch(buildFormData(batch, [])), batch);
+                            } catch (err) {
+                                batch.forEach(it => failures.push({
+                                    name: it.name, error: err.message || String(err)
+                                }));
+                            }
+                            uploadedBytes += bytesInBatch;
+                        }
+
+                        this.uploadProgress = 100;
+
+                        if (totalCreated > 0) {
+                            // 只把失敗的檔案留在佇列，方便直接重試
+                            const failedNames = new Set(failures.map(f => f.name));
+                            this.pendingFiles = this.pendingFiles.filter(p => failedNames.has(p.name));
+                            await this.loadTasks();
+                            if (firstTaskId) {
+                                const firstTask = this.allTasks.find(t => t.id === firstTaskId);
+                                if (firstTask) this.inspectTask(firstTask);
+                            }
+                            let msg = `🎉 已成功排入 ${totalCreated} 個檔案進行批次 OCR 轉譯！`;
+                            if (failures.length > 0) msg += ` （${failures.length} 個失敗，已保留在清單中可重試）`;
+                            this.showToast(msg);
+                            if (failures.length > 0) {
+                                alert('⚠️ 部分檔案未排入：\n\n' +
+                                    failures.slice(0, 10).map(f => `• ${f.name}\n  ${f.error}`).join('\n\n'));
+                            }
                         } else {
-                            const errMsg = (res.data && (res.data.detail || res.data.message)) || '未知原因';
-                            this.showToast('⚠️ 啟動任務失敗: ' + errMsg);
+                            const detail = failures.length > 0
+                                ? failures.slice(0, 5).map(f => `${f.name}: ${f.error}`).join('\n')
+                                : '未知原因';
+                            this.showToast('⚠️ 啟動任務失敗');
+                            alert('⚠️ 沒有檔案成功排入：\n\n' + detail);
                         }
                     } catch (err) {
                         this.showToast('⚠️ 送出任務錯誤: ' + (err.message || err));
