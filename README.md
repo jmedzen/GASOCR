@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-006-indigo?style=for-the-badge" alt="Build 006" />
+  <img src="https://img.shields.io/badge/Build-007-indigo?style=for-the-badge" alt="Build 007" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
   <img src="https://img.shields.io/badge/Cost-Strict%200%20Free%20Tier-success?style=for-the-badge" alt="Zero Cost" />
@@ -122,7 +122,7 @@ GASOCR/
 ## 🐳 Docker 容器化部署指南 (Docker Ready · GHCR)
 
 GASOCR 已完整支援標準 Docker 與 Docker Compose 部署，並透過 GitHub Actions 自動建置並發布多架構映像檔至 **GitHub Container Registry (GHCR)**：
-- **GHCR 映像檔路徑**：`ghcr.io/jmedzen/gasocr:latest`（或 `ghcr.io/jmedzen/gasocr:build-006`）
+- **GHCR 映像檔路徑**：`ghcr.io/jmedzen/gasocr:latest`（或 `ghcr.io/jmedzen/gasocr:build-007`）
 - **支援架構**：`linux/amd64`, `linux/arm64`（Apple Silicon、Raspberry Pi、x86/x64 伺服器通話支援）
 - 內建中文字型渲染、Playwright 依賴、健康檢查與資料持久化，**無需在本機耗時編譯，隨拉即用**！
 
