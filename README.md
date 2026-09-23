@@ -2,7 +2,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-005-indigo?style=for-the-badge" alt="Build 005" />
+  <img src="https://img.shields.io/badge/Build-006-indigo?style=for-the-badge" alt="Build 006" />
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
   <img src="https://img.shields.io/badge/Cost-Strict%200%20Free%20Tier-success?style=for-the-badge" alt="Zero Cost" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python" alt="Python" />
@@ -118,7 +119,69 @@ GASOCR/
 
 ---
 
-## 🚀 安裝與快速開始 (Quick Start)
+## 🐳 Docker 容器化部署指南 (Docker Ready · GHCR)
+
+GASOCR 已完整支援標準 Docker 與 Docker Compose 部署，並透過 GitHub Actions 自動建置並發布多架構映像檔至 **GitHub Container Registry (GHCR)**：
+- **GHCR 映像檔路徑**：`ghcr.io/jmedzen/gasocr:latest`（或 `ghcr.io/jmedzen/gasocr:build-006`）
+- **支援架構**：`linux/amd64`, `linux/arm64`（Apple Silicon、Raspberry Pi、x86/x64 伺服器通話支援）
+- 內建中文字型渲染、Playwright 依賴、健康檢查與資料持久化，**無需在本機耗時編譯，隨拉即用**！
+
+### 1. Docker Compose 一鍵拉取並啟動（推薦）
+
+只需下載本專案的 `docker-compose.yml`，即可直接拉取 GHCR 映像檔並在背景啟動服務：
+
+```bash
+# 拉取最新 GHCR 映像檔並啟動
+docker compose pull
+docker compose up -d
+```
+
+服務啟動後，請以瀏覽器訪問：**`http://localhost:8610`**。
+
+#### 常用指令
+```bash
+# 查看即時日誌
+docker compose logs -f
+
+# 停止服務
+docker compose down
+
+# 更新至最新版本
+docker compose pull && docker compose up -d
+```
+
+### 2. 使用標準 Docker CLI 直接從 GHCR 運行
+
+```bash
+# 1. 從 GitHub Container Registry 拉取映像檔
+docker pull ghcr.io/jmedzen/gasocr:latest
+
+# 2. 啟動容器（掛載本機 ./data 目錄以持久保存資料）
+docker run -d \
+  --name gasocr \
+  -p 8610:8610 \
+  -v $(pwd)/data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/jmedzen/gasocr:latest
+```
+
+### 3. 資料持久化與掛載說明 (Data Persistence)
+容器內部的 `/app/data` 宣告為資料持久層：
+- **`./data/ocr.db`**：SQLite 資料庫（存放 API 金鑰、帳號、轉譯任務、各頁辨識結果）。
+- **`./data/uploads/`**：上傳之原始 PDF 與特徵碼快取。
+- **`./data/renders/`**：300 DPI 逐頁渲染圖檔。
+- **`./data/exports/`**：Markdown、Word、TXT 與打包 ZIP 檔案。
+
+所有資料皆安全保存於宿主機上的 `./data` 目錄，重啟或升級容器完全不遺失資料。
+
+### 4. Chrome CDP 模式連線 (Web RPA 模式)
+若使用 Web RPA 並在宿主機啟動了 Chrome（Port 9222）：
+- 在 `docker-compose.yml` 中已預設加入 `extra_hosts: ["host.docker.internal:host-gateway"]`。
+- 容器內可直接透過 `host.docker.internal:9222` 連接至宿主機的 Chrome 瀏覽器。
+
+---
+
+## 🚀 本機安裝與快速開始 (Quick Start)
 
 ### 1. 環境需求
 - macOS / Linux / Windows (WSL2)

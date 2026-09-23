@@ -987,3 +987,8 @@ async def download_export(task_id: str, fmt: str):
         return FileResponse(file_path, filename=f"{filename}_OCR_bundle.zip", media_type="application/zip")
     else:
         raise HTTPException(status_code=400, detail="不支援的匯出格式")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host=config.HOST, port=config.PORT, reload=False)

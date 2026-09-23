@@ -32,6 +32,10 @@ data/*
 database.sqlite
 sets/*
 !sets/.gitkeep
+*.log
+diag_*.py
+capture_*.py
+verify_*.py
 
 # Operating System files
 .DS_Store

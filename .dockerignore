@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Python virtual environment & cache
+.venv
+venv
+ENV
+env
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Local runtime data & uploads (mounted via volumes)
+data/
+sets/
+
+# Local diagnostic and test scripts
+diag_*.py
+capture_*.py
+verify_*.py
+test_*.py
+
+# Logs and editor files
+*.log
+.DS_Store
+.DS_Store?
+.idea
+.vscode

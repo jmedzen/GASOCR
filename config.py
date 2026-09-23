@@ -4,11 +4,15 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 005"
+BUILD_NUMBER = "Build 006"
+
+# Host & Port settings
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8610"))
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data"))).resolve()
 UPLOADS_DIR = DATA_DIR / "uploads"
 RENDERS_DIR = DATA_DIR / "renders"
 EXPORTS_DIR = DATA_DIR / "exports"

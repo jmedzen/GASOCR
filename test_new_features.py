@@ -16,7 +16,7 @@ async def test_all():
         assert res.status_code == 200
         data = res.json()
         print(f"   ✅ 版本號確認: {data['build']} ({data['version']})")
-        assert data['build'] == "Build 005"
+        assert data['build'] == "Build 006"
 
         # 2. 測試檔案 Hash 比對端點 /api/files/check-hash
         # 建立一個測試用的虛構 pdf 檔案
