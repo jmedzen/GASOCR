@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 015') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 016') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -1283,7 +1283,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 015') }}
+                            {{ build_number | default('Build 016') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -2201,7 +2201,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 015') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 016') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -3965,6 +3965,9 @@
                             await this.loadAccounts();
                             alert(wasPaid ? '💎 付費 API Key 新增成功！' : 'API Key 新增成功！');
                             this.refreshModels(false);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
                         }
                     } catch (err) {
                         alert('新增失敗: ' + err);
@@ -3983,6 +3986,9 @@
                             await this.loadAccounts();
                             alert('OAuth 帳號新增成功！');
                             this.refreshModels(false);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
                         }
                     } catch (err) {
                         alert('新增失敗: ' + err);
@@ -3990,7 +3996,11 @@
                 },
 
                 async toggleAccount(accId) {
-                    await fetch(`/api/accounts/${accId}/toggle`, { method: 'POST' });
+                    const res = await fetch(`/api/accounts/${accId}/toggle`, { method: 'POST' });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        alert('操作失敗: ' + (errData.detail || '需要管理員權限'));
+                    }
                     await this.loadAccounts();
                 },
 
@@ -3998,14 +4008,22 @@
                     const btnText = event.target;
                     btnText.innerText = '測試中...';
                     const res = await fetch(`/api/accounts/${accId}/test`, { method: 'POST' });
-                    const data = await res.json();
-                    alert(data.message);
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        alert('測試失敗: ' + (data.detail || '需要管理員權限'));
+                    } else {
+                        alert(data.message);
+                    }
                     btnText.innerText = '測試';
                 },
 
                 async deleteAccount(accId) {
                     if (!confirm('確定要刪除這組帳號嗎？')) return;
-                    await fetch(`/api/accounts/${accId}`, { method: 'DELETE' });
+                    const res = await fetch(`/api/accounts/${accId}`, { method: 'DELETE' });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        alert('刪除失敗: ' + (errData.detail || '需要管理員權限'));
+                    }
                     await this.loadAccounts();
                 },
 
@@ -4102,6 +4120,9 @@
                         if (res.ok) {
                             await this.refreshModels(false);
                             this.showToast('✅ 網頁自動化設定已儲存！');
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('儲存 Web RPA 設定失敗: ' + (errData.detail || '需要管理員權限'));
                         }
                     } catch (err) {
                         alert('儲存 Web RPA 設定失敗: ' + err);

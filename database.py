@@ -231,7 +231,7 @@ async def add_oauth_account(name: str, client_id: str, client_secret: str, refre
         await db.commit()
         return cursor.lastrowid
 
-async def get_accounts() -> List[Dict[str, Any]]:
+async def get_accounts(include_secrets: bool = False) -> List[Dict[str, Any]]:
     today_str = datetime.date.today().isoformat()
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM accounts ORDER BY id ASC")
@@ -251,6 +251,21 @@ async def get_accounts() -> List[Dict[str, Any]]:
                     d["masked_key"] = raw[:4] + "...." + raw[-4:]
                 else:
                     d["masked_key"] = "****"
+            elif d.get("oauth_client_id"):
+                raw = d["oauth_client_id"]
+                if len(raw) > 8:
+                    d["masked_key"] = raw[:4] + "...." + raw[-4:]
+                else:
+                    d["masked_key"] = "OAuth Token"
+
+            if not include_secrets:
+                d.pop("api_key", None)
+                d.pop("oauth_client_secret", None)
+                d.pop("oauth_refresh_token", None)
+                if d.get("oauth_client_id"):
+                    raw = d["oauth_client_id"]
+                    d["oauth_client_id"] = (raw[:4] + "...." + raw[-4:]) if len(raw) > 8 else "****"
+
             result.append(d)
         await db.commit()
         return result

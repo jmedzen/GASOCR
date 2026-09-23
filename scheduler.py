@@ -26,7 +26,7 @@ class AccountScheduler:
           4. 強制 4.2s 間隔保護，保證符合 15 RPM
         """
         async with self._lock:
-            accounts = await database.get_accounts()
+            accounts = await database.get_accounts(include_secrets=True)
             now = time.time()
             
             if specific_account_id is not None:

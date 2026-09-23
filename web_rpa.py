@@ -98,6 +98,24 @@ def save_web_config(config_data: Dict[str, Any]):
         json.dump(config_data, f, ensure_ascii=False, indent=2)
 
 
+ALLOWED_BROWSER_EXECUTABLES = {
+    "google chrome", "chrome", "chromium", "google-chrome",
+    "google-chrome-stable", "brave", "msedge", "edge",
+    "chrome.exe", "msedge.exe", "brave.exe"
+}
+
+def validate_chrome_path(path_str: str) -> bool:
+    """校驗 chrome_path 是否為合法合理的瀏覽器可執行檔"""
+    if not path_str or not isinstance(path_str, str):
+        return False
+    path = Path(path_str.strip())
+    if not path.is_file():
+        return False
+    name_lower = path.name.lower()
+    stem_lower = path.stem.lower()
+    return any(allowed in name_lower or allowed in stem_lower for allowed in ALLOWED_BROWSER_EXECUTABLES)
+
+
 def get_rpa_profile_path() -> Path:
     """取得 Playwright 專用 RPA Profile 目錄（與系統 Chrome 完全隔離）"""
     RPA_PROFILE_DIR.mkdir(parents=True, exist_ok=True)

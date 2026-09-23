@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any, Tuple, Set
 import concurrent.futures
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, BackgroundTasks, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -26,6 +26,7 @@ import gemini_ocr
 from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
 import exporters
 import web_rpa
+from rate_limiter import auth_rate_limiter, get_client_ip
 
 # PDF 渲染專屬執行緒池與並發信號量
 # - PDF_RENDER_EXECUTOR 管 CPU（執行緒數）
@@ -304,6 +305,44 @@ async def extract_auth_info(request: Request) -> Tuple[bool, bool]:
         is_access = True
         
     return is_admin, is_access
+
+
+async def require_admin(request: Request):
+    """FastAPI Dependency: 要求當前請求必須具備管理員權限"""
+    is_admin, _ = await extract_auth_info(request)
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="需要管理員權限")
+
+
+def set_auth_cookie(
+    response: Response,
+    key: str,
+    value: str,
+    request: Request,
+    max_age: int = 86400 * 7
+):
+    """統一設定安全 Session Cookie (強制 HttpOnly, Lax, 依協議自動啟用 Secure)"""
+    is_secure = (request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
+    response.set_cookie(
+        key=key,
+        value=value,
+        max_age=max_age,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        path="/"
+    )
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """全域安全回應標頭注入中間件"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -743,7 +782,7 @@ async def get_auth_status(request: Request):
     }
 
 @app.post("/api/admin/init")
-async def admin_init(req: AdminInitRequest):
+async def admin_init(req: AdminInitRequest, request: Request):
     """初次安裝初始化管理員密碼"""
     if await database.is_admin_initialized():
         raise HTTPException(status_code=400, detail="系統已完成管理員初始化，無法重複設定")
@@ -758,51 +797,35 @@ async def admin_init(req: AdminInitRequest):
     secret = await database.get_session_secret()
     token = create_session_token("admin", secret)
     resp = JSONResponse(content={"success": True, "token": token, "message": "管理員密碼初始化成功！"})
-    resp.set_cookie(
-        key="gasocr_admin_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
-    resp.set_cookie(
-        key="gasocr_access_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
+    set_auth_cookie(resp, "gasocr_admin_token", token, request)
+    set_auth_cookie(resp, "gasocr_access_token", token, request)
     return resp
 
 @app.post("/api/admin/login")
-async def admin_login(req: AdminLoginRequest):
-    """管理員登入"""
+async def admin_login(req: AdminLoginRequest, request: Request):
+    """管理員登入（含 IP 速率限制與防暴力破解）"""
+    ip = get_client_ip(request)
+    allowed, retry_after = await auth_rate_limiter.check_rate_limit(ip, "admin_login")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"登入嘗試次數過多，為保障安全請於 {retry_after} 秒後再試",
+            headers={"Retry-After": str(retry_after)}
+        )
+    await auth_rate_limiter.record_attempt(ip, "admin_login")
+
     if not await database.is_admin_initialized():
         raise HTTPException(status_code=400, detail="系統尚未初始化管理員密碼，請先完成初始化設定")
     if not await database.verify_admin_password(req.password.strip()):
+        await auth_rate_limiter.record_failure(ip, "admin_login")
         raise HTTPException(status_code=401, detail="管理員密碼錯誤")
         
+    await auth_rate_limiter.record_success(ip, "admin_login")
     secret = await database.get_session_secret()
     token = create_session_token("admin", secret)
     resp = JSONResponse(content={"success": True, "token": token, "message": "管理員登入成功"})
-    resp.set_cookie(
-        key="gasocr_admin_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
-    resp.set_cookie(
-        key="gasocr_access_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
+    set_auth_cookie(resp, "gasocr_admin_token", token, request)
+    set_auth_cookie(resp, "gasocr_access_token", token, request)
     return resp
 
 @app.post("/api/admin/logout")
@@ -826,14 +849,7 @@ async def admin_change_password(req: AdminChangePasswordRequest, request: Reques
     secret = await database.get_session_secret()
     token = create_session_token("admin", secret)
     resp = JSONResponse(content={"success": True, "token": token, "message": msg})
-    resp.set_cookie(
-        key="gasocr_admin_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
+    set_auth_cookie(resp, "gasocr_admin_token", token, request)
     return resp
 
 @app.get("/api/admin/settings")
@@ -875,15 +891,27 @@ async def update_access_gate(req: AccessGateSettingRequest, request: Request):
     }
 
 @app.post("/api/auth/verify-access")
-async def verify_access(req: AccessVerifyRequest):
-    """訪客輸入通關密碼解鎖本套件"""
+async def verify_access(req: AccessVerifyRequest, request: Request):
+    """訪客輸入通關密碼解鎖本套件（含 IP 速率限制與防暴力破解）"""
+    ip = get_client_ip(request)
+    allowed, retry_after = await auth_rate_limiter.check_rate_limit(ip, "verify_access")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"嘗試次數過多，為保障安全請於 {retry_after} 秒後再試",
+            headers={"Retry-After": str(retry_after)}
+        )
+    await auth_rate_limiter.record_attempt(ip, "verify_access")
+
     pwd = req.password.strip()
     is_admin = await database.verify_admin_password(pwd)
     is_valid_access = is_admin or await database.verify_access_password(pwd)
     
     if not is_valid_access:
+        await auth_rate_limiter.record_failure(ip, "verify_access")
         raise HTTPException(status_code=401, detail="通關密碼錯誤，請重新輸入")
         
+    await auth_rate_limiter.record_success(ip, "verify_access")
     secret = await database.get_session_secret()
     role = "admin" if is_admin else "access"
     token = create_session_token(role, secret)
@@ -894,23 +922,9 @@ async def verify_access(req: AccessVerifyRequest):
         "is_admin": is_admin, 
         "message": "解鎖成功！" + (" (管理員身分)" if is_admin else "")
     })
-    resp.set_cookie(
-        key="gasocr_access_token",
-        value=token,
-        max_age=86400 * 7,
-        httponly=False,
-        samesite="lax",
-        path="/"
-    )
+    set_auth_cookie(resp, "gasocr_access_token", token, request)
     if is_admin:
-        resp.set_cookie(
-            key="gasocr_admin_token",
-            value=token,
-            max_age=86400 * 7,
-            httponly=False,
-            samesite="lax",
-            path="/"
-        )
+        set_auth_cookie(resp, "gasocr_admin_token", token, request)
     return resp
 
 @app.post("/api/auth/logout-access")
@@ -1002,10 +1016,10 @@ class OAuthAccountCreate(BaseModel):
 
 @app.get("/api/accounts")
 async def list_accounts():
-    accounts = await database.get_accounts()
+    accounts = await database.get_accounts(include_secrets=False)
     return {"accounts": accounts}
 
-@app.post("/api/accounts/api-key")
+@app.post("/api/accounts/api-key", dependencies=[Depends(require_admin)])
 async def create_api_key_account(payload: ApiKeyAccountCreate):
     acc_id = await database.add_api_key_account(
         payload.name, payload.api_key, payload.rpm_limit, is_paid=1 if payload.is_paid else 0
@@ -1014,14 +1028,14 @@ async def create_api_key_account(payload: ApiKeyAccountCreate):
     spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
-@app.post("/api/accounts/oauth")
+@app.post("/api/accounts/oauth", dependencies=[Depends(require_admin)])
 async def create_oauth_account(payload: OAuthAccountCreate):
     acc_id = await database.add_oauth_account(payload.name, payload.client_id, payload.client_secret, payload.refresh_token)
     # 新增 OAuth 後自動觸發更新模型清單
     spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
-@app.post("/api/accounts/{account_id}/toggle")
+@app.post("/api/accounts/{account_id}/toggle", dependencies=[Depends(require_admin)])
 async def toggle_account(account_id: int):
     account = await database.get_account_by_id(account_id)
     if not account:
@@ -1030,12 +1044,12 @@ async def toggle_account(account_id: int):
     await database.toggle_account_active(account_id, new_state)
     return {"status": "ok", "is_active": new_state}
 
-@app.delete("/api/accounts/{account_id}")
+@app.delete("/api/accounts/{account_id}", dependencies=[Depends(require_admin)])
 async def delete_account(account_id: int):
     await database.delete_account(account_id)
     return {"status": "ok"}
 
-@app.post("/api/accounts/{account_id}/test")
+@app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_admin)])
 async def test_account(account_id: int):
     account = await database.get_account_by_id(account_id)
     if not account:
@@ -1088,9 +1102,12 @@ async def get_web_rpa_config():
     login_info = web_rpa.get_login_status_info()
     return {"status": "ok", "config": cfg, "models": models, "login_info": login_info}
 
-@app.post("/api/web-rpa/config")
+@app.post("/api/web-rpa/config", dependencies=[Depends(require_admin)])
 async def update_web_rpa_config(payload: WebRpaConfigPayload):
-    """更新網頁自動化設定"""
+    """更新網頁自動化設定（管理員專屬）"""
+    if payload.chrome_path is not None:
+        if not web_rpa.validate_chrome_path(payload.chrome_path):
+            raise HTTPException(status_code=400, detail="不合法的 Chrome 執行檔路徑或非標準瀏覽器程式")
     cfg = web_rpa.get_web_config()
     for field in (
         "enabled", "target_service", "browser_mode", "cdp_port",
@@ -1108,7 +1125,7 @@ async def update_web_rpa_config(payload: WebRpaConfigPayload):
     web_rpa.save_web_config(cfg)
     return {"status": "ok", "config": cfg}
 
-@app.post("/api/web-rpa/launch-login")
+@app.post("/api/web-rpa/launch-login", dependencies=[Depends(require_admin)])
 async def launch_web_login(service: Optional[str] = None):
     """以 Playwright 可見視窗開啟登入頁面（使用獨立 RPA Profile，解決 Keychain 加密問題）"""
     result = await web_rpa.launch_login_browser(target_service=service)
@@ -1117,7 +1134,7 @@ async def launch_web_login(service: Optional[str] = None):
     else:
         raise HTTPException(status_code=500, detail=result.get("message", "開啟登入視窗失敗"))
 
-@app.post("/api/web-rpa/save-state")
+@app.post("/api/web-rpa/save-state", dependencies=[Depends(require_admin)])
 async def save_web_rpa_state():
     """從當前開啟的登入視窗提取 cookies 並保存為 storage_state.json，然後關閉登入視窗"""
     result = await web_rpa.save_storage_state()
@@ -1131,20 +1148,20 @@ async def check_web_status():
     info["logged_in"] = info.get("cached", False) and info.get("key_cookie_count", 0) > 0
     return info
 
-@app.post("/api/web-rpa/verify")
+@app.post("/api/web-rpa/verify", dependencies=[Depends(require_admin)])
 async def verify_web_login():
     """用 headless 瀏覽器實際訪問 AI Studio 驗證 session 是否仍有效"""
     status_info = await web_rpa.check_login_status()
     return status_info
 
-@app.post("/api/web-rpa/sync-cookies")
+@app.post("/api/web-rpa/sync-cookies", dependencies=[Depends(require_admin)])
 async def sync_web_rpa_cookies():
     """回傳當前登入快取狀態（相容舊版 UI 呼叫）"""
     info = web_rpa.get_login_status_info()
     info["logged_in"] = info.get("cached", False) and info.get("key_cookie_count", 0) > 0
     return info
 
-@app.post("/api/web-rpa/test")
+@app.post("/api/web-rpa/test", dependencies=[Depends(require_admin)])
 async def test_web_rpa(model: Optional[str] = None):
     """測試網頁端 OCR 連線運作（建立一張帶文字的測試圖）"""
     from PIL import Image, ImageDraw
@@ -1189,7 +1206,7 @@ async def get_cdp_status():
     info["browser_mode"] = web_rpa.get_web_config().get("browser_mode", "cdp")
     return info
 
-@app.post("/api/web-rpa/cdp-connect")
+@app.post("/api/web-rpa/cdp-connect", dependencies=[Depends(require_admin)])
 async def connect_cdp():
     """
     實際接入使用者的 Chrome，並開一個 GASOCR 專用分頁驗證 AI Studio 登入狀態。
@@ -1197,7 +1214,7 @@ async def connect_cdp():
     """
     return await web_rpa.check_cdp_login()
 
-@app.post("/api/web-rpa/cdp-disconnect")
+@app.post("/api/web-rpa/cdp-disconnect", dependencies=[Depends(require_admin)])
 async def disconnect_cdp():
     """主動脫離 CDP 連線（您的 Chrome 會保持開啟）"""
     return await web_rpa.close_cdp_session()
