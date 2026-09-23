@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 009"
+BUILD_NUMBER = "Build 010"
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")

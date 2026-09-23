@@ -2,7 +2,7 @@ import base64
 import time
 import httpx
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 import database
 
 def build_ocr_prompt(lang: str, direction: str, column: str, custom_prompt: str = "") -> str:
