@@ -2,8 +2,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-007-indigo?style=for-the-badge" alt="Build 007" />
+  <img src="https://img.shields.io/badge/Build-008-indigo?style=for-the-badge" alt="Build 008" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready" />
+  <img src="https://img.shields.io/badge/Security-Access%20Gate%20%7C%20Admin-emerald?style=for-the-badge&logo=auth0" alt="Security" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />
   <img src="https://img.shields.io/badge/Cost-Strict%200%20Free%20Tier-success?style=for-the-badge" alt="Zero Cost" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python" alt="Python" />
@@ -73,7 +74,12 @@
 - **單頁重新辨識**：點擊「重新辨識本頁」使用原任務模型直接背景執行。
 - **升級模型單頁重新辨識 (`upgrademodel`)**：提供模型下拉選單，可挑選任意高階模型（如 `gemini-2.5-pro`），點擊「升級重新辨識」即可僅對該頁改用指定模型重跑，其餘 Prompt 與排版設定完全繼承原任務。辨識完成後自動更新為該頁專屬模型標籤。
 
-### 9. 💾 多格式打包匯出
+### 9. 🔐 安全管理後台與全站通關密碼保護 (Access Gate)
+- **初次安裝引導 (Setup Wizard)**：首次啟動系統時自動引導設置管理員密碼（PBKDF2 加鹽加密儲存），杜絕未授權進入。支援 Docker `ADMIN_PASSWORD` 環境變數全自動初始化。
+- **全站通關保護開關**：管理員可一鍵開啟「通關密碼保護」，訪客需輸入通關密碼解鎖後方可進入系統操作，未解鎖前 API 請求一律由中介軟體攔截阻擋（401 Unauthorized）。
+- **管理員專屬後台**：提供獨立控制面板，包含通關密碼變更、管理員密碼修改，以及金鑰池與任務狀態監控面板。
+
+### 10. 💾 多格式打包匯出
 - **Markdown (`.md`)**：標準語法，含標題、引言與分頁註記。
 - **純文字 (`.txt`)**：乾淨純文字排版。
 - **Microsoft Word (`.docx`)**：結構化文件，方便排版列印。

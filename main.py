@@ -4,11 +4,12 @@ import uuid
 import asyncio
 import json
 import hashlib
+import hmac
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -80,6 +81,97 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/renders", StaticFiles(directory=str(config.RENDERS_DIR)), name="renders")
+
+# --- Authentication & Session Security ---
+
+def create_session_token(role: str, secret: str, ttl_seconds: int = 86400 * 7) -> str:
+    exp = int(time.time()) + ttl_seconds
+    payload = f"{role}:{exp}"
+    sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload}:{sig}"
+
+def verify_session_token(token: str, secret: str, required_role: Optional[str] = None) -> bool:
+    try:
+        parts = token.split(":")
+        if len(parts) != 3:
+            return False
+        role, exp_str, sig = parts
+        if int(exp_str) < time.time():
+            return False
+        expected_sig = hmac.new(secret.encode("utf-8"), f"{role}:{exp_str}".encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_sig, sig):
+            return False
+        if required_role == "admin" and role != "admin":
+            return False
+        return True
+    except Exception:
+        return False
+
+async def extract_auth_info(request: Request) -> Tuple[bool, bool]:
+    """回傳 (is_admin, is_access)"""
+    secret = await database.get_session_secret()
+    
+    # 提取 admin token (Header 或 Cookie 或 Bearer)
+    admin_header = request.headers.get("X-Admin-Token")
+    admin_cookie = request.cookies.get("gasocr_admin_token")
+    auth_header = request.headers.get("Authorization")
+    bearer_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        bearer_token = auth_header[7:].strip()
+        
+    admin_token = admin_header or admin_cookie or (bearer_token if bearer_token and bearer_token.startswith("admin:") else None)
+    is_admin = False
+    if admin_token and verify_session_token(admin_token, secret, required_role="admin"):
+        is_admin = True
+        
+    # 提取 access token
+    access_header = request.headers.get("X-Access-Token")
+    access_cookie = request.cookies.get("gasocr_access_token")
+    access_token = access_header or access_cookie or bearer_token
+    
+    is_access = False
+    if is_admin:
+        is_access = True
+    elif access_token and verify_session_token(access_token, secret):
+        is_access = True
+        
+    return is_admin, is_access
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    
+    # 1. 靜態資源、首頁與 API 文件一律放行
+    if path == "/" or path.startswith(("/static", "/docs", "/openapi.json", "/redoc", "/favicon.ico")):
+        return await call_next(request)
+        
+    # 2. 公開認證與系統狀態端點一律放行
+    if path in [
+        "/api/version",
+        "/api/auth/status",
+        "/api/auth/verify-access",
+        "/api/auth/logout-access",
+        "/api/admin/init",
+        "/api/admin/login",
+        "/api/admin/logout",
+    ]:
+        return await call_next(request)
+
+    # 3. 檢查管理員端點權限
+    if path.startswith("/api/admin/"):
+        is_admin, _ = await extract_auth_info(request)
+        if not is_admin:
+            return JSONResponse(status_code=401, content={"detail": "需要管理員權限"})
+        return await call_next(request)
+
+    # 4. 檢查通關密碼保護 (Access Gate)
+    gate_enabled = await database.is_access_gate_enabled()
+    if gate_enabled:
+        _, is_access = await extract_auth_info(request)
+        if not is_access:
+            return JSONResponse(status_code=401, content={"detail": "已啟用通關密碼保護，請先輸入通關密碼解鎖"})
+
+    return await call_next(request)
 
 # --- Background OCR Worker ---
 
@@ -373,6 +465,220 @@ async def get_version():
         "version": config.APP_VERSION,
         "build": config.BUILD_NUMBER,
     }
+
+# --- Auth & Admin Models ---
+
+class AdminInitRequest(BaseModel):
+    password: str
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+class AdminChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+class AccessGateSettingRequest(BaseModel):
+    enabled: bool
+    password: Optional[str] = None
+
+class AccessVerifyRequest(BaseModel):
+    password: str
+
+# --- Auth & Admin API Routes ---
+
+@app.get("/api/auth/status")
+async def get_auth_status(request: Request):
+    """檢查目前登入狀態、通關密碼保護狀態與管理員初始化狀態"""
+    is_admin, is_access = await extract_auth_info(request)
+    gate_enabled = await database.is_access_gate_enabled()
+    admin_init = await database.is_admin_initialized()
+    return {
+        "admin_initialized": admin_init,
+        "access_gate_enabled": gate_enabled,
+        "has_access_password": await database.has_access_password(),
+        "is_admin": is_admin,
+        "is_authenticated_user": (not gate_enabled) or is_access,
+    }
+
+@app.post("/api/admin/init")
+async def admin_init(req: AdminInitRequest):
+    """初次安裝初始化管理員密碼"""
+    if await database.is_admin_initialized():
+        raise HTTPException(status_code=400, detail="系統已完成管理員初始化，無法重複設定")
+    pwd = req.password.strip()
+    if len(pwd) < 4:
+        raise HTTPException(status_code=400, detail="管理員密碼長度至少需 4 個字元")
+        
+    success = await database.init_admin_password(pwd)
+    if not success:
+        raise HTTPException(status_code=400, detail="管理員密碼初始化失敗")
+        
+    secret = await database.get_session_secret()
+    token = create_session_token("admin", secret)
+    resp = JSONResponse(content={"success": True, "token": token, "message": "管理員密碼初始化成功！"})
+    resp.set_cookie(
+        key="gasocr_admin_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    resp.set_cookie(
+        key="gasocr_access_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    return resp
+
+@app.post("/api/admin/login")
+async def admin_login(req: AdminLoginRequest):
+    """管理員登入"""
+    if not await database.is_admin_initialized():
+        raise HTTPException(status_code=400, detail="系統尚未初始化管理員密碼，請先完成初始化設定")
+    if not await database.verify_admin_password(req.password.strip()):
+        raise HTTPException(status_code=401, detail="管理員密碼錯誤")
+        
+    secret = await database.get_session_secret()
+    token = create_session_token("admin", secret)
+    resp = JSONResponse(content={"success": True, "token": token, "message": "管理員登入成功"})
+    resp.set_cookie(
+        key="gasocr_admin_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    resp.set_cookie(
+        key="gasocr_access_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    return resp
+
+@app.post("/api/admin/logout")
+async def admin_logout():
+    """管理員登出"""
+    resp = JSONResponse(content={"success": True, "message": "管理員已登出"})
+    resp.delete_cookie(key="gasocr_admin_token", path="/")
+    return resp
+
+@app.post("/api/admin/change-password")
+async def admin_change_password(req: AdminChangePasswordRequest, request: Request):
+    """修改管理員密碼"""
+    is_admin, _ = await extract_auth_info(request)
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="需要管理員權限")
+        
+    success, msg = await database.change_admin_password(req.old_password.strip(), req.new_password.strip())
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+        
+    secret = await database.get_session_secret()
+    token = create_session_token("admin", secret)
+    resp = JSONResponse(content={"success": True, "token": token, "message": msg})
+    resp.set_cookie(
+        key="gasocr_admin_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    return resp
+
+@app.get("/api/admin/settings")
+async def get_admin_settings(request: Request):
+    """取得管理員後台設定與系統概況"""
+    is_admin, _ = await extract_auth_info(request)
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="需要管理員權限")
+        
+    accounts = await database.get_accounts()
+    tasks = await database.list_tasks()
+    return {
+        "access_gate_enabled": await database.is_access_gate_enabled(),
+        "has_access_password": await database.has_access_password(),
+        "stats": {
+            "total_accounts": len(accounts),
+            "active_accounts": sum(1 for a in accounts if a.get("is_active") == 1),
+            "total_tasks": len(tasks),
+            "completed_tasks": sum(1 for t in tasks if t.get("status") == "completed"),
+        }
+    }
+
+@app.post("/api/admin/settings/access-gate")
+async def update_access_gate(req: AccessGateSettingRequest, request: Request):
+    """設定通關密碼保護開關與通關密碼"""
+    is_admin, _ = await extract_auth_info(request)
+    if not is_admin:
+        raise HTTPException(status_code=401, detail="需要管理員權限")
+        
+    success, msg = await database.set_access_gate(req.enabled, req.password)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+        
+    return {
+        "success": True,
+        "message": msg,
+        "access_gate_enabled": await database.is_access_gate_enabled(),
+        "has_access_password": await database.has_access_password(),
+    }
+
+@app.post("/api/auth/verify-access")
+async def verify_access(req: AccessVerifyRequest):
+    """訪客輸入通關密碼解鎖本套件"""
+    pwd = req.password.strip()
+    is_admin = await database.verify_admin_password(pwd)
+    is_valid_access = is_admin or await database.verify_access_password(pwd)
+    
+    if not is_valid_access:
+        raise HTTPException(status_code=401, detail="通關密碼錯誤，請重新輸入")
+        
+    secret = await database.get_session_secret()
+    role = "admin" if is_admin else "access"
+    token = create_session_token(role, secret)
+    
+    resp = JSONResponse(content={
+        "success": True, 
+        "token": token, 
+        "is_admin": is_admin, 
+        "message": "解鎖成功！" + (" (管理員身分)" if is_admin else "")
+    })
+    resp.set_cookie(
+        key="gasocr_access_token",
+        value=token,
+        max_age=86400 * 7,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
+    if is_admin:
+        resp.set_cookie(
+            key="gasocr_admin_token",
+            value=token,
+            max_age=86400 * 7,
+            httponly=False,
+            samesite="lax",
+            path="/"
+        )
+    return resp
+
+@app.post("/api/auth/logout-access")
+async def access_logout():
+    """訪客重新鎖定通關"""
+    resp = JSONResponse(content={"success": True, "message": "已成功鎖定"})
+    resp.delete_cookie(key="gasocr_access_token", path="/")
+    resp.delete_cookie(key="gasocr_admin_token", path="/")
+    return resp
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):

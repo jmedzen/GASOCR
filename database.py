@@ -2,6 +2,9 @@ import aiosqlite
 import time
 import datetime
 import hashlib
+import secrets
+import hmac
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from config import DB_PATH
@@ -16,6 +19,14 @@ async def get_db():
 
 async def init_db():
     async with get_db() as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +135,12 @@ async def init_db():
         """, (now,))
 
         await db.commit()
+
+    # 檢查環境變數是否提供 ADMIN_PASSWORD，若有且尚未初始化則自動完成設定
+    env_admin_pwd = os.environ.get("ADMIN_PASSWORD")
+    if env_admin_pwd and not await is_admin_initialized():
+        await init_admin_password(env_admin_pwd.strip())
+        print("🔐 [GASOCR Security] 已依據環境變數 ADMIN_PASSWORD 自動初始化管理員密碼")
 
     # 自動建立 uploads 目錄現有檔案的 Hash 索引
     await index_existing_uploads()
@@ -443,3 +460,105 @@ async def update_page_status(task_id: str, page_num: int, status: str, error_mes
             WHERE task_id = ? AND page_num = ?
         """, (status, error_message, now, task_id, page_num))
         await db.commit()
+
+# --- Password & System Settings ---
+
+def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
+    if not salt:
+        salt = secrets.token_hex(16)
+    pwd_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    return pwd_hash, salt
+
+def verify_password(password: str, stored_hash: str, salt: str) -> bool:
+    pwd_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    return hmac.compare_digest(pwd_hash, stored_hash)
+
+async def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT value FROM system_settings WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+        return row["value"] if row else default
+
+async def set_setting(key: str, value: str):
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("""
+            INSERT INTO system_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        """, (key, value, now))
+        await db.commit()
+
+async def is_admin_initialized() -> bool:
+    admin_hash = await get_setting("admin_password_hash")
+    return bool(admin_hash)
+
+async def init_admin_password(password: str) -> bool:
+    """初始化管理員密碼（僅在未初始化時有效）"""
+    if await is_admin_initialized():
+        return False
+    pwd_hash, salt = hash_password(password)
+    await set_setting("admin_password_hash", pwd_hash)
+    await set_setting("admin_salt", salt)
+    if not await get_setting("session_secret"):
+        await set_setting("session_secret", secrets.token_hex(32))
+    return True
+
+async def verify_admin_password(password: str) -> bool:
+    stored_hash = await get_setting("admin_password_hash")
+    salt = await get_setting("admin_salt")
+    if not stored_hash or not salt:
+        return False
+    return verify_password(password, stored_hash, salt)
+
+async def change_admin_password(old_password: str, new_password: str) -> tuple[bool, str]:
+    if not await verify_admin_password(old_password):
+        return False, "原管理員密碼輸入錯誤"
+    if len(new_password) < 4:
+        return False, "新密碼長度至少需 4 個字元"
+    pwd_hash, salt = hash_password(new_password)
+    await set_setting("admin_password_hash", pwd_hash)
+    await set_setting("admin_salt", salt)
+    return True, "管理員密碼修改成功"
+
+async def is_access_gate_enabled() -> bool:
+    val = await get_setting("access_gate_enabled", "0")
+    return val == "1"
+
+async def has_access_password() -> bool:
+    val = await get_setting("access_password_hash")
+    return bool(val)
+
+async def set_access_gate(enabled: bool, password: Optional[str] = None) -> tuple[bool, str]:
+    if password is not None and len(password.strip()) > 0:
+        pwd_hash, salt = hash_password(password.strip())
+        await set_setting("access_password_hash", pwd_hash)
+        await set_setting("access_salt", salt)
+        await set_setting("access_gate_enabled", "1" if enabled else "0")
+        return True, "通關密碼與保護設定已更新"
+    elif enabled:
+        if not await has_access_password():
+            return False, "啟用通關密碼保護前，必須先設定一組通關密碼"
+        await set_setting("access_gate_enabled", "1")
+        return True, "通關密碼保護已啟用"
+    else:
+        await set_setting("access_gate_enabled", "0")
+        return True, "通關密碼保護已停用"
+
+async def verify_access_password(password: str) -> bool:
+    # 若符合管理員密碼，也視為合法通關
+    if await verify_admin_password(password):
+        return True
+    stored_hash = await get_setting("access_password_hash")
+    salt = await get_setting("access_salt")
+    if not stored_hash or not salt:
+        return False
+    return verify_password(password, stored_hash, salt)
+
+async def get_session_secret() -> str:
+    secret = await get_setting("session_secret")
+    if not secret:
+        secret = secrets.token_hex(32)
+        await set_setting("session_secret", secret)
+    return secret
+

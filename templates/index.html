@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 007') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 008') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -815,7 +815,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 007') }}
+                            {{ build_number | default('Build 008') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -872,6 +872,27 @@
                           x-text="reocrQueue.length">0</span>
                     <kbd class="text-[10px] font-mono hidden md:inline ml-0.5"
                          x-text="modKeyLabel + '+Q'">Alt+Q</kbd>
+                </button>
+
+                <!-- NEW: Admin & Access Gate Button -->
+                <button 
+                    @click="openAdminModal()" 
+                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs"
+                    :class="authStatus.is_admin ? 'border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold' : 'border-slate-200 hover:border-slate-400 bg-slate-50 hover:bg-white text-slate-700'"
+                    title="系統管理與通關安全設定"
+                >
+                    <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-600' : 'text-slate-500'"></i>
+                    <span class="font-semibold hidden sm:inline">系統管理</span>
+                    <template x-if="authStatus.access_gate_enabled">
+                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                            🔒 守護中
+                        </span>
+                    </template>
+                    <template x-if="authStatus.is_admin">
+                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                            Admin
+                        </span>
+                    </template>
                 </button>
             </div>
         </div>
@@ -1698,7 +1719,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 007') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 008') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -2416,6 +2437,407 @@
         </div>
     </div>
 
+    <!-- Modal: First-run Admin Setup Wizard -->
+    <div 
+        x-show="!authStatus.admin_initialized" 
+        class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 sm:p-8">
+            <div class="text-center mb-6">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mb-3">
+                    <i data-lucide="shield-alert" class="w-7 h-7"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-900">歡迎使用 GASOCR</h3>
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                    檢測到系統為初次啟動，請先設定最高管理員密碼以保護金鑰池與啟用通關存取權限。
+                </p>
+            </div>
+
+            <form @submit.prevent="submitSetupWizard()" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">管理員新密碼 <span class="text-rose-500">*</span></label>
+                    <input 
+                        type="password" 
+                        x-model="setupWizard.password" 
+                        placeholder="請輸入至少 4 個字元之密碼"
+                        class="w-full text-sm rounded-xl border border-slate-300 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                    >
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">再次確認密碼 <span class="text-rose-500">*</span></label>
+                    <input 
+                        type="password" 
+                        x-model="setupWizard.confirmPassword" 
+                        placeholder="請再次輸入管理員密碼"
+                        class="w-full text-sm rounded-xl border border-slate-300 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                    >
+                </div>
+
+                <div x-show="setupWizard.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                    <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                    <span x-text="setupWizard.error"></span>
+                </div>
+
+                <button 
+                    type="submit" 
+                    :disabled="setupWizard.isLoading"
+                    class="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                    <span x-text="setupWizard.isLoading ? '初始化設定中...' : '完成初始化並進入系統'"></span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Access Gate Lock Screen -->
+    <div 
+        x-show="authStatus.admin_initialized && authStatus.access_gate_enabled && !authStatus.is_authenticated_user" 
+        class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-xl flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-3xl max-w-md w-full border border-slate-200/80 shadow-2xl p-6 sm:p-8 text-center relative overflow-hidden">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white shadow-xl mb-4">
+                <i data-lucide="lock" class="w-8 h-8"></i>
+            </div>
+
+            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight">GASOCR 存取保護</h3>
+            <p class="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
+                本系統已啟用通關保護。<br>請輸入通關密碼或管理員密碼以解鎖使用。
+            </p>
+
+            <form @submit.prevent="submitAccessUnlock()" class="mt-6 space-y-4">
+                <div>
+                    <input 
+                        type="password" 
+                        x-model="accessGateLock.password" 
+                        placeholder="請輸入通關密碼..."
+                        class="w-full text-center tracking-widest text-base rounded-2xl border border-slate-300 px-4 py-3 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner font-mono"
+                        autofocus
+                        required
+                    >
+                </div>
+
+                <div x-show="accessGateLock.error" class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-center gap-1.5">
+                    <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                    <span x-text="accessGateLock.error"></span>
+                </div>
+
+                <button 
+                    type="submit" 
+                    :disabled="accessGateLock.isLoading"
+                    class="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:to-pink-700 text-white text-sm font-bold rounded-2xl shadow-lg transition transform active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                    <i data-lucide="unlock" class="w-4 h-4"></i>
+                    <span x-text="accessGateLock.isLoading ? '驗證通關密碼中...' : '驗證並解鎖進入'"></span>
+                </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center">
+                <button 
+                    type="button"
+                    @click="openAdminModal()" 
+                    class="text-xs text-slate-400 hover:text-indigo-600 transition flex items-center gap-1 cursor-pointer"
+                >
+                    <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                    <span>管理員身分入口</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Login -->
+    <div 
+        x-show="showAdminLoginModal" 
+        class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-2xl max-w-sm w-full border border-slate-200 shadow-2xl p-6" @click.outside="showAdminLoginModal = false">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                        <i data-lucide="shield-check" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-800">管理員登入</h3>
+                </div>
+                <button @click="showAdminLoginModal = false" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="submitAdminLogin()" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">管理員密碼</label>
+                    <input 
+                        type="password" 
+                        x-model="adminLogin.password" 
+                        placeholder="請輸入管理員密碼"
+                        class="w-full text-sm rounded-xl border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        autofocus
+                        required
+                    >
+                </div>
+
+                <div x-show="adminLogin.error" class="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                    <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span x-text="adminLogin.error"></span>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button 
+                        type="button" 
+                        @click="showAdminLoginModal = false" 
+                        class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    >
+                        取消
+                    </button>
+                    <button 
+                        type="submit" 
+                        :disabled="adminLogin.isLoading"
+                        class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                        x-text="adminLogin.isLoading ? '驗證中...' : '登入後台'"
+                    ></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Dashboard -->
+    <div 
+        x-show="showAdminModal && authStatus.is_admin" 
+        class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col" @click.outside="showAdminModal = false">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-white shadow-sm">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-800">GASOCR 系統安全管理後台</h3>
+                        <p class="text-xs text-slate-500">通行權限・存取通關保護與系統概況</p>
+                    </div>
+                </div>
+                <button @click="showAdminModal = false" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <div class="flex border-b border-slate-200 bg-slate-100/60 px-6 gap-2 pt-2">
+                <button 
+                    type="button"
+                    @click="adminTab = 'access_gate'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'access_gate' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                >
+                    <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                    <span>通關密碼保護控制</span>
+                </button>
+                <button 
+                    type="button"
+                    @click="adminTab = 'change_password'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'change_password' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                >
+                    <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                    <span>修改管理員密碼</span>
+                </button>
+                <button 
+                    type="button"
+                    @click="adminTab = 'stats'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'stats' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                >
+                    <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+                    <span>系統健康與操作</span>
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="p-6">
+                <!-- TAB 1: Access Gate Setting -->
+                <div x-show="adminTab === 'access_gate'" class="space-y-5">
+                    <div class="flex items-center justify-between p-4 rounded-2xl border" :class="adminSettings.access_gate_enabled ? 'bg-rose-50/50 border-rose-200' : 'bg-slate-50 border-slate-200'">
+                        <div class="space-y-0.5 pr-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-bold text-slate-800">全站通關密碼保護 (Access Gate)</span>
+                                <span 
+                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                    :class="adminSettings.access_gate_enabled ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-slate-200 text-slate-600'"
+                                    x-text="adminSettings.access_gate_enabled ? '啟用中 (強制需通關密碼)' : '未啟用 (訪客可直接使用)'"
+                                ></span>
+                            </div>
+                            <p class="text-xs text-slate-500 leading-relaxed">
+                                啟用後，訪客進入系統必須先輸入正確通關密碼（或管理員密碼），否則無法查看檔案與調用 OCR 轉譯 API。
+                            </p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" x-model="adminSettings.access_gate_enabled" class="sr-only peer">
+                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                        </label>
+                    </div>
+
+                    <div class="space-y-3 pt-2 border-t border-slate-100">
+                        <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="shield-check" class="w-4 h-4 text-indigo-600"></i>
+                            <span x-text="adminSettings.has_access_password ? '變更通關密碼' : '設定新通關密碼 (初次啟用必填)'"></span>
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-medium text-slate-600 mb-1">通關密碼</label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminSettings.access_password" 
+                                    :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '請輸入通關密碼'"
+                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-medium text-slate-600 mb-1">確認通關密碼</label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminSettings.confirm_access_password" 
+                                    :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '再次輸入通關密碼'"
+                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div x-show="adminSettings.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                        <span x-text="adminSettings.error"></span>
+                    </div>
+                    <div x-show="adminSettings.successMsg" class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-1.5">
+                        <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+                        <span x-text="adminSettings.successMsg"></span>
+                    </div>
+
+                    <div class="flex justify-end pt-2">
+                        <button 
+                            type="button" 
+                            @click="saveAccessGateSetting()" 
+                            :disabled="adminSettings.isLoading"
+                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                        >
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span x-text="adminSettings.isLoading ? '儲存中...' : '儲存通關密碼設定'"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Change Admin Password -->
+                <div x-show="adminTab === 'change_password'" class="space-y-4">
+                    <form @submit.prevent="submitChangeAdminPassword()" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">原管理員密碼 <span class="text-rose-500">*</span></label>
+                            <input 
+                                type="password" 
+                                x-model="adminChangePassword.old_password" 
+                                placeholder="請輸入現有管理員密碼"
+                                class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                required
+                            >
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">新管理員密碼 <span class="text-rose-500">*</span></label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminChangePassword.new_password" 
+                                    placeholder="至少 4 個字元"
+                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">確認新密碼 <span class="text-rose-500">*</span></label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminChangePassword.confirm_new_password" 
+                                    placeholder="再次輸入新密碼"
+                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div x-show="adminChangePassword.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                            <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                            <span x-text="adminChangePassword.error"></span>
+                        </div>
+                        <div x-show="adminChangePassword.successMsg" class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-1.5">
+                            <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+                            <span x-text="adminChangePassword.successMsg"></span>
+                        </div>
+
+                        <div class="flex justify-end pt-2">
+                            <button 
+                                type="submit" 
+                                :disabled="adminChangePassword.isLoading"
+                                class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                            >
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                                <span x-text="adminChangePassword.isLoading ? '更新中...' : '更新管理員密碼'"></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TAB 3: System Health & Stats -->
+                <div x-show="adminTab === 'stats'" class="space-y-5">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">金鑰池總數</div>
+                            <div class="text-xl font-extrabold text-blue-600" x-text="adminSettings.stats.total_accounts || 0">0</div>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">啟用中金鑰</div>
+                            <div class="text-xl font-extrabold text-emerald-600" x-text="adminSettings.stats.active_accounts || 0">0</div>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">歷來總任務</div>
+                            <div class="text-xl font-extrabold text-slate-800" x-text="adminSettings.stats.total_tasks || 0">0</div>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">已完成轉譯</div>
+                            <div class="text-xl font-extrabold text-indigo-600" x-text="adminSettings.stats.completed_tasks || 0">0</div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3">
+                        <h4 class="text-xs font-bold text-slate-700">管理員快捷操作</h4>
+                        <div class="flex flex-wrap gap-2">
+                            <button 
+                                type="button" 
+                                @click="adminLogout()" 
+                                class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                                <span>登出管理員身分</span>
+                            </button>
+                            <button 
+                                type="button" 
+                                @click="reLockAccessGate()" 
+                                class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                                x-show="adminSettings.access_gate_enabled"
+                            >
+                                <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                                <span>立即重新鎖定系統</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Application Script -->
     <script>
         function ocrApp() {
@@ -2440,6 +2862,57 @@
                 accounts: [],
                 showAccountsModal: false,
                 showQueueModal: false,
+                // Auth & Admin State
+                authStatus: {
+                    admin_initialized: true,
+                    access_gate_enabled: false,
+                    has_access_password: false,
+                    is_admin: false,
+                    is_authenticated_user: true
+                },
+                showAdminModal: false,
+                showAdminLoginModal: false,
+                showSetupWizardModal: false,
+                adminTab: 'access_gate',
+                setupWizard: {
+                    password: '',
+                    confirmPassword: '',
+                    error: '',
+                    isLoading: false
+                },
+                accessGateLock: {
+                    password: '',
+                    error: '',
+                    isLoading: false
+                },
+                adminLogin: {
+                    password: '',
+                    error: '',
+                    isLoading: false
+                },
+                adminSettings: {
+                    access_gate_enabled: false,
+                    has_access_password: false,
+                    access_password: '',
+                    confirm_access_password: '',
+                    stats: {
+                        total_accounts: 0,
+                        active_accounts: 0,
+                        total_tasks: 0,
+                        completed_tasks: 0
+                    },
+                    isLoading: false,
+                    error: '',
+                    successMsg: ''
+                },
+                adminChangePassword: {
+                    old_password: '',
+                    new_password: '',
+                    confirm_new_password: '',
+                    isLoading: false,
+                    error: '',
+                    successMsg: ''
+                },
                 reocrQueue: (function() {
                     try {
                         const raw = JSON.parse(localStorage.getItem('gasocr_reocr_queue') || '[]');
@@ -2625,22 +3098,21 @@
                     return this.selectedPageNum === this.pages[this.pages.length - 1].page_num;
                 },
 
-                initApp() {
+                async initApp() {
                     this.setTheme(this.currentTheme);
-                    this.loadAccounts();
-                    this.loadWebRpaConfig();
-                    this.loadTasks();
-                    // 頁面上線後先自動抓取/更新最新模型清單
-                    this.refreshModels(false);
+                    await this.checkAuthStatus();
+                    if (this.authStatus.is_authenticated_user) {
+                        this.postUnlockInit();
+                    }
                     // 週期性檢查任務狀態 (2秒輪詢一次，讓批次多任務進行時進度條絲滑更新)
                     setInterval(() => {
-                        if (this.allTasks.some(t => ['rendering', 'processing', 'pending'].includes(t.status))) {
+                        if (this.authStatus.is_authenticated_user && this.allTasks.some(t => ['rendering', 'processing', 'pending'].includes(t.status))) {
                             this.loadTasks();
                         }
                     }, 2000);
                     // 週期性檢查重辨佇列中執行中任務的狀態
                     setInterval(() => {
-                        if (this.activeReocrCount > 0) {
+                        if (this.authStatus.is_authenticated_user && this.activeReocrCount > 0) {
                             this.checkActiveReocrJobs();
                         }
                     }, 2000);
@@ -2649,6 +3121,284 @@
                         this.handleKeyDown(e);
                     });
                     this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                postUnlockInit() {
+                    this.loadAccounts();
+                    this.loadWebRpaConfig();
+                    this.loadTasks();
+                    this.refreshModels(false);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async checkAuthStatus() {
+                    try {
+                        const res = await fetch('/api/auth/status');
+                        if (res.ok) {
+                            this.authStatus = await res.json();
+                            if (!this.authStatus.admin_initialized) {
+                                this.showSetupWizardModal = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch auth status:', e);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitSetupWizard() {
+                    this.setupWizard.error = '';
+                    if (!this.setupWizard.password || this.setupWizard.password.length < 4) {
+                        this.setupWizard.error = '管理員密碼長度至少需 4 個字元';
+                        return;
+                    }
+                    if (this.setupWizard.password !== this.setupWizard.confirmPassword) {
+                        this.setupWizard.error = '兩次輸入的密碼不一致';
+                        return;
+                    }
+                    this.setupWizard.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/init', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.setupWizard.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.showSetupWizardModal = false;
+                            this.showToast('🎉 管理員密碼設定成功！');
+                            await this.checkAuthStatus();
+                            this.postUnlockInit();
+                        } else {
+                            this.setupWizard.error = data.detail || '初始化失敗';
+                        }
+                    } catch (e) {
+                        this.setupWizard.error = String(e);
+                    } finally {
+                        this.setupWizard.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitAccessUnlock() {
+                    this.accessGateLock.error = '';
+                    if (!this.accessGateLock.password) {
+                        this.accessGateLock.error = '請輸入通關密碼';
+                        return;
+                    }
+                    this.accessGateLock.isLoading = true;
+                    try {
+                        const res = await fetch('/api/auth/verify-access', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.accessGateLock.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.accessGateLock.password = '';
+                            this.showToast(data.message || '🔓 通關成功！');
+                            await this.checkAuthStatus();
+                            this.postUnlockInit();
+                        } else {
+                            this.accessGateLock.error = data.detail || '通關密碼錯誤，請重新輸入';
+                        }
+                    } catch (e) {
+                        this.accessGateLock.error = String(e);
+                    } finally {
+                        this.accessGateLock.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                openAdminModal() {
+                    if (this.authStatus.is_admin) {
+                        this.loadAdminSettings();
+                        this.showAdminModal = true;
+                    } else {
+                        this.adminLogin.password = '';
+                        this.adminLogin.error = '';
+                        this.showAdminLoginModal = true;
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async submitAdminLogin() {
+                    this.adminLogin.error = '';
+                    if (!this.adminLogin.password) {
+                        this.adminLogin.error = '請輸入管理員密碼';
+                        return;
+                    }
+                    this.adminLogin.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.adminLogin.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminLogin.password = '';
+                            this.showAdminLoginModal = false;
+                            this.showToast('🔑 管理員登入成功');
+                            await this.checkAuthStatus();
+                            this.loadAdminSettings();
+                            this.showAdminModal = true;
+                            this.postUnlockInit();
+                        } else {
+                            this.adminLogin.error = data.detail || '管理員密碼錯誤';
+                        }
+                    } catch (e) {
+                        this.adminLogin.error = String(e);
+                    } finally {
+                        this.adminLogin.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async loadAdminSettings() {
+                    this.adminSettings.isLoading = true;
+                    this.adminSettings.error = '';
+                    this.adminSettings.successMsg = '';
+                    try {
+                        const res = await fetch('/api/admin/settings');
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.adminSettings.access_gate_enabled = data.access_gate_enabled;
+                            this.adminSettings.has_access_password = data.has_access_password;
+                            if (data.stats) {
+                                this.adminSettings.stats = data.stats;
+                            }
+                        } else if (res.status === 401) {
+                            this.authStatus.is_admin = false;
+                            this.showAdminModal = false;
+                            this.showToast('⚠️ 管理員授權已過期，請重新登入');
+                        }
+                    } catch (e) {
+                        this.adminSettings.error = String(e);
+                    } finally {
+                        this.adminSettings.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async saveAccessGateSetting() {
+                    this.adminSettings.error = '';
+                    this.adminSettings.successMsg = '';
+                    
+                    if (this.adminSettings.access_password) {
+                        if (this.adminSettings.access_password !== this.adminSettings.confirm_access_password) {
+                            this.adminSettings.error = '兩次輸入的通關密碼不一致';
+                            return;
+                        }
+                    } else if (this.adminSettings.access_gate_enabled && !this.adminSettings.has_access_password) {
+                        this.adminSettings.error = '啟用通關保護前，請先設定一組通關密碼';
+                        return;
+                    }
+                    
+                    this.adminSettings.isLoading = true;
+                    try {
+                        const payload = {
+                            enabled: this.adminSettings.access_gate_enabled
+                        };
+                        if (this.adminSettings.access_password) {
+                            payload.password = this.adminSettings.access_password;
+                        }
+                        const res = await fetch('/api/admin/settings/access-gate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminSettings.successMsg = data.message;
+                            this.adminSettings.access_password = '';
+                            this.adminSettings.confirm_access_password = '';
+                            this.adminSettings.has_access_password = data.has_access_password;
+                            this.adminSettings.access_gate_enabled = data.access_gate_enabled;
+                            this.authStatus.access_gate_enabled = data.access_gate_enabled;
+                            this.showToast('✅ ' + data.message);
+                        } else {
+                            this.adminSettings.error = data.detail || '設定儲存失敗';
+                        }
+                    } catch (e) {
+                        this.adminSettings.error = String(e);
+                    } finally {
+                        this.adminSettings.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitChangeAdminPassword() {
+                    this.adminChangePassword.error = '';
+                    this.adminChangePassword.successMsg = '';
+                    if (!this.adminChangePassword.old_password) {
+                        this.adminChangePassword.error = '請輸入原管理員密碼';
+                        return;
+                    }
+                    if (!this.adminChangePassword.new_password || this.adminChangePassword.new_password.length < 4) {
+                        this.adminChangePassword.error = '新密碼長度至少需 4 個字元';
+                        return;
+                    }
+                    if (this.adminChangePassword.new_password !== this.adminChangePassword.confirm_new_password) {
+                        this.adminChangePassword.error = '兩次輸入的新密碼不一致';
+                        return;
+                    }
+                    this.adminChangePassword.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/change-password', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                old_password: this.adminChangePassword.old_password,
+                                new_password: this.adminChangePassword.new_password
+                            })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminChangePassword.successMsg = data.message;
+                            this.adminChangePassword.old_password = '';
+                            this.adminChangePassword.new_password = '';
+                            this.adminChangePassword.confirm_new_password = '';
+                            this.showToast('🎉 ' + data.message);
+                        } else {
+                            this.adminChangePassword.error = data.detail || '密碼變更失敗';
+                        }
+                    } catch (e) {
+                        this.adminChangePassword.error = String(e);
+                    } finally {
+                        this.adminChangePassword.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async adminLogout() {
+                    try {
+                        await fetch('/api/admin/logout', { method: 'POST' });
+                        this.authStatus.is_admin = false;
+                        this.showAdminModal = false;
+                        this.showToast('已登出管理員身分');
+                        await this.checkAuthStatus();
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async reLockAccessGate() {
+                    try {
+                        await fetch('/api/auth/logout-access', { method: 'POST' });
+                        this.authStatus.is_admin = false;
+                        this.authStatus.is_authenticated_user = false;
+                        this.showAdminModal = false;
+                        this.showToast('🔒 系統已重新鎖定');
+                        await this.checkAuthStatus();
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
                 },
 
                 async refreshModels(manual = false) {
@@ -3401,6 +4151,16 @@
                         if (this.showAccountsModal) {
                             e.preventDefault();
                             this.showAccountsModal = false;
+                            return;
+                        }
+                        if (this.showAdminModal) {
+                            e.preventDefault();
+                            this.showAdminModal = false;
+                            return;
+                        }
+                        if (this.showAdminLoginModal) {
+                            e.preventDefault();
+                            this.showAdminLoginModal = false;
                             return;
                         }
                     }
