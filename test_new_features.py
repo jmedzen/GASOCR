@@ -11,13 +11,16 @@ from main import app
 async def test_all():
     print("👉 開始驗證 5 大核心新功能...")
     await database.init_db()
+    if not await database.is_admin_initialized():
+        await database.init_admin_password("adminSecret123")
+    await database.set_access_gate(False)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # 1. 驗證 Version 端點
         res = await client.get("/api/version")
         assert res.status_code == 200
         data = res.json()
         print(f"   ✅ 版本號確認: {data['build']} ({data['version']})")
-        assert data['build'] == "Build 011"
+        assert data['build'] == "Build 012"
 
         # 2. 測試檔案 Hash 比對端點 /api/files/check-hash
         # 建立一個測試用的虛構 pdf 檔案

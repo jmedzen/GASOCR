@@ -7,6 +7,7 @@ import hashlib
 import hmac
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+import concurrent.futures
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, BackgroundTasks
@@ -24,6 +25,14 @@ import gemini_ocr
 from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
 import exporters
 import web_rpa
+
+# PDF 渲染專屬執行緒池與並發信號量 (CPU Core - 2，單一 PDF 限制單一線程循序切圖)
+PDF_RENDER_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=config.MAX_RENDER_WORKERS,
+    thread_name_prefix="pdf_render_"
+)
+RENDER_SEMAPHORE = asyncio.Semaphore(config.MAX_RENDER_WORKERS)
+print(f"🚀 [Config] PDF 渲染並發限制初始化完成: 最大 {config.MAX_RENDER_WORKERS} 檔同時切圖 (CPU: {os.cpu_count()})")
 
 # 模型快取清單（預設先載入內建清單）
 CACHED_MODELS: List[Dict[str, Any]] = list(config.AVAILABLE_MODELS)
@@ -63,6 +72,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # 關閉專屬切圖執行緒池
+        try:
+            PDF_RENDER_EXECUTOR.shutdown(wait=False)
+        except Exception:
+            pass
         # 關閉時脫離 CDP 連線。
         # 注意：close_cdp_session() 只關閉 Playwright 的連線，
         # 不會終止使用者手動啟動的 Chrome。
@@ -145,7 +159,14 @@ async def auth_middleware(request: Request, call_next):
     if path == "/" or path.startswith(("/static", "/docs", "/openapi.json", "/redoc", "/favicon.ico")):
         return await call_next(request)
         
-    # 2. 公開認證與系統狀態端點一律放行
+    # 2. 檢查初次安裝狀態：若未初始化管理員密碼，僅放行初始化與狀態端點
+    admin_initialized = await database.is_admin_initialized()
+    if not admin_initialized:
+        if path in ["/api/version", "/api/auth/status", "/api/admin/init"]:
+            return await call_next(request)
+        return JSONResponse(status_code=401, content={"detail": "系統尚未初始化，請先設定管理員密碼"})
+
+    # 3. 公開認證與系統狀態端點一律放行
     if path in [
         "/api/version",
         "/api/auth/status",
@@ -157,14 +178,14 @@ async def auth_middleware(request: Request, call_next):
     ]:
         return await call_next(request)
 
-    # 3. 檢查管理員端點權限
+    # 4. 檢查管理員端點權限
     if path.startswith("/api/admin/"):
         is_admin, _ = await extract_auth_info(request)
         if not is_admin:
             return JSONResponse(status_code=401, content={"detail": "需要管理員權限"})
         return await call_next(request)
 
-    # 4. 檢查通關密碼保護 (Access Gate)
+    # 5. 檢查通關密碼保護 (Access Gate)
     gate_enabled = await database.is_access_gate_enabled()
     if gate_enabled:
         _, is_access = await extract_auth_info(request)
@@ -178,25 +199,32 @@ async def auth_middleware(request: Request, call_next):
 active_page_tasks: Dict[str, asyncio.Task] = {}
 
 async def background_render_task_pages(task_id: str, pdf_path: Path, target_pages: set):
-    """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，不阻塞使用者當前轉譯與校對工作"""
+    """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，受 RENDER_SEMAPHORE 控管總 CPU 並發"""
     try:
-        await database.update_task_status(task_id, bg_render_status="rendering")
-        print(f"🎨 [Background Render] 任務 {task_id} 開始背景渲染其餘頁面...")
-        
-        # 使用 asyncio.to_thread 避免 PDF 渲染 CPU 密集運算阻塞 asyncio event loop
-        remaining_rendered = await asyncio.to_thread(
-            render_remaining_pdf_pages, pdf_path, task_id, target_pages
-        )
-        
-        if remaining_rendered:
-            pages_data = [
-                {"task_id": task_id, "page_num": p_num, "image_path": str(img_path)}
-                for p_num, img_path in remaining_rendered
-            ]
-            await database.add_background_rendered_pages(pages_data)
+        async with RENDER_SEMAPHORE:
+            check_task = await database.get_task(task_id)
+            if not check_task or check_task.get("status") in ["paused", "failed"]:
+                return
+
+            await database.update_task_status(task_id, bg_render_status="rendering")
+            print(f"🎨 [Background Render] 任務 {task_id} 開始背景渲染其餘頁面...")
             
-        await database.update_task_status(task_id, bg_render_status="completed")
-        print(f"✅ [Background Render] 任務 {task_id} 其餘 {len(remaining_rendered)} 頁高清渲染全部完成！")
+            # 使用專屬切圖執行緒池 PDF_RENDER_EXECUTOR，單檔單線程循序切圖
+            loop = asyncio.get_running_loop()
+            remaining_rendered = await loop.run_in_executor(
+                PDF_RENDER_EXECUTOR,
+                render_remaining_pdf_pages, pdf_path, task_id, target_pages
+            )
+            
+            if remaining_rendered:
+                pages_data = [
+                    {"task_id": task_id, "page_num": p_num, "image_path": str(img_path)}
+                    for p_num, img_path in remaining_rendered
+                ]
+                await database.add_background_rendered_pages(pages_data)
+                
+            await database.update_task_status(task_id, bg_render_status="completed")
+            print(f"✅ [Background Render] 任務 {task_id} 其餘 {len(remaining_rendered)} 頁高清渲染全部完成！")
     except Exception as e:
         print(f"❌ [Background Render] 任務 {task_id} 背景渲染異常: {e}")
         await database.update_task_status(task_id, bg_render_status="failed")
@@ -359,42 +387,56 @@ async def process_task_pipeline(task_id: str):
             task_render_dir = config.RENDERS_DIR / task_id
 
             # 先建立 task_pages 預備記錄，讓前端進度條與頁面狀態燈號立即得知目標範圍！
+            # 排隊等待切圖期間頁面狀態皆為 pending
             init_pages = [
                 {
                     "task_id": task_id,
                     "page_num": p_num,
                     "image_path": str(task_render_dir / f"page_{p_num:04d}.png"),
-                    "status": "rendering" if p_num == s_page else "pending"
+                    "status": "pending"
                 }
                 for p_num in target_list
             ]
             await database.create_task_pages(init_pages)
 
-            # 更新任務狀態為 rendering，設定總目標頁數並將已切圖頁數初始化為 0
+            # 更新任務狀態為 pending（佇列排隊中），設定總目標頁數並將已切圖頁數初始化為 0
             await database.update_task_status(
                 task_id, 
-                status="rendering", 
+                status="pending", 
                 total_pages=total_target, 
                 processed_pages=0,
                 rendered_pages=0,
                 pdf_total_pages=pdf_total_pages
             )
 
-            # 定義非同步切圖回呼：每完成一頁即刻更新資料庫與切圖計數
-            current_rendered = 0
-            async def on_single_page_done(p_num: int, total_count: int, img_path: Path):
-                nonlocal current_rendered
-                current_rendered += 1
-                await database.update_page_image_and_status(task_id, p_num, str(img_path), "pending")
-                await database.update_task_status(task_id, rendered_pages=current_rendered)
+            # 進入 RENDER_SEMAPHORE，受限於 MAX_RENDER_WORKERS (CPU Core - 2)
+            async with RENDER_SEMAPHORE:
+                # 取得執行槽位後，檢查在佇列等待期間任務是否已被使用者暫停或刪除
+                check_task = await database.get_task(task_id)
+                if not check_task or check_task.get("status") in ["paused", "failed"]:
+                    return
 
-            rendered_pages = await render_pdf_to_images_async(
-                pdf_path, 
-                task_id, 
-                start_page=s_page, 
-                end_page=e_page,
-                on_page_rendered=on_single_page_done
-            )
+                # 正式啟動切圖，狀態更新為 rendering，並將首頁標記為 rendering
+                await database.update_task_status(task_id, status="rendering")
+                if target_list:
+                    await database.update_page_status(task_id, target_list[0], "rendering")
+
+                # 定義非同步切圖回呼：每完成一頁即刻更新資料庫與切圖計數
+                current_rendered = 0
+                async def on_single_page_done(p_num: int, total_count: int, img_path: Path):
+                    nonlocal current_rendered
+                    current_rendered += 1
+                    await database.update_page_image_and_status(task_id, p_num, str(img_path), "pending")
+                    await database.update_task_status(task_id, rendered_pages=current_rendered)
+
+                rendered_pages = await render_pdf_to_images_async(
+                    pdf_path, 
+                    task_id, 
+                    start_page=s_page, 
+                    end_page=e_page,
+                    on_page_rendered=on_single_page_done,
+                    executor=PDF_RENDER_EXECUTOR
+                )
             
             # 檢查在切圖渲染期間，使用者是否已按了暫停或刪除
             check_task = await database.get_task(task_id)
@@ -682,6 +724,37 @@ async def access_logout():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    # 1. 檢查初次安裝初始化狀態：未設定管理員密碼時直接呈現初始化精靈
+    admin_initialized = await database.is_admin_initialized()
+    if not admin_initialized:
+        return templates.TemplateResponse(
+            request=request,
+            name="gate_lock.html",
+            context={
+                "mode": "setup",
+                "app_name": config.APP_NAME,
+                "app_version": config.APP_VERSION,
+                "build_number": config.BUILD_NUMBER,
+            }
+        )
+
+    # 2. 檢查全站通關密碼保護 (Access Gate)：已啟用但未解鎖時物理隔離主系統
+    gate_enabled = await database.is_access_gate_enabled()
+    is_admin, is_access = await extract_auth_info(request)
+
+    if gate_enabled and not is_access:
+        return templates.TemplateResponse(
+            request=request,
+            name="gate_lock.html",
+            context={
+                "mode": "lock",
+                "app_name": config.APP_NAME,
+                "app_version": config.APP_VERSION,
+                "build_number": config.BUILD_NUMBER,
+            }
+        )
+
+    # 3. 已解鎖或未啟用全站保護：正常渲染系統主頁面
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -693,6 +766,8 @@ async def index(request: Request):
             "languages": config.LANGUAGE_OPTIONS,
             "directions": config.DIRECTION_OPTIONS,
             "columns": config.COLUMN_OPTIONS,
+            "is_admin": is_admin,
+            "access_gate_enabled": gate_enabled,
         }
     )
 

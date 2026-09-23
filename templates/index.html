@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 011') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 012') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -1283,7 +1283,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 011') }}
+                            {{ build_number | default('Build 012') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -1352,6 +1352,18 @@
                     <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
                     <span class="font-semibold hidden sm:inline" x-text="authStatus.is_admin ? '管理員' : '系統管理'">系統管理</span>
                     <span x-show="authStatus.access_gate_enabled" class="text-[11px]" title="全站通關保護中" style="display: none;">🔒</span>
+                </button>
+
+                <!-- Re-Lock Access Gate Button (Quick Lock) -->
+                <button 
+                    x-show="authStatus.access_gate_enabled"
+                    @click="reLockAccessGate()" 
+                    class="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border-rose-200 dark:border-rose-900/60"
+                    title="立即重新上鎖全站 (退出通關狀態)"
+                    style="display: none;"
+                >
+                    <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline font-semibold">上鎖</span>
                 </button>
             </div>
         </div>
@@ -2178,7 +2190,7 @@
             <div class="flex items-center space-x-2">
                 <span class="font-bold text-slate-600">GASOCR</span>
                 <span>v{{ app_version | default('1.0.0') }}</span>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 011') }}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">{{ build_number | default('Build 012') }}</span>
             </div>
             <p class="text-[11px] text-slate-400">Google AI Studio & Gemini Web 古籍文獻高精度 OCR 轉譯系統</p>
         </footer>
@@ -2896,117 +2908,7 @@
         </div>
     </div>
 
-    <!-- Modal: First-run Admin Setup Wizard -->
-    <div 
-        x-show="!authStatus.admin_initialized" 
-        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
-        style="display: none;"
-    >
-        <div class="admin-modal-card rounded-3xl max-w-md w-full border shadow-2xl p-6 sm:p-8">
-            <div class="text-center mb-6">
-                <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mb-3">
-                    <i data-lucide="shield-alert" class="w-7 h-7"></i>
-                </div>
-                <h3 class="text-lg font-bold text-slate-900">歡迎使用 GASOCR</h3>
-                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                    檢測到系統為初次啟動，請先設定最高管理員密碼以保護金鑰池與啟用通關存取權限。
-                </p>
-            </div>
 
-            <form @submit.prevent="submitSetupWizard()" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">管理員新密碼 <span class="text-rose-500">*</span></label>
-                    <input 
-                        type="password" 
-                        x-model="setupWizard.password" 
-                        placeholder="請輸入至少 4 個字元之密碼"
-                        class="w-full text-sm rounded-xl border px-3.5 py-2.5 focus:outline-none admin-input"
-                        required
-                    >
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">再次確認密碼 <span class="text-rose-500">*</span></label>
-                    <input 
-                        type="password" 
-                        x-model="setupWizard.confirmPassword" 
-                        placeholder="請再次輸入管理員密碼"
-                        class="w-full text-sm rounded-xl border px-3.5 py-2.5 focus:outline-none admin-input"
-                        required
-                    >
-                </div>
-
-                <div x-show="setupWizard.error" class="p-3 rounded-xl border text-xs flex items-center gap-2 admin-alert-error">
-                    <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
-                    <span x-text="setupWizard.error"></span>
-                </div>
-
-                <button 
-                    type="submit" 
-                    :disabled="setupWizard.isLoading"
-                    class="w-full py-2.5 px-4 admin-primary-btn text-sm font-semibold rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                    <span x-text="setupWizard.isLoading ? '初始化設定中...' : '完成初始化並進入系統'"></span>
-                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal: Access Gate Lock Screen -->
-    <div 
-        x-show="authStatus.admin_initialized && authStatus.access_gate_enabled && !authStatus.is_authenticated_user" 
-        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
-        style="display: none;"
-    >
-        <div class="admin-modal-card rounded-3xl max-w-md w-full border shadow-2xl p-6 sm:p-8 text-center relative overflow-hidden">
-            <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white shadow-xl mb-4">
-                <i data-lucide="lock" class="w-8 h-8"></i>
-            </div>
-
-            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight">GASOCR 存取保護</h3>
-            <p class="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
-                本系統已啟用通關保護。<br>請輸入通關密碼或管理員密碼以解鎖使用。
-            </p>
-
-            <form @submit.prevent="submitAccessUnlock()" class="mt-6 space-y-4">
-                <div>
-                    <input 
-                        type="password" 
-                        x-model="accessGateLock.password" 
-                        placeholder="請輸入通關密碼..."
-                        class="w-full text-center tracking-widest text-base rounded-2xl border px-4 py-3 shadow-inner font-mono admin-input focus:outline-none"
-                        autofocus
-                        required
-                    >
-                </div>
-
-                <div x-show="accessGateLock.error" class="p-2.5 rounded-xl border text-xs flex items-center justify-center gap-1.5 admin-alert-error">
-                    <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
-                    <span x-text="accessGateLock.error"></span>
-                </div>
-
-                <button 
-                    type="submit" 
-                    :disabled="accessGateLock.isLoading"
-                    class="w-full py-3 px-4 admin-lock-btn text-sm font-bold rounded-2xl shadow-lg transition transform active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                    <i data-lucide="unlock" class="w-4 h-4"></i>
-                    <span x-text="accessGateLock.isLoading ? '驗證通關密碼中...' : '驗證並解鎖進入'"></span>
-                </button>
-            </form>
-
-            <div class="mt-6 pt-4 border-t border-slate-200/50 flex items-center justify-center">
-                <button 
-                    type="button"
-                    @click="openAdminModal()" 
-                    class="text-xs admin-link transition flex items-center gap-1 cursor-pointer"
-                >
-                    <i data-lucide="key" class="w-3.5 h-3.5"></i>
-                    <span>管理員身分入口</span>
-                </button>
-            </div>
-        </div>
-    </div>
 
     <!-- Modal: Admin Login -->
     <div 
@@ -3595,8 +3497,9 @@
                         const res = await fetch('/api/auth/status');
                         if (res.ok) {
                             this.authStatus = await res.json();
-                            if (!this.authStatus.admin_initialized) {
-                                this.showSetupWizardModal = true;
+                            if (!this.authStatus.admin_initialized || (this.authStatus.access_gate_enabled && !this.authStatus.is_authenticated_user)) {
+                                window.location.reload();
+                                return;
                             }
                         }
                     } catch (e) {
@@ -3848,15 +3751,9 @@
                 async reLockAccessGate() {
                     try {
                         await fetch('/api/auth/logout-access', { method: 'POST' });
-                        this.authStatus.is_admin = false;
-                        this.authStatus.is_authenticated_user = false;
-                        this.showAdminModal = false;
-                        this.showToast('🔒 系統已重新鎖定');
-                        await this.checkAuthStatus();
+                        window.location.reload();
                     } catch (e) {
-                        console.error(e);
-                    } finally {
-                        this.$nextTick(() => { lucide.createIcons(); });
+                        console.error('Failed to relock access gate:', e);
                     }
                 },
 

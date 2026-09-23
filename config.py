@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 011"
+BUILD_NUMBER = "Build 012"
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -30,6 +30,10 @@ MIN_REQUEST_INTERVAL_SECONDS = 4.2  # 60s / 15 = 4s; 4.2s for safe margin
 DEFAULT_COOLDOWN_SECONDS = 60       # If 429 occurs, cooldown key for 60s
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_RENDER_DPI = 300            # 高清渲染解析度 (預設 300 DPI，文獻印刷級清晰度)
+
+# PDF 渲染並發與執行緒控制 (CPU Core - 2，保底至少 1；單一 PDF 使用單一執行緒)
+_detected_cores = os.cpu_count() or 4
+MAX_RENDER_WORKERS = max(1, int(os.environ.get("MAX_RENDER_WORKERS", _detected_cores - 2)))
 
 # Model options
 AVAILABLE_MODELS = [

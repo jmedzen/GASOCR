@@ -62,22 +62,27 @@ def render_pdf_to_images(
         
     return results
 
+import concurrent.futures
+
 async def render_pdf_to_images_async(
     pdf_path: Path, 
     task_id: str, 
     start_page: int = 1, 
     end_page: int = 0, 
     dpi: int = DEFAULT_RENDER_DPI,
-    on_page_rendered: Optional[Callable[[int, int, Path], Any]] = None
+    on_page_rendered: Optional[Callable[[int, int, Path], Any]] = None,
+    executor: Optional[concurrent.futures.Executor] = None
 ) -> List[Tuple[int, Path]]:
     """
     非阻塞逐頁渲染 PDF 為高品質 PNG 圖片，每切完一頁即時呼叫非同步回呼以即時更新進度條
+    支援傳入自訂 ThreadPoolExecutor，確保單檔單執行緒循序切圖
     """
     scale = dpi / 72.0
     task_render_dir = RENDERS_DIR / task_id
     task_render_dir.mkdir(parents=True, exist_ok=True)
     
-    pdf = await asyncio.to_thread(pdfium.PdfDocument, str(pdf_path))
+    loop = asyncio.get_running_loop()
+    pdf = await loop.run_in_executor(executor, pdfium.PdfDocument, str(pdf_path))
     total_pages = len(pdf)
     
     s_page = max(1, start_page)
@@ -91,15 +96,15 @@ async def render_pdf_to_images_async(
     try:
         for p_num in range(s_page, e_page + 1):
             idx = p_num - 1
-            page = pdf[idx]
             
             def _render_and_save():
+                page = pdf[idx]
                 img = page.render(scale=scale).to_pil()
                 out_path = task_render_dir / f"page_{p_num:04d}.png"
                 img.save(out_path, "PNG", optimize=True)
                 return out_path
 
-            output_path = await asyncio.to_thread(_render_and_save)
+            output_path = await loop.run_in_executor(executor, _render_and_save)
             results.append((p_num, output_path))
             
             if on_page_rendered:
@@ -111,7 +116,7 @@ async def render_pdf_to_images_async(
                 except Exception as cb_err:
                     print(f"on_page_rendered async error: {cb_err}")
     finally:
-        await asyncio.to_thread(pdf.close)
+        await loop.run_in_executor(executor, pdf.close)
         
     return results
 
