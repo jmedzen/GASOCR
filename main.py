@@ -18,7 +18,7 @@ import httpx
 import database
 import config
 from scheduler import scheduler
-from pdf_engine import render_pdf_to_images, render_single_page, get_pdf_page_count, render_remaining_pdf_pages
+from pdf_engine import render_pdf_to_images, render_pdf_to_images_async, render_single_page, get_pdf_page_count, render_remaining_pdf_pages
 import gemini_ocr
 from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
 import exporters
@@ -262,16 +262,48 @@ async def process_task_pipeline(task_id: str):
 
         if not pages:
             # 1. 初次啟動：僅渲染指定範圍的頁面為圖片（大幅節省時間）
-            await database.update_task_status(task_id, "rendering", pdf_total_pages=pdf_total_pages)
-            rendered_pages = render_pdf_to_images(pdf_path, task_id, start_page=s_page, end_page=e_page)
-            
-            total_pages = len(rendered_pages)
-            pages_data = [
-                {"task_id": task_id, "page_num": p_num, "image_path": str(img_path)}
-                for p_num, img_path in rendered_pages
-            ]
-            await database.create_task_pages(pages_data)
+            target_list = list(range(s_page, e_page + 1))
+            total_target = len(target_list)
+            task_render_dir = config.RENDERS_DIR / task_id
 
+            # 先建立 task_pages 預備記錄，讓前端進度條與頁面狀態燈號立即得知目標範圍！
+            init_pages = [
+                {
+                    "task_id": task_id,
+                    "page_num": p_num,
+                    "image_path": str(task_render_dir / f"page_{p_num:04d}.png"),
+                    "status": "rendering" if p_num == s_page else "pending"
+                }
+                for p_num in target_list
+            ]
+            await database.create_task_pages(init_pages)
+
+            # 更新任務狀態為 rendering，設定總目標頁數並將已切圖頁數初始化為 0
+            await database.update_task_status(
+                task_id, 
+                status="rendering", 
+                total_pages=total_target, 
+                processed_pages=0,
+                rendered_pages=0,
+                pdf_total_pages=pdf_total_pages
+            )
+
+            # 定義非同步切圖回呼：每完成一頁即刻更新資料庫與切圖計數
+            current_rendered = 0
+            async def on_single_page_done(p_num: int, total_count: int, img_path: Path):
+                nonlocal current_rendered
+                current_rendered += 1
+                await database.update_page_image_and_status(task_id, p_num, str(img_path), "pending")
+                await database.update_task_status(task_id, rendered_pages=current_rendered)
+
+            rendered_pages = await render_pdf_to_images_async(
+                pdf_path, 
+                task_id, 
+                start_page=s_page, 
+                end_page=e_page,
+                on_page_rendered=on_single_page_done
+            )
+            
             # 檢查在切圖渲染期間，使用者是否已按了暫停或刪除
             check_task = await database.get_task(task_id)
             if not check_task or check_task.get("status") in ["paused", "failed"]:
@@ -279,8 +311,9 @@ async def process_task_pipeline(task_id: str):
 
             await database.update_task_status(
                 task_id, "processing", 
-                total_pages=total_pages, 
+                total_pages=total_target, 
                 processed_pages=0,
+                rendered_pages=total_target,
                 pdf_total_pages=pdf_total_pages
             )
             pages = await database.get_task_pages(task_id)
@@ -914,18 +947,22 @@ async def sse_task_events(task_id: str):
             
             total = task.get("total_pages") or 0
             processed = task.get("processed_pages") or 0
+            rendered = task.get("rendered_pages") or 0
             remaining = max(0, total - processed)
             eta_seconds = round(remaining * avg_speed) if (avg_speed > 0 and remaining > 0) else 0
             
             active_p = next((p for p in pages if p["status"] == "processing"), None)
             active_page_num = active_p["page_num"] if active_p else None
             active_msg = active_p["error_message"] if active_p else ""
+            if task["status"] == "rendering":
+                active_msg = f"🎨 正在 300 DPI 高清切圖第 {min(rendered + 1, total if total > 0 else 1)} 頁 (共 {total} 頁)..."
 
             data_payload = {
                 "task_id": task_id,
                 "status": task["status"],
                 "total_pages": total,
                 "processed_pages": processed,
+                "rendered_pages": rendered,
                 "pdf_total_pages": task.get("pdf_total_pages") or total,
                 "bg_render_status": task.get("bg_render_status", "idle"),
                 "start_page": task.get("start_page", 1),

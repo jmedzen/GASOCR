@@ -10,6 +10,7 @@ from main import app
 
 async def test_all():
     print("👉 開始驗證 5 大核心新功能...")
+    await database.init_db()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # 1. 驗證 Version 端點
         res = await client.get("/api/version")
@@ -80,12 +81,32 @@ async def test_all():
         async for line in res.aiter_lines():
             if line.startswith("data: "):
                 payload = json.loads(line[6:])
+                assert "rendered_pages" in payload
                 assert "avg_speed" in payload
                 assert "eta_seconds" in payload
                 assert "pdf_total_pages" in payload
                 assert "bg_render_status" in payload
-                print(f"   ✅ SSE 富資訊驗證通過: total={payload['total_pages']}, speed={payload['avg_speed']}, eta={payload['eta_seconds']}s, bg={payload['bg_render_status']}")
+                print(f"   ✅ SSE 富資訊與預處理進度驗證通過: total={payload['total_pages']}, rendered={payload['rendered_pages']}, speed={payload['avg_speed']}, eta={payload['eta_seconds']}s")
                 break
+
+        # 6. 測試圖片預處理切圖進度即時回呼 (render_pdf_to_images_async)
+        from pdf_engine import render_pdf_to_images_async
+        sample_pdf = config.BASE_DIR / "sets" / "大日本佛敎全書.第082冊-大乗法相宗名目.pdf"
+        if sample_pdf.exists():
+            render_progress_events = []
+            async def track_render(p_num, total_target, out_path):
+                render_progress_events.append((p_num, total_target))
+            
+            await render_pdf_to_images_async(
+                sample_pdf, 
+                "test_render_track", 
+                start_page=1, 
+                end_page=3, 
+                on_page_rendered=track_render
+            )
+            assert len(render_progress_events) == 3
+            assert render_progress_events[-1] == (3, 3)
+            print(f"   ✅ 圖片預處理 300 DPI 逐頁切圖進度回呼驗證通過: {len(render_progress_events)} 頁全部成功觸發進度事件")
 
         # 清理測試資料
         await database.delete_task(task_id)

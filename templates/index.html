@@ -1210,14 +1210,16 @@
                                                 :class="{
                                                     'bg-emerald-500': task.status === 'completed',
                                                     'bg-blue-600': task.status === 'processing',
-                                                    'bg-amber-500': task.status === 'rendering',
+                                                    'bg-amber-500 animate-pulse': task.status === 'rendering',
                                                     'bg-purple-500': task.status === 'paused',
                                                     'bg-red-500': task.status === 'failed',
                                                     'bg-slate-300': task.status === 'pending'
                                                 }"
-                                                :style="`width: ${task.total_pages ? Math.round((task.processed_pages || 0)/task.total_pages*100) : 0}%`"></div>
+                                                :style="`width: ${task.total_pages ? (task.status === 'rendering' ? Math.min(100, Math.round((task.rendered_pages || 0)/task.total_pages*100)) : Math.min(100, Math.round((task.processed_pages || 0)/task.total_pages*100))) : 0}%`"></div>
                                         </div>
-                                        <span class="font-mono text-xs font-semibold text-slate-700" x-text="`${task.processed_pages || 0}/${task.total_pages || 0}`"></span>
+                                        <span class="font-mono text-xs font-semibold" 
+                                            :class="task.status === 'rendering' ? 'text-amber-700' : 'text-slate-700'"
+                                            x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : `${task.processed_pages || 0}/${task.total_pages || 0}`"></span>
                                     </div>
                                 </td>
                                 <td class="p-3 whitespace-nowrap">
@@ -1353,22 +1355,24 @@
             <!-- Detailed Telemetry Stat Cards -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-100">
                 <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-                    <div class="text-[11px] text-slate-400 font-medium">本次指定頁數</div>
+                    <div class="text-[11px] text-slate-400 font-medium">
+                        <span x-text="currentTask?.status === 'rendering' ? '圖片預處理進度' : '本次指定頁數'"></span>
+                    </div>
                     <div class="text-sm font-bold text-slate-800 flex items-baseline space-x-1 mt-0.5">
-                        <span x-text="`${currentTask?.processed_pages || 0} / ${currentTask?.total_pages || 0} 頁`"></span>
-                        <span class="text-xs text-blue-600 font-semibold" x-text="`(${progressPercent}%)`"></span>
+                        <span x-text="currentTask?.status === 'rendering' ? `${currentTask?.rendered_pages || 0} / ${currentTask?.total_pages || 0} 頁` : `${currentTask?.processed_pages || 0} / ${currentTask?.total_pages || 0} 頁`"></span>
+                        <span class="text-xs font-semibold" :class="currentTask?.status === 'rendering' ? 'text-amber-600' : 'text-blue-600'" x-text="`(${progressPercent}%)`"></span>
                     </div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
                     <div class="text-[11px] text-slate-400 font-medium">預估剩餘時間 (ETA)</div>
                     <div class="text-sm font-bold text-slate-800 mt-0.5">
-                        <span x-text="currentTask?.status === 'completed' ? '已完成' : formatEta(liveEtaSeconds)"></span>
+                        <span x-text="currentTask?.status === 'completed' ? '已完成' : (currentTask?.status === 'rendering' ? '切圖處理中...' : formatEta(liveEtaSeconds))"></span>
                     </div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
                     <div class="text-[11px] text-slate-400 font-medium">平均轉譯速度</div>
                     <div class="text-sm font-bold text-slate-800 mt-0.5">
-                        <span x-text="liveAvgSpeed > 0 ? `${liveAvgSpeed} 秒 / 頁` : '計算中...'"></span>
+                        <span x-text="currentTask?.status === 'rendering' ? '300 DPI 解析中' : (liveAvgSpeed > 0 ? `${liveAvgSpeed} 秒 / 頁` : '計算中...')"></span>
                     </div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
@@ -1381,7 +1385,10 @@
                             </span>
                         </template>
                         <template x-if="currentTask?.status === 'rendering'">
-                            <span class="text-amber-600">300 DPI 切圖中...</span>
+                            <span class="flex items-center space-x-1 text-amber-600 truncate">
+                                <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0"></span>
+                                <span class="truncate" x-text="liveActiveMsg || '300 DPI 切圖中...'"></span>
+                            </span>
                         </template>
                         <template x-if="currentTask?.status === 'completed'">
                             <span class="text-emerald-600">✅ 指定頁面轉譯完成</span>
@@ -1399,20 +1406,40 @@
             <!-- Enhanced Gradient Progress Bar -->
             <div class="mt-3">
                 <div class="flex items-center justify-between text-xs mb-1 font-semibold">
-                    <span class="text-slate-600 flex items-center space-x-1.5">
-                        <span>本次轉譯頁面進度條 (僅顯示您選取的指定頁面)</span>
+                    <span class="flex items-center space-x-1.5" :class="currentTask?.status === 'rendering' ? 'text-amber-700' : 'text-slate-600'">
+                        <template x-if="currentTask?.status === 'rendering'">
+                            <span class="flex items-center space-x-1">
+                                <i data-lucide="image" class="w-3.5 h-3.5 animate-pulse text-amber-600 shrink-0"></i>
+                                <span>[階段 1/2] 300 DPI 圖片預處理切圖進度 (原書高清解析)</span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'processing'">
+                            <span class="flex items-center space-x-1">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
+                                <span>[階段 2/2] Gemini AI OCR 辨識進度 (僅顯示您選取的指定頁面)</span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'completed'">
+                            <span class="text-emerald-700 flex items-center space-x-1">
+                                <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i>
+                                <span>圖片預處理與 AI 轉譯已全數完成</span>
+                            </span>
+                        </template>
+                        <template x-if="!['rendering', 'processing', 'completed'].includes(currentTask?.status)">
+                            <span>本次轉譯頁面進度條 (僅顯示您選取的指定頁面)</span>
+                        </template>
                         <template x-if="liveActiveMsg && liveActiveMsg.includes('503')">
                             <span class="text-amber-600 font-bold animate-pulse text-[11px]" x-text="liveActiveMsg"></span>
                         </template>
                     </span>
-                    <span class="text-blue-600 font-mono" x-text="`${progressPercent}%`"></span>
+                    <span class="font-mono font-bold" :class="currentTask?.status === 'rendering' ? 'text-amber-600' : 'text-blue-600'" x-text="`${progressPercent}%`"></span>
                 </div>
                 <div class="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200">
                     <div class="h-full rounded-full transition-all duration-300 shadow-xs"
                         :class="{
                             'bg-emerald-500': currentTask?.status === 'completed',
                             'bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600': currentTask?.status === 'processing',
-                            'bg-amber-500': currentTask?.status === 'rendering',
+                            'bg-gradient-to-r from-amber-400 to-amber-500 animate-pulse': currentTask?.status === 'rendering',
                             'bg-purple-500': currentTask?.status === 'paused',
                             'bg-red-500': currentTask?.status === 'failed',
                             'bg-slate-300': currentTask?.status === 'pending'
@@ -1426,6 +1453,9 @@
                 <div class="flex items-center justify-between mb-1.5">
                     <span class="text-[11px] font-semibold text-slate-500">頁面執行狀態燈號（點選可直接預覽校對）：</span>
                     <div class="flex items-center space-x-3 text-[11px] text-slate-400">
+                        <template x-if="currentTask?.status === 'rendering'">
+                            <span class="flex items-center space-x-1 text-amber-600 font-semibold"><span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span>300 DPI 切圖中</span></span>
+                        </template>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>完成</span></span>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span><span>轉譯中</span></span>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span>重試/忙碌</span></span>
@@ -1450,6 +1480,7 @@
                             :title="p.error_message ? `第 ${p.page_num} 頁: ${p.error_message}` : `第 ${p.page_num} 頁 (${p.status})`"
                         >
                             <span x-text="`P.${p.page_num}`"></span>
+                            <span x-show="currentTask?.status === 'rendering' && p.page_num <= (currentTask?.rendered_pages || 0)" class="text-[9px] text-amber-600 font-bold" title="已完成 300 DPI 切圖">🖼️</span>
                             <span x-show="p.status === 'completed'">✓</span>
                             <span x-show="p.status === 'processing'" class="text-[9px]">⚡</span>
                             <span x-show="p.status === 'failed'">✗</span>
@@ -2573,7 +2604,11 @@
 
                 get progressPercent() {
                     if (!this.currentTask || !this.currentTask.total_pages) return 0;
-                    return Math.round(((this.currentTask.processed_pages || 0) / this.currentTask.total_pages) * 100);
+                    if (this.currentTask.status === 'rendering') {
+                        const rendered = this.currentTask.rendered_pages || 0;
+                        return Math.min(100, Math.round((rendered / this.currentTask.total_pages) * 100));
+                    }
+                    return Math.min(100, Math.round(((this.currentTask.processed_pages || 0) / this.currentTask.total_pages) * 100));
                 },
 
                 get currentPage() {
@@ -3250,6 +3285,7 @@
                                 targetTask.status = payload.status;
                                 targetTask.total_pages = payload.total_pages;
                                 targetTask.processed_pages = payload.processed_pages;
+                                targetTask.rendered_pages = payload.rendered_pages || 0;
                             }
 
                             // 2. 只有當前檢視/校對的任務 ID 與事件的 task_id 一致時，才更新校對區塊與重新拉取頁面細節
@@ -3257,6 +3293,7 @@
                                 this.currentTask.status = payload.status;
                                 this.currentTask.total_pages = payload.total_pages;
                                 this.currentTask.processed_pages = payload.processed_pages;
+                                this.currentTask.rendered_pages = payload.rendered_pages || 0;
                                 if (payload.pdf_total_pages) this.currentTask.pdf_total_pages = payload.pdf_total_pages;
                                 if (payload.bg_render_status) this.currentTask.bg_render_status = payload.bg_render_status;
                                 if (payload.start_page) this.currentTask.start_page = payload.start_page;

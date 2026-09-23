@@ -89,6 +89,8 @@ async def init_db():
             await db.execute("ALTER TABLE tasks ADD COLUMN bg_render_status TEXT DEFAULT 'idle'")
         if "file_hash" not in cols:
             await db.execute("ALTER TABLE tasks ADD COLUMN file_hash TEXT DEFAULT ''")
+        if "rendered_pages" not in cols:
+            await db.execute("ALTER TABLE tasks ADD COLUMN rendered_pages INTEGER DEFAULT 0")
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS task_pages (
@@ -320,7 +322,8 @@ async def update_task_status(
     processed_pages: Optional[int] = None, 
     model: Optional[str] = None,
     pdf_total_pages: Optional[int] = None,
-    bg_render_status: Optional[str] = None
+    bg_render_status: Optional[str] = None,
+    rendered_pages: Optional[int] = None
 ):
     now = time.time()
     async with get_db() as db:
@@ -335,6 +338,9 @@ async def update_task_status(
         if processed_pages is not None:
             updates.append("processed_pages = ?")
             params.append(processed_pages)
+        if rendered_pages is not None:
+            updates.append("rendered_pages = ?")
+            params.append(rendered_pages)
         if model:
             updates.append("model = ?")
             params.append(model)
@@ -368,10 +374,21 @@ async def create_task_pages(pages_data: List[Dict[str, Any]]):
     now = time.time()
     async with get_db() as db:
         for page in pages_data:
+            initial_status = page.get("status", "pending")
             await db.execute("""
                 INSERT OR IGNORE INTO task_pages (task_id, page_num, image_path, status, updated_at)
-                VALUES (?, ?, ?, 'pending', ?)
-            """, (page["task_id"], page["page_num"], page["image_path"], now))
+                VALUES (?, ?, ?, ?, ?)
+            """, (page["task_id"], page["page_num"], page["image_path"], initial_status, now))
+        await db.commit()
+
+async def update_page_image_and_status(task_id: str, page_num: int, image_path: str, status: str = "pending"):
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("""
+            UPDATE task_pages 
+            SET image_path = ?, status = ?, updated_at = ?
+            WHERE task_id = ? AND page_num = ?
+        """, (image_path, status, now, task_id, page_num))
         await db.commit()
 
 async def add_background_rendered_pages(pages_data: List[Dict[str, Any]]):
