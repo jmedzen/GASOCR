@@ -80,7 +80,9 @@
         body.theme-dark .border-slate-300 {
             border-color: #243044 !important;
         }
-        body.theme-dark .text-slate-800, body.theme-dark .text-slate-700 {
+        body.theme-dark .text-slate-900,
+        body.theme-dark .text-slate-800, 
+        body.theme-dark .text-slate-700 {
             color: #f1f5f9 !important;
         }
         body.theme-dark .text-slate-600, body.theme-dark .text-slate-500 {
@@ -177,7 +179,9 @@
         body.theme-gruvbox .border-slate-300 {
             border-color: #504945 !important;
         }
-        body.theme-gruvbox .text-slate-800, body.theme-gruvbox .text-slate-700 {
+        body.theme-gruvbox .text-slate-900,
+        body.theme-gruvbox .text-slate-800, 
+        body.theme-gruvbox .text-slate-700 {
             color: #ebdbb2 !important;
         }
         body.theme-gruvbox .text-slate-600, body.theme-gruvbox .text-slate-500 {
@@ -449,6 +453,161 @@
             background-color: rgba(226, 232, 240, 0.6);
         }
 
+        /* --- Admin & Security Modals (Base / Light Theme) --- */
+        .admin-modal-overlay {
+            background-color: rgba(15, 23, 42, 0.65) !important;
+            backdrop-filter: blur(8px) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+        }
+        .admin-modal-card {
+            background-color: #ffffff !important;
+            border-color: #e2e8f0 !important;
+            color: #0f172a !important;
+        }
+        .admin-modal-header {
+            background-color: rgba(248, 250, 252, 0.9) !important;
+            border-bottom-color: #f1f5f9 !important;
+        }
+        .admin-tab-bar {
+            background-color: rgba(241, 245, 249, 0.7) !important;
+            border-bottom-color: #e2e8f0 !important;
+        }
+        .admin-tab-active {
+            background-color: #ffffff !important;
+            color: #4f46e5 !important;
+            border-bottom-color: #4f46e5 !important;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+        }
+        .admin-tab-inactive {
+            color: #64748b !important;
+            border-bottom-color: transparent !important;
+        }
+        .admin-tab-inactive:hover {
+            color: #0f172a !important;
+        }
+        .admin-gate-banner-active {
+            background-color: rgba(255, 241, 242, 0.65) !important;
+            border-color: #fecdd3 !important;
+        }
+        .admin-gate-banner-inactive {
+            background-color: #f8fafc !important;
+            border-color: #e2e8f0 !important;
+        }
+        .admin-badge-gate-on {
+            background-color: #ffe4e6 !important;
+            color: #be123c !important;
+            border: 1px solid #fda4af !important;
+        }
+        .admin-badge-gate-off {
+            background-color: #e2e8f0 !important;
+            color: #475569 !important;
+            border: 1px solid transparent !important;
+        }
+        .admin-badge-admin {
+            background-color: #fef3c7 !important;
+            color: #78350f !important;
+            border: 1px solid #fde68a !important;
+        }
+        .admin-input {
+            background-color: #f8fafc !important;
+            border-color: #cbd5e1 !important;
+            color: #0f172a !important;
+        }
+        .admin-input:focus {
+            background-color: #ffffff !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        }
+        .admin-alert-error {
+            background-color: #fff1f2 !important;
+            border-color: #fecdd3 !important;
+            color: #be123c !important;
+        }
+        .admin-alert-success {
+            background-color: #ecfdf5 !important;
+            border-color: #a7f3d0 !important;
+            color: #047857 !important;
+        }
+        .admin-primary-btn {
+            background: linear-gradient(135deg, #2563eb, #4f46e5) !important;
+            color: #ffffff !important;
+        }
+        .admin-primary-btn:hover {
+            background: linear-gradient(135deg, #1d4ed8, #4338ca) !important;
+        }
+        .admin-lock-btn {
+            background: linear-gradient(to right, #4f46e5, #9333ea, #db2777) !important;
+            color: #ffffff !important;
+        }
+        .admin-lock-btn:hover {
+            background: linear-gradient(to right, #4338ca, #7e22ce, #be185d) !important;
+        }
+        .admin-btn-secondary {
+            background-color: #ffffff !important;
+            border-color: #e2e8f0 !important;
+            color: #475569 !important;
+        }
+        .admin-btn-secondary:hover {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+        }
+        .admin-btn-logout {
+            background-color: #e2e8f0 !important;
+            color: #334155 !important;
+        }
+        .admin-btn-logout:hover {
+            background-color: #cbd5e1 !important;
+        }
+        .admin-btn-relock {
+            background-color: #fff1f2 !important;
+            border: 1px solid #fecdd3 !important;
+            color: #be123c !important;
+        }
+        .admin-btn-relock:hover {
+            background-color: #ffe4e6 !important;
+        }
+        .admin-stat-card {
+            background-color: #f8fafc !important;
+            border-color: #e2e8f0 !important;
+        }
+        .admin-stat-val-blue { color: #2563eb !important; }
+        .admin-stat-val-green { color: #059669 !important; }
+        .admin-stat-val-total { color: #1e293b !important; }
+        .admin-stat-val-completed { color: #4f46e5 !important; }
+        .admin-action-box {
+            background-color: rgba(248, 250, 252, 0.85) !important;
+            border-color: #e2e8f0 !important;
+        }
+        .admin-nav-btn {
+            background-color: #f8fafc !important;
+            border-color: #e2e8f0 !important;
+            color: #334155 !important;
+        }
+        .admin-nav-btn:hover {
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+        }
+        .admin-nav-btn-admin {
+            background-color: #fef3c7 !important;
+            border-color: #f59e0b !important;
+            color: #78350f !important;
+        }
+        .admin-nav-btn-admin:hover {
+            background-color: #fde68a !important;
+        }
+        .admin-link {
+            color: #94a3b8 !important;
+        }
+        .admin-link:hover {
+            color: #4f46e5 !important;
+        }
+        .admin-toggle-track {
+            background-color: #e2e8f0 !important;
+        }
+        .admin-toggle-checked {
+            background-color: #e11d48 !important;
+        }
+
         /* --- Dark Theme Overrides --- */
         body.theme-dark .reocr-drawer {
             background-color: #111827 !important;
@@ -622,6 +781,159 @@
         body.theme-dark .reocr-icon-btn:hover {
             color: #f1f5f9 !important;
             background-color: #1e293b !important;
+        }
+
+        /* --- Dark Theme Admin Overrides --- */
+        body.theme-dark .admin-modal-overlay {
+            background-color: rgba(3, 7, 18, 0.82) !important;
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+        }
+        body.theme-dark .admin-modal-card {
+            background-color: #151e2e !important;
+            border-color: #243044 !important;
+            color: #f1f5f9 !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+        }
+        body.theme-dark .admin-modal-header {
+            background-color: #0d1424 !important;
+            border-bottom-color: #1f2937 !important;
+        }
+        body.theme-dark .admin-tab-bar {
+            background-color: #0d1424 !important;
+            border-bottom-color: #243044 !important;
+        }
+        body.theme-dark .admin-tab-active {
+            background-color: #151e2e !important;
+            color: #818cf8 !important;
+            border-bottom-color: #818cf8 !important;
+        }
+        body.theme-dark .admin-tab-inactive {
+            color: #94a3b8 !important;
+            border-bottom-color: transparent !important;
+        }
+        body.theme-dark .admin-tab-inactive:hover {
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .admin-gate-banner-active {
+            background-color: rgba(225, 29, 72, 0.14) !important;
+            border-color: rgba(244, 63, 94, 0.4) !important;
+        }
+        body.theme-dark .admin-gate-banner-inactive {
+            background-color: #0d1424 !important;
+            border-color: #243044 !important;
+        }
+        body.theme-dark .admin-badge-gate-on {
+            background-color: rgba(225, 29, 72, 0.22) !important;
+            color: #fda4af !important;
+            border: 1px solid rgba(244, 63, 94, 0.4) !important;
+        }
+        body.theme-dark .admin-badge-gate-off {
+            background-color: #1e293b !important;
+            color: #94a3b8 !important;
+            border: 1px solid #334155 !important;
+        }
+        body.theme-dark .admin-badge-admin {
+            background-color: rgba(245, 158, 11, 0.22) !important;
+            color: #fcd34d !important;
+            border: 1px solid rgba(245, 158, 11, 0.4) !important;
+        }
+        body.theme-dark .admin-input {
+            background-color: #0d1424 !important;
+            border-color: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .admin-input:focus {
+            background-color: #090e18 !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25) !important;
+        }
+        body.theme-dark .admin-alert-error {
+            background-color: rgba(225, 29, 72, 0.15) !important;
+            border-color: rgba(244, 63, 94, 0.35) !important;
+            color: #fda4af !important;
+        }
+        body.theme-dark .admin-alert-success {
+            background-color: rgba(16, 185, 129, 0.15) !important;
+            border-color: rgba(52, 211, 153, 0.35) !important;
+            color: #6ee7b7 !important;
+        }
+        body.theme-dark .admin-primary-btn {
+            background: linear-gradient(135deg, #3b82f6, #6366f1) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .admin-primary-btn:hover {
+            background: linear-gradient(135deg, #2563eb, #4f46e5) !important;
+        }
+        body.theme-dark .admin-lock-btn {
+            background: linear-gradient(to right, #6366f1, #a855f7, #ec4899) !important;
+            color: #ffffff !important;
+        }
+        body.theme-dark .admin-btn-secondary {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-dark .admin-btn-secondary:hover {
+            background-color: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .admin-btn-logout {
+            background-color: #1e293b !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-dark .admin-btn-logout:hover {
+            background-color: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        body.theme-dark .admin-btn-relock {
+            background-color: rgba(225, 29, 72, 0.15) !important;
+            border: 1px solid rgba(244, 63, 94, 0.35) !important;
+            color: #fda4af !important;
+        }
+        body.theme-dark .admin-btn-relock:hover {
+            background-color: rgba(225, 29, 72, 0.25) !important;
+        }
+        body.theme-dark .admin-stat-card {
+            background-color: #0d1424 !important;
+            border-color: #243044 !important;
+        }
+        body.theme-dark .admin-stat-val-blue { color: #60a5fa !important; }
+        body.theme-dark .admin-stat-val-green { color: #34d399 !important; }
+        body.theme-dark .admin-stat-val-total { color: #f1f5f9 !important; }
+        body.theme-dark .admin-stat-val-completed { color: #a5b4fc !important; }
+        body.theme-dark .admin-action-box {
+            background-color: #0d1424 !important;
+            border-color: #243044 !important;
+        }
+        body.theme-dark .admin-nav-btn {
+            background-color: #111827 !important;
+            border-color: #243044 !important;
+            color: #cbd5e1 !important;
+        }
+        body.theme-dark .admin-nav-btn:hover {
+            background-color: #151e2e !important;
+            border-color: #334155 !important;
+        }
+        body.theme-dark .admin-nav-btn-admin {
+            background-color: rgba(245, 158, 11, 0.15) !important;
+            border-color: rgba(245, 158, 11, 0.45) !important;
+            color: #fcd34d !important;
+        }
+        body.theme-dark .admin-nav-btn-admin:hover {
+            background-color: rgba(245, 158, 11, 0.25) !important;
+        }
+        body.theme-dark .admin-link {
+            color: #64748b !important;
+        }
+        body.theme-dark .admin-link:hover {
+            color: #818cf8 !important;
+        }
+        body.theme-dark .admin-toggle-track {
+            background-color: #334155 !important;
+        }
+        body.theme-dark .admin-toggle-checked {
+            background-color: #f43f5e !important;
         }
 
         /* --- Gruvbox Theme Overrides --- */
@@ -798,6 +1110,162 @@
             color: #ebdbb2 !important;
             background-color: #3c3836 !important;
         }
+
+        /* --- Gruvbox Theme Admin Overrides --- */
+        body.theme-gruvbox .admin-modal-overlay {
+            background-color: rgba(29, 32, 33, 0.88) !important;
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+        }
+        body.theme-gruvbox .admin-modal-card {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+        }
+        body.theme-gruvbox .admin-modal-header {
+            background-color: #282828 !important;
+            border-bottom-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-tab-bar {
+            background-color: #282828 !important;
+            border-bottom-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-tab-active {
+            background-color: #32302f !important;
+            color: #fabd2f !important;
+            border-bottom-color: #fabd2f !important;
+        }
+        body.theme-gruvbox .admin-tab-inactive {
+            color: #a89984 !important;
+            border-bottom-color: transparent !important;
+        }
+        body.theme-gruvbox .admin-tab-inactive:hover {
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .admin-gate-banner-active {
+            background-color: rgba(204, 36, 29, 0.16) !important;
+            border-color: rgba(251, 73, 52, 0.4) !important;
+        }
+        body.theme-gruvbox .admin-gate-banner-inactive {
+            background-color: #282828 !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-badge-gate-on {
+            background-color: rgba(204, 36, 29, 0.22) !important;
+            color: #fb4934 !important;
+            border: 1px solid rgba(251, 73, 52, 0.4) !important;
+        }
+        body.theme-gruvbox .admin-badge-gate-off {
+            background-color: #3c3836 !important;
+            color: #a89984 !important;
+            border: 1px solid #504945 !important;
+        }
+        body.theme-gruvbox .admin-badge-admin {
+            background-color: rgba(215, 153, 33, 0.22) !important;
+            color: #fabd2f !important;
+            border: 1px solid rgba(250, 189, 47, 0.4) !important;
+        }
+        body.theme-gruvbox .admin-input {
+            background-color: #1d2021 !important;
+            border-color: #665c54 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .admin-input:focus {
+            background-color: #282828 !important;
+            border-color: #fabd2f !important;
+            box-shadow: 0 0 0 2px rgba(250, 189, 47, 0.25) !important;
+        }
+        body.theme-gruvbox .admin-alert-error {
+            background-color: rgba(204, 36, 29, 0.16) !important;
+            border-color: rgba(251, 73, 52, 0.35) !important;
+            color: #fb4934 !important;
+        }
+        body.theme-gruvbox .admin-alert-success {
+            background-color: rgba(184, 187, 38, 0.16) !important;
+            border-color: rgba(184, 187, 38, 0.35) !important;
+            color: #b8bb26 !important;
+        }
+        body.theme-gruvbox .admin-primary-btn {
+            background: #d79921 !important;
+            color: #282828 !important;
+            font-weight: 700 !important;
+        }
+        body.theme-gruvbox .admin-primary-btn:hover {
+            background: #fabd2f !important;
+        }
+        body.theme-gruvbox .admin-lock-btn {
+            background: linear-gradient(to right, #d79921, #fe8019) !important;
+            color: #282828 !important;
+            font-weight: 700 !important;
+        }
+        body.theme-gruvbox .admin-lock-btn:hover {
+            background: linear-gradient(to right, #fabd2f, #d65d0e) !important;
+        }
+        body.theme-gruvbox .admin-btn-secondary {
+            background-color: #3c3836 !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .admin-btn-secondary:hover {
+            background-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-btn-logout {
+            background-color: #3c3836 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .admin-btn-logout:hover {
+            background-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-btn-relock {
+            background-color: rgba(204, 36, 29, 0.16) !important;
+            border: 1px solid rgba(251, 73, 52, 0.35) !important;
+            color: #fb4934 !important;
+        }
+        body.theme-gruvbox .admin-btn-relock:hover {
+            background-color: rgba(204, 36, 29, 0.28) !important;
+        }
+        body.theme-gruvbox .admin-stat-card {
+            background-color: #282828 !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-stat-val-blue { color: #83a598 !important; }
+        body.theme-gruvbox .admin-stat-val-green { color: #b8bb26 !important; }
+        body.theme-gruvbox .admin-stat-val-total { color: #ebdbb2 !important; }
+        body.theme-gruvbox .admin-stat-val-completed { color: #fabd2f !important; }
+        body.theme-gruvbox .admin-action-box {
+            background-color: #282828 !important;
+            border-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-nav-btn {
+            background-color: #32302f !important;
+            border-color: #504945 !important;
+            color: #ebdbb2 !important;
+        }
+        body.theme-gruvbox .admin-nav-btn:hover {
+            background-color: #3c3836 !important;
+            border-color: #665c54 !important;
+        }
+        body.theme-gruvbox .admin-nav-btn-admin {
+            background-color: #3c3836 !important;
+            border-color: #d79921 !important;
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .admin-nav-btn-admin:hover {
+            background-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-link {
+            color: #928374 !important;
+        }
+        body.theme-gruvbox .admin-link:hover {
+            color: #fabd2f !important;
+        }
+        body.theme-gruvbox .admin-toggle-track {
+            background-color: #504945 !important;
+        }
+        body.theme-gruvbox .admin-toggle-checked {
+            background-color: #fb4934 !important;
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col transition-colors duration-200" :class="'theme-' + currentTheme" x-data="ocrApp()" x-init="initApp()" x-cloak>
@@ -877,19 +1345,19 @@
                 <!-- NEW: Admin & Access Gate Button -->
                 <button 
                     @click="openAdminModal()" 
-                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs"
-                    :class="authStatus.is_admin ? 'border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold' : 'border-slate-200 hover:border-slate-400 bg-slate-50 hover:bg-white text-slate-700'"
+                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs admin-nav-btn"
+                    :class="authStatus.is_admin ? 'admin-nav-btn-admin font-semibold' : ''"
                     title="系統管理與通關安全設定"
                 >
-                    <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-600' : 'text-slate-500'"></i>
+                    <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
                     <span class="font-semibold hidden sm:inline">系統管理</span>
                     <template x-if="authStatus.access_gate_enabled">
-                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold admin-badge-gate-on">
                             🔒 守護中
                         </span>
                     </template>
                     <template x-if="authStatus.is_admin">
-                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                        <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold admin-badge-admin">
                             Admin
                         </span>
                     </template>
@@ -2440,10 +2908,10 @@
     <!-- Modal: First-run Admin Setup Wizard -->
     <div 
         x-show="!authStatus.admin_initialized" 
-        class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
         style="display: none;"
     >
-        <div class="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 sm:p-8">
+        <div class="admin-modal-card rounded-3xl max-w-md w-full border shadow-2xl p-6 sm:p-8">
             <div class="text-center mb-6">
                 <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg mb-3">
                     <i data-lucide="shield-alert" class="w-7 h-7"></i>
@@ -2461,7 +2929,7 @@
                         type="password" 
                         x-model="setupWizard.password" 
                         placeholder="請輸入至少 4 個字元之密碼"
-                        class="w-full text-sm rounded-xl border border-slate-300 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="w-full text-sm rounded-xl border px-3.5 py-2.5 focus:outline-none admin-input"
                         required
                     >
                 </div>
@@ -2471,12 +2939,12 @@
                         type="password" 
                         x-model="setupWizard.confirmPassword" 
                         placeholder="請再次輸入管理員密碼"
-                        class="w-full text-sm rounded-xl border border-slate-300 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="w-full text-sm rounded-xl border px-3.5 py-2.5 focus:outline-none admin-input"
                         required
                     >
                 </div>
 
-                <div x-show="setupWizard.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <div x-show="setupWizard.error" class="p-3 rounded-xl border text-xs flex items-center gap-2 admin-alert-error">
                     <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
                     <span x-text="setupWizard.error"></span>
                 </div>
@@ -2484,7 +2952,7 @@
                 <button 
                     type="submit" 
                     :disabled="setupWizard.isLoading"
-                    class="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                    class="w-full py-2.5 px-4 admin-primary-btn text-sm font-semibold rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
                     <span x-text="setupWizard.isLoading ? '初始化設定中...' : '完成初始化並進入系統'"></span>
                     <i data-lucide="arrow-right" class="w-4 h-4"></i>
@@ -2496,10 +2964,10 @@
     <!-- Modal: Access Gate Lock Screen -->
     <div 
         x-show="authStatus.admin_initialized && authStatus.access_gate_enabled && !authStatus.is_authenticated_user" 
-        class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-xl flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
         style="display: none;"
     >
-        <div class="bg-white rounded-3xl max-w-md w-full border border-slate-200/80 shadow-2xl p-6 sm:p-8 text-center relative overflow-hidden">
+        <div class="admin-modal-card rounded-3xl max-w-md w-full border shadow-2xl p-6 sm:p-8 text-center relative overflow-hidden">
             <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white shadow-xl mb-4">
                 <i data-lucide="lock" class="w-8 h-8"></i>
             </div>
@@ -2515,13 +2983,13 @@
                         type="password" 
                         x-model="accessGateLock.password" 
                         placeholder="請輸入通關密碼..."
-                        class="w-full text-center tracking-widest text-base rounded-2xl border border-slate-300 px-4 py-3 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner font-mono"
+                        class="w-full text-center tracking-widest text-base rounded-2xl border px-4 py-3 shadow-inner font-mono admin-input focus:outline-none"
                         autofocus
                         required
                     >
                 </div>
 
-                <div x-show="accessGateLock.error" class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-center gap-1.5">
+                <div x-show="accessGateLock.error" class="p-2.5 rounded-xl border text-xs flex items-center justify-center gap-1.5 admin-alert-error">
                     <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
                     <span x-text="accessGateLock.error"></span>
                 </div>
@@ -2529,18 +2997,18 @@
                 <button 
                     type="submit" 
                     :disabled="accessGateLock.isLoading"
-                    class="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:to-pink-700 text-white text-sm font-bold rounded-2xl shadow-lg transition transform active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                    class="w-full py-3 px-4 admin-lock-btn text-sm font-bold rounded-2xl shadow-lg transition transform active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
                     <i data-lucide="unlock" class="w-4 h-4"></i>
                     <span x-text="accessGateLock.isLoading ? '驗證通關密碼中...' : '驗證並解鎖進入'"></span>
                 </button>
             </form>
 
-            <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center">
+            <div class="mt-6 pt-4 border-t border-slate-200/50 flex items-center justify-center">
                 <button 
                     type="button"
                     @click="openAdminModal()" 
-                    class="text-xs text-slate-400 hover:text-indigo-600 transition flex items-center gap-1 cursor-pointer"
+                    class="text-xs admin-link transition flex items-center gap-1 cursor-pointer"
                 >
                     <i data-lucide="key" class="w-3.5 h-3.5"></i>
                     <span>管理員身分入口</span>
@@ -2552,13 +3020,13 @@
     <!-- Modal: Admin Login -->
     <div 
         x-show="showAdminLoginModal" 
-        class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
         style="display: none;"
     >
-        <div class="bg-white rounded-2xl max-w-sm w-full border border-slate-200 shadow-2xl p-6" @click.outside="showAdminLoginModal = false">
-            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="admin-modal-card rounded-2xl max-w-sm w-full border shadow-2xl p-6" @click.outside="showAdminLoginModal = false">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-200/50 mb-4">
                 <div class="flex items-center space-x-2">
-                    <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-600 flex items-center justify-center">
                         <i data-lucide="shield-check" class="w-4 h-4"></i>
                     </div>
                     <h3 class="text-sm font-bold text-slate-800">管理員登入</h3>
@@ -2575,13 +3043,13 @@
                         type="password" 
                         x-model="adminLogin.password" 
                         placeholder="請輸入管理員密碼"
-                        class="w-full text-sm rounded-xl border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        class="w-full text-sm rounded-xl border px-3 py-2 focus:outline-none admin-input"
                         autofocus
                         required
                     >
                 </div>
 
-                <div x-show="adminLogin.error" class="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                <div x-show="adminLogin.error" class="p-2.5 rounded-lg border text-xs flex items-center gap-1.5 admin-alert-error">
                     <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i>
                     <span x-text="adminLogin.error"></span>
                 </div>
@@ -2590,14 +3058,14 @@
                     <button 
                         type="button" 
                         @click="showAdminLoginModal = false" 
-                        class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer"
+                        class="px-3 py-1.5 rounded-lg text-xs cursor-pointer admin-btn-secondary"
                     >
                         取消
                     </button>
                     <button 
                         type="submit" 
                         :disabled="adminLogin.isLoading"
-                        class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                        class="px-4 py-1.5 admin-primary-btn rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
                         x-text="adminLogin.isLoading ? '驗證中...' : '登入後台'"
                     ></button>
                 </div>
@@ -2608,12 +3076,12 @@
     <!-- Modal: Admin Dashboard -->
     <div 
         x-show="showAdminModal && authStatus.is_admin" 
-        class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
         style="display: none;"
     >
-        <div class="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col" @click.outside="showAdminModal = false">
+        <div class="admin-modal-card rounded-3xl max-w-2xl w-full border shadow-2xl overflow-hidden flex flex-col" @click.outside="showAdminModal = false">
             <!-- Header -->
-            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+            <div class="px-6 py-4 border-b flex items-center justify-between admin-modal-header">
                 <div class="flex items-center space-x-3">
                     <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-white shadow-sm">
                         <i data-lucide="settings" class="w-5 h-5"></i>
@@ -2629,12 +3097,12 @@
             </div>
 
             <!-- Navigation Tabs -->
-            <div class="flex border-b border-slate-200 bg-slate-100/60 px-6 gap-2 pt-2">
+            <div class="flex border-b px-6 gap-2 pt-2 admin-tab-bar">
                 <button 
                     type="button"
                     @click="adminTab = 'access_gate'"
                     class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
-                    :class="adminTab === 'access_gate' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                    :class="adminTab === 'access_gate' ? 'admin-tab-active' : 'admin-tab-inactive'"
                 >
                     <i data-lucide="lock" class="w-3.5 h-3.5"></i>
                     <span>通關密碼保護控制</span>
@@ -2643,7 +3111,7 @@
                     type="button"
                     @click="adminTab = 'change_password'"
                     class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
-                    :class="adminTab === 'change_password' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                    :class="adminTab === 'change_password' ? 'admin-tab-active' : 'admin-tab-inactive'"
                 >
                     <i data-lucide="key" class="w-3.5 h-3.5"></i>
                     <span>修改管理員密碼</span>
@@ -2652,7 +3120,7 @@
                     type="button"
                     @click="adminTab = 'stats'"
                     class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
-                    :class="adminTab === 'stats' ? 'bg-white text-indigo-600 border-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'"
+                    :class="adminTab === 'stats' ? 'admin-tab-active' : 'admin-tab-inactive'"
                 >
                     <i data-lucide="activity" class="w-3.5 h-3.5"></i>
                     <span>系統健康與操作</span>
@@ -2663,13 +3131,13 @@
             <div class="p-6">
                 <!-- TAB 1: Access Gate Setting -->
                 <div x-show="adminTab === 'access_gate'" class="space-y-5">
-                    <div class="flex items-center justify-between p-4 rounded-2xl border" :class="adminSettings.access_gate_enabled ? 'bg-rose-50/50 border-rose-200' : 'bg-slate-50 border-slate-200'">
+                    <div class="flex items-center justify-between p-4 rounded-2xl border transition" :class="adminSettings.access_gate_enabled ? 'admin-gate-banner-active' : 'admin-gate-banner-inactive'">
                         <div class="space-y-0.5 pr-4">
                             <div class="flex items-center gap-2">
                                 <span class="text-sm font-bold text-slate-800">全站通關密碼保護 (Access Gate)</span>
                                 <span 
-                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                                    :class="adminSettings.access_gate_enabled ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-slate-200 text-slate-600'"
+                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold transition"
+                                    :class="adminSettings.access_gate_enabled ? 'admin-badge-gate-on' : 'admin-badge-gate-off'"
                                     x-text="adminSettings.access_gate_enabled ? '啟用中 (強制需通關密碼)' : '未啟用 (訪客可直接使用)'"
                                 ></span>
                             </div>
@@ -2679,13 +3147,13 @@
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer shrink-0">
                             <input type="checkbox" x-model="adminSettings.access_gate_enabled" class="sr-only peer">
-                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                            <div class="w-11 h-6 admin-toggle-track peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-slate-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:admin-toggle-checked"></div>
                         </label>
                     </div>
 
-                    <div class="space-y-3 pt-2 border-t border-slate-100">
+                    <div class="space-y-3 pt-2 border-t border-slate-200/50">
                         <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                            <i data-lucide="shield-check" class="w-4 h-4 text-indigo-600"></i>
+                            <i data-lucide="shield-check" class="w-4 h-4 text-indigo-500 dark:text-indigo-400"></i>
                             <span x-text="adminSettings.has_access_password ? '變更通關密碼' : '設定新通關密碼 (初次啟用必填)'"></span>
                         </h4>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2695,7 +3163,7 @@
                                     type="password" 
                                     x-model="adminSettings.access_password" 
                                     :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '請輸入通關密碼'"
-                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
                                 >
                             </div>
                             <div>
@@ -2704,17 +3172,17 @@
                                     type="password" 
                                     x-model="adminSettings.confirm_access_password" 
                                     :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '再次輸入通關密碼'"
-                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
                                 >
                             </div>
                         </div>
                     </div>
 
-                    <div x-show="adminSettings.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                    <div x-show="adminSettings.error" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-error">
                         <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
                         <span x-text="adminSettings.error"></span>
                     </div>
-                    <div x-show="adminSettings.successMsg" class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-1.5">
+                    <div x-show="adminSettings.successMsg" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-success">
                         <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
                         <span x-text="adminSettings.successMsg"></span>
                     </div>
@@ -2724,7 +3192,7 @@
                             type="button" 
                             @click="saveAccessGateSetting()" 
                             :disabled="adminSettings.isLoading"
-                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                            class="px-4 py-2 admin-primary-btn text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                         >
                             <i data-lucide="save" class="w-4 h-4"></i>
                             <span x-text="adminSettings.isLoading ? '儲存中...' : '儲存通關密碼設定'"></span>
@@ -2741,7 +3209,7 @@
                                 type="password" 
                                 x-model="adminChangePassword.old_password" 
                                 placeholder="請輸入現有管理員密碼"
-                                class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
                                 required
                             >
                         </div>
@@ -2752,7 +3220,7 @@
                                     type="password" 
                                     x-model="adminChangePassword.new_password" 
                                     placeholder="至少 4 個字元"
-                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
                                     required
                                 >
                             </div>
@@ -2762,17 +3230,17 @@
                                     type="password" 
                                     x-model="adminChangePassword.confirm_new_password" 
                                     placeholder="再次輸入新密碼"
-                                    class="w-full text-xs rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
                                     required
                                 >
                             </div>
                         </div>
 
-                        <div x-show="adminChangePassword.error" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                        <div x-show="adminChangePassword.error" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-error">
                             <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
                             <span x-text="adminChangePassword.error"></span>
                         </div>
-                        <div x-show="adminChangePassword.successMsg" class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-1.5">
+                        <div x-show="adminChangePassword.successMsg" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-success">
                             <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
                             <span x-text="adminChangePassword.successMsg"></span>
                         </div>
@@ -2781,7 +3249,7 @@
                             <button 
                                 type="submit" 
                                 :disabled="adminChangePassword.isLoading"
-                                class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                                class="px-4 py-2 admin-primary-btn text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                             >
                                 <i data-lucide="check" class="w-4 h-4"></i>
                                 <span x-text="adminChangePassword.isLoading ? '更新中...' : '更新管理員密碼'"></span>
@@ -2793,31 +3261,31 @@
                 <!-- TAB 3: System Health & Stats -->
                 <div x-show="adminTab === 'stats'" class="space-y-5">
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
                             <div class="text-[11px] font-semibold text-slate-500 mb-1">金鑰池總數</div>
-                            <div class="text-xl font-extrabold text-blue-600" x-text="adminSettings.stats.total_accounts || 0">0</div>
+                            <div class="text-xl font-extrabold admin-stat-val-blue" x-text="adminSettings.stats.total_accounts || 0">0</div>
                         </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
                             <div class="text-[11px] font-semibold text-slate-500 mb-1">啟用中金鑰</div>
-                            <div class="text-xl font-extrabold text-emerald-600" x-text="adminSettings.stats.active_accounts || 0">0</div>
+                            <div class="text-xl font-extrabold admin-stat-val-green" x-text="adminSettings.stats.active_accounts || 0">0</div>
                         </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
                             <div class="text-[11px] font-semibold text-slate-500 mb-1">歷來總任務</div>
-                            <div class="text-xl font-extrabold text-slate-800" x-text="adminSettings.stats.total_tasks || 0">0</div>
+                            <div class="text-xl font-extrabold admin-stat-val-total" x-text="adminSettings.stats.total_tasks || 0">0</div>
                         </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
                             <div class="text-[11px] font-semibold text-slate-500 mb-1">已完成轉譯</div>
-                            <div class="text-xl font-extrabold text-indigo-600" x-text="adminSettings.stats.completed_tasks || 0">0</div>
+                            <div class="text-xl font-extrabold admin-stat-val-completed" x-text="adminSettings.stats.completed_tasks || 0">0</div>
                         </div>
                     </div>
 
-                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3">
+                    <div class="admin-action-box p-4 rounded-2xl space-y-3">
                         <h4 class="text-xs font-bold text-slate-700">管理員快捷操作</h4>
                         <div class="flex flex-wrap gap-2">
                             <button 
                                 type="button" 
                                 @click="adminLogout()" 
-                                class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                                class="admin-btn-logout px-3.5 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
                             >
                                 <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
                                 <span>登出管理員身分</span>
@@ -2825,7 +3293,7 @@
                             <button 
                                 type="button" 
                                 @click="reLockAccessGate()" 
-                                class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                                class="admin-btn-relock px-3.5 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
                                 x-show="adminSettings.access_gate_enabled"
                             >
                                 <i data-lucide="lock" class="w-3.5 h-3.5"></i>
