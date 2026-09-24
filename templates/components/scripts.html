@@ -15,6 +15,17 @@
                 get hasPausedTasks() {
                     return this.allTasks && this.allTasks.some(t => ['paused', 'failed'].includes(t.status));
                 },
+                getTaskStatusText(status) {
+                    const map = {
+                        'paused': '已暫停',
+                        'processing': '轉譯中',
+                        'completed': '已完成',
+                        'rendering': '切圖中',
+                        'pending': '等待中',
+                        'failed': '失敗'
+                    };
+                    return map[status] || status || '等待中';
+                },
                 isSubmitting: false,
                 uploadProgress: 0,
                 get isCheckingAnyHash() {

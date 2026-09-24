@@ -173,12 +173,12 @@
                                 <td class="p-3 whitespace-nowrap">
                                     <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide"
                                         :class="{
-                                            'bg-blue-100/80 text-blue-800 border border-blue-200': task.status === 'processing',
-                                            'bg-amber-100/80 text-amber-800 border border-amber-200': task.status === 'rendering',
-                                            'bg-purple-100/80 text-purple-800 border border-purple-200': task.status === 'paused',
-                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200': task.status === 'completed',
-                                            'bg-red-100/80 text-red-800 border border-red-200': task.status === 'failed',
-                                            'bg-slate-100 text-slate-600 border border-slate-200': task.status === 'pending'
+                                            'bg-blue-100/80 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800': task.status === 'processing',
+                                            'bg-amber-100/80 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800': task.status === 'rendering',
+                                            'bg-purple-100/80 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800': task.status === 'paused',
+                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800': task.status === 'completed',
+                                            'bg-red-100/80 text-red-800 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800': task.status === 'failed',
+                                            'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700': task.status === 'pending'
                                         }"
                                     >
                                         <span class="w-1.5 h-1.5 rounded-full" :class="{
@@ -189,7 +189,7 @@
                                             'bg-red-500': task.status === 'failed',
                                             'bg-slate-400 animate-pulse': task.status === 'pending'
                                         }"></span>
-                                        <span x-text="task.status === 'paused' ? '已暫停' : (task.status === 'processing' ? '轉譯中' : (task.status === 'completed' ? '已完成' : (task.status === 'rendering' ? '切圖中' : (task.status === 'pending' ? '等待中' : (task.status === 'failed' ? '失敗' : task.status))))))"></span>
+                                        <span x-text="getTaskStatusText(task.status)"></span>
                                     </span>
                                 </td>
                                 <td class="p-3 pr-4 text-right space-x-1.5 whitespace-nowrap" @click.stop>
