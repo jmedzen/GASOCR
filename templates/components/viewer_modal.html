@@ -162,13 +162,62 @@
             <!-- Left Image & Right Editor Workspace -->
             <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 min-h-[550px] flex-1">
                 
-                <!-- Left: Rendered PDF Page Image -->
-                <div class="p-6 bg-slate-100/60 flex flex-col items-center justify-center overflow-auto custom-scroll max-h-[750px]">
+                <!-- Left: Rendered PDF Page Image (Interactive Pan & Zoom) -->
+                <div class="relative p-6 bg-slate-100/60 dark:bg-slate-900/60 flex flex-col items-center justify-center overflow-hidden min-h-[550px] max-h-[750px] select-none"
+                     @wheel.prevent="handleImgWheel($event)"
+                     @mousedown="startImgPan($event)"
+                     @mousemove="onImgPan($event)"
+                     @mouseup="endImgPan()"
+                     @mouseleave="endImgPan()"
+                     @dblclick="handleImgDblClick()"
+                     :class="imgZoom.isPanning ? 'cursor-grabbing' : (imgZoom.scale > 1.05 ? 'cursor-grab' : 'cursor-zoom-in')">
+                    
                     <template x-if="currentPage && currentPage.image_url">
-                        <div class="relative max-w-full shadow-lg rounded-lg border border-slate-300 overflow-hidden bg-white">
-                            <img :src="currentPage.image_url" :alt="`Page ${currentPage.page_num}`" class="max-w-full h-auto object-contain">
-                            <div class="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[11px] px-2 py-0.5 rounded">
-                                原文 PDF 渲染圖 (300 DPI)
+                        <div class="w-full h-full flex flex-col items-center justify-center relative">
+                            <!-- Floating Zoom & Pan Controls Bar -->
+                            <div class="absolute top-0 right-0 z-20 flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-sm text-xs"
+                                 @mousedown.stop @click.stop>
+                                <!-- 縮小 -->
+                                <button type="button" @click="zoomOut()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="縮小 (快捷: 滾輪向下)">
+                                    <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <!-- 比例指示與重設 1:1 -->
+                                <button type="button" @click="zoomActual()" class="px-2 py-0.5 font-mono text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition" title="點擊切換 100% 原始比例">
+                                    <span x-text="`${Math.round(imgZoom.scale * 100)}%`">100%</span>
+                                </button>
+                                <!-- 放大 -->
+                                <button type="button" @click="zoomIn()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="放大 (快捷: 滾輪向上)">
+                                    <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <span class="text-slate-300 dark:text-slate-600">|</span>
+                                <!-- 自適應置中 -->
+                                <button type="button" @click="zoomFit()" class="px-1.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center space-x-1" title="自適應視窗大小並置中">
+                                    <i data-lucide="maximize" class="w-3.5 h-3.5"></i>
+                                    <span class="text-[11px] font-medium hidden sm:inline">自適應</span>
+                                </button>
+                            </div>
+
+                            <!-- Pan & Zoom Image Stage -->
+                            <div class="relative origin-center select-none"
+                                 :style="`transform: translate(${imgZoom.panX}px, ${imgZoom.panY}px) scale(${imgZoom.scale}); transition: ${imgZoom.isPanning ? 'none' : 'transform 0.12s ease-out'};`">
+                                <img :src="currentPage.image_url" 
+                                     :alt="`Page ${currentPage.page_num}`"
+                                     draggable="false"
+                                     class="max-w-full max-h-[680px] w-auto h-auto object-contain shadow-xl rounded-lg border border-slate-300 dark:border-slate-700 pointer-events-none select-none bg-white">
+                            </div>
+
+                            <!-- Bottom Floating Hint & Meta -->
+                            <div class="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-1.5 pointer-events-none">
+                                <div class="bg-black/60 backdrop-blur-sm text-white text-[11px] px-2.5 py-1 rounded-lg shadow-sm">
+                                    原文 PDF 渲染圖 (300 DPI)
+                                </div>
+                                <div class="bg-black/60 backdrop-blur-sm text-white/90 text-[10px] px-2.5 py-1 rounded-lg shadow-sm hidden md:flex items-center space-x-1.5">
+                                    <span>🖱️ 滾輪縮放</span>
+                                    <span>·</span>
+                                    <span>按住左鍵平移</span>
+                                    <span>·</span>
+                                    <span>雙擊切換倍率</span>
+                                </div>
                             </div>
                         </div>
                     </template>

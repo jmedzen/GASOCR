@@ -188,6 +188,66 @@
                     const s = seconds % 60;
                     return `約 ${m} 分 ${s} 秒`;
                 },
+
+                // Image Pan & Zoom state for Proofread Viewer (校對模式圖片縮放與平移)
+                imgZoom: {
+                    scale: 1.0,
+                    minScale: 0.25,
+                    maxScale: 6.0,
+                    panX: 0,
+                    panY: 0,
+                    isPanning: false,
+                    startX: 0,
+                    startY: 0
+                },
+                resetImageZoom() {
+                    this.imgZoom.scale = 1.0;
+                    this.imgZoom.panX = 0;
+                    this.imgZoom.panY = 0;
+                    this.imgZoom.isPanning = false;
+                },
+                zoomIn(step = 0.25) {
+                    const newScale = Math.min(this.imgZoom.maxScale, Math.round((this.imgZoom.scale + step) * 100) / 100);
+                    this.imgZoom.scale = newScale;
+                },
+                zoomOut(step = 0.25) {
+                    const newScale = Math.max(this.imgZoom.minScale, Math.round((this.imgZoom.scale - step) * 100) / 100);
+                    this.imgZoom.scale = newScale;
+                },
+                zoomActual() {
+                    this.imgZoom.scale = 1.0;
+                    this.imgZoom.panX = 0;
+                    this.imgZoom.panY = 0;
+                },
+                zoomFit() {
+                    this.resetImageZoom();
+                },
+                handleImgWheel(e) {
+                    const factor = e.deltaY < 0 ? 1.15 : 0.85;
+                    const newScale = Math.min(this.imgZoom.maxScale, Math.max(this.imgZoom.minScale, Math.round(this.imgZoom.scale * factor * 100) / 100));
+                    this.imgZoom.scale = newScale;
+                },
+                startImgPan(e) {
+                    if (e.button !== 0) return;
+                    this.imgZoom.isPanning = true;
+                    this.imgZoom.startX = e.clientX - this.imgZoom.panX;
+                    this.imgZoom.startY = e.clientY - this.imgZoom.panY;
+                },
+                onImgPan(e) {
+                    if (!this.imgZoom.isPanning) return;
+                    this.imgZoom.panX = e.clientX - this.imgZoom.startX;
+                    this.imgZoom.panY = e.clientY - this.imgZoom.startY;
+                },
+                endImgPan() {
+                    this.imgZoom.isPanning = false;
+                },
+                handleImgDblClick() {
+                    if (this.imgZoom.scale > 1.05 || this.imgZoom.panX !== 0 || this.imgZoom.panY !== 0) {
+                        this.resetImageZoom();
+                    } else {
+                        this.imgZoom.scale = 2.0;
+                    }
+                },
                 setTheme(theme) {
                     this.currentTheme = theme;
                     localStorage.setItem('ocr_theme', theme);
@@ -780,6 +840,7 @@
                                 this.currentTask.model = match.model;
                             }
                         }
+                        this.$nextTick(() => { lucide.createIcons(); });
                     } catch (err) {
                         console.error('Failed to load tasks:', err);
                     }
@@ -1400,6 +1461,7 @@
                     this.currentTaskId = task.id;
                     this.currentTask = { ...task };
                     this.selectedPageNum = null;
+                    this.resetImageZoom();
                     this.liveAvgSpeed = 0;
                     this.liveEtaSeconds = 0;
                     this.liveActivePage = null;
@@ -2241,6 +2303,7 @@
 
                 selectPage(pageNum) {
                     this.selectedPageNum = pageNum;
+                    this.resetImageZoom();
                     if (this.currentPage) {
                         this.currentPageText = this.currentPage.ocr_text || '';
                     }
