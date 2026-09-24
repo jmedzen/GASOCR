@@ -81,8 +81,8 @@ async def test_concurrency_behavior():
     )
 
     assert len(results) == 3, f"應產生 3 張圖片，實際: {len(results)}"
-    assert render_calls == [1, 2, 3], f"頁面渲染順序應為嚴格順序 [1, 2, 3]，實際: {render_calls}"
-    print(f"   ✅ 單一 PDF 於 PDF_RENDER_EXECUTOR 中嚴格單核循序切頁驗證通過: 頁碼順序 {render_calls}")
+    assert sorted(render_calls) == [1, 2, 3], f"所有頁面皆應渲染完成，實際: {render_calls}"
+    print(f"   ✅ 單一 PDF 於 PDF_RENDER_EXECUTOR 中多執行緒並發切頁驗證通過: 頁碼完成順序 {render_calls}")
 
     # 清理測試暫存
     try:

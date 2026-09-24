@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import List, Tuple, Set, Optional, Callable, Any
 import asyncio
 import threading
-from config import RENDERS_DIR, DEFAULT_RENDER_DPI
+import concurrent.futures
+from config import RENDERS_DIR, DEFAULT_RENDER_DPI, MAX_RENDER_WORKERS
 
 # ══════════════════════════════════════════════════════════════
 #  PDFium 全域鎖
@@ -152,25 +153,22 @@ async def render_pdf_to_images_async(
         total_target = max(1, e_page - s_page + 1)
 
     results = []
-    try:
-        for p_num in target_list:
-            # 檢查當前協程是否已收到暫停或取消訊號
-            current_task = asyncio.current_task()
-            if current_task and current_task.cancelled():
-                raise asyncio.CancelledError()
+    # 開放切圖執行緒數量為 CPU cores - 2 (透過 MAX_RENDER_WORKERS 控制同時並發)
+    render_sem = asyncio.Semaphore(MAX_RENDER_WORKERS)
 
+    async def _render_page_task(p_num: int):
+        async with render_sem:
             idx = p_num - 1
             out_path = task_render_dir / f"page_{p_num:04d}.png"
 
             def _render_and_save():
                 # ★ PDFium 呼叫在鎖內（序列化，避免 SIGSEGV）
                 image = _render_page_to_pil(pdf, idx, scale)
-                # PNG 編碼在鎖外，可與其他執行緒的 PDFium 工作重疊
+                # PNG 編碼在鎖外，可與其他執行緒的 PDFium 工作重疊（充分利用多核心）
                 image.save(out_path, "PNG", optimize=True)
                 return out_path
 
             output_path = await loop.run_in_executor(executor, _render_and_save)
-            results.append((p_num, output_path))
             
             if on_page_rendered:
                 try:
@@ -182,6 +180,18 @@ async def render_pdf_to_images_async(
                     raise
                 except Exception as cb_err:
                     print(f"on_page_rendered async error: {cb_err}")
+
+            return (p_num, output_path)
+
+    page_tasks = [asyncio.create_task(_render_page_task(p)) for p in target_list]
+    try:
+        results = await asyncio.gather(*page_tasks)
+        results.sort(key=lambda x: x[0])
+    except asyncio.CancelledError:
+        for t in page_tasks:
+            if not t.done():
+                t.cancel()
+        raise
     finally:
         await loop.run_in_executor(executor, _close_document, pdf)
         
@@ -213,7 +223,7 @@ def render_remaining_pdf_pages(
     dpi: int = DEFAULT_RENDER_DPI
 ) -> List[Tuple[int, Path]]:
     """
-    在背景將 PDF 中尚未渲染的其餘頁面渲染為高品質 PNG 圖片
+    在背景將 PDF 中尚未渲染的其餘頁面渲染為高品質 PNG 圖片 (支援 CPU cores - 2 多執行緒並發)
     """
     scale = dpi / 72.0
     task_render_dir = RENDERS_DIR / task_id
@@ -221,16 +231,21 @@ def render_remaining_pdf_pages(
     
     pdf = _open_document(pdf_path)
     total_pages = _page_count(pdf)
+    target_pages = [p for p in range(1, total_pages + 1) if p not in exclude_pages]
     results = []
+
+    def _render_one(p_num: int):
+        idx = p_num - 1
+        image = _render_page_to_pil(pdf, idx, scale)
+        output_path = task_render_dir / f"page_{p_num:04d}.png"
+        image.save(output_path, "PNG", optimize=True)
+        return (p_num, output_path)
+
     try:
-        for p_num in range(1, total_pages + 1):
-            if p_num in exclude_pages:
-                continue
-            idx = p_num - 1
-            image = _render_page_to_pil(pdf, idx, scale)
-            output_path = task_render_dir / f"page_{p_num:04d}.png"
-            image.save(output_path, "PNG", optimize=True)
-            results.append((p_num, output_path))
+        if target_pages:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_RENDER_WORKERS) as pool:
+                results = list(pool.map(_render_one, target_pages))
+            results.sort(key=lambda x: x[0])
     finally:
         _close_document(pdf)
         
