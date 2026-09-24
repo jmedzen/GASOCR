@@ -814,6 +814,8 @@ async def process_task_pipeline(task_id: str):
         
         # 2. 若有未切圖的頁面，進入受控並發進行切圖渲染
         if pages_to_slice:
+            # 佇列排隊階段：確保狀態為 pending (等待中)
+            await database.update_task_status(task_id, status="pending", bg_render_status="pending")
             async with RENDER_SEMAPHORE:
                 # 取得執行槽位後，檢查在佇列等待期間任務是否已被使用者暫停或刪除
                 check_task = await database.get_task(task_id)
@@ -2118,6 +2120,8 @@ async def sse_task_events(task_id: str):
             active_msg = active_p["error_message"] if active_p else ""
             if task["status"] == "rendering":
                 active_msg = f"🎨 正在 300 DPI 高清切圖第 {min(rendered + 1, total if total > 0 else 1)} 頁 (共 {total} 頁)..."
+            elif task["status"] == "pending":
+                active_msg = "⏳ 佇列排隊中，等待切圖..."
 
             data_payload = {
                 "task_id": task_id,

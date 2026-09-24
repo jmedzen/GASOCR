@@ -401,11 +401,15 @@ async def create_task(
     file_hash: str = ""
 ):
     now = time.time()
+    s_p = max(1, start_page)
+    e_p = end_page if (end_page and end_page > 0) else pdf_total_pages
+    total_pages = max(0, e_p - s_p + 1) if (pdf_total_pages > 0 and e_p >= s_p) else 0
+
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO tasks (id, filename, original_filepath, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, filename, filepath, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, now, now))
+            INSERT INTO tasks (id, filename, original_filepath, total_pages, processed_pages, rendered_pages, status, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, 0, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, filename, filepath, total_pages, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, now, now))
         await db.commit()
 
 async def delete_task(task_id: str):
