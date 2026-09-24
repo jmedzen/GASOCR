@@ -11,7 +11,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 024') }}
+                            {{ build_number | default('Build 025') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -64,7 +64,7 @@
                         </span>
                     </template>
                     <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                          :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : 'reocr-count-badge'"
+                          :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : (failedReocrCount > 0 ? 'bg-rose-600 text-white' : 'reocr-count-badge')"
                           x-text="reocrQueue.length">0</span>
                     <kbd class="text-[10px] font-mono hidden md:inline ml-0.5"
                          x-text="modKeyLabel + '+Q'">Alt+Q</kbd>

@@ -142,7 +142,9 @@
                         <template x-if="activeReocrCount > 0">
                             <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                         </template>
-                        <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold reocr-count-badge" x-text="reocrQueue.length">0</span>
+                        <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold"
+                              :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : (failedReocrCount > 0 ? 'bg-rose-600 text-white' : 'reocr-count-badge')"
+                              x-text="reocrQueue.length">0</span>
                         <kbd class="text-[10px] font-mono hidden sm:inline ml-0.5">Q</kbd>
                     </button>
 

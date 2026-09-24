@@ -1472,6 +1472,9 @@
                                 this.selectedPageNum = null;
                             }
                             this.selectedTaskIds = this.selectedTaskIds.filter(id => id !== taskId);
+                            // 同步自重辨佇列中移除已刪除任務的項目
+                            this.reocrQueue = this.reocrQueue.filter(j => j.taskId !== taskId);
+                            this.saveReocrQueue();
                             await this.loadTasks();
                         }
                     } catch (err) {
@@ -1510,6 +1513,10 @@
                                 this.pages = [];
                                 this.selectedPageNum = null;
                             }
+                            const deletedSet = new Set(this.selectedTaskIds);
+                            // 同步自重辨佇列中移除已批次刪除任務的項目
+                            this.reocrQueue = this.reocrQueue.filter(j => !deletedSet.has(j.taskId));
+                            this.saveReocrQueue();
                             this.selectedTaskIds = [];
                             await this.loadTasks();
                             alert(`🎉 已成功刪除 ${data.deleted_count || count} 個任務！`);
@@ -1543,6 +1550,17 @@
                                     this.eventSource.close();
                                     this.eventSource = null;
                                 }
+                            }
+                            if (data.task_ids && Array.isArray(data.task_ids)) {
+                                let queueChanged = false;
+                                for (const job of this.reocrQueue) {
+                                    if (data.task_ids.includes(job.taskId) && job.status === 'processing') {
+                                        job.status = 'paused';
+                                        job.error = '已隨任務暫停';
+                                        queueChanged = true;
+                                    }
+                                }
+                                if (queueChanged) this.saveReocrQueue();
                             }
                             const count = data.paused_count || 0;
                             this.showToast(`⏸️ 已成功暫停 ${count} 個任務（已停止切圖與 OCR）`);
@@ -1673,23 +1691,37 @@
                                     if (matchedJob) {
                                         if (p.status === 'completed') {
                                             matchedJob.status = 'completed';
-                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                            matchedJob.duration = p.duration_seconds || p.duration || (matchedJob.startedAt ? Math.round((Date.now() - matchedJob.startedAt) / 100) / 10 : null);
                                             if (p.used_model) matchedJob.model = p.used_model;
+                                            matchedJob.error = null;
                                             this.saveReocrQueue();
-                                            this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
+                                            this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration || 0}s`);
                                         } else if (p.status === 'failed') {
                                             matchedJob.status = 'failed';
-                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
-                                            matchedJob.error = p.error_message || '辨識失敗';
+                                            matchedJob.duration = p.duration_seconds || p.duration || (matchedJob.startedAt ? Math.round((Date.now() - matchedJob.startedAt) / 100) / 10 : null);
+                                            matchedJob.error = p.error_message || '辨識失敗或配額耗盡';
                                             this.saveReocrQueue();
                                             this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
                                         } else if (p.status === 'paused') {
                                             matchedJob.status = 'paused';
-                                            matchedJob.error = '已手動暫停';
+                                            matchedJob.error = p.error_message || '已手動暫停';
                                             this.saveReocrQueue();
                                         }
                                     }
                                 }
+                            }
+
+                            // 若任務整體失敗，同步更新佇列中該任務殘留的 processing 狀態
+                            if (payload.status === 'failed') {
+                                let failedAny = false;
+                                for (const j of this.reocrQueue) {
+                                    if (j.taskId === payload.task_id && j.status === 'processing') {
+                                        j.status = 'failed';
+                                        j.error = payload.error_message || '所屬任務已終止或失敗';
+                                        failedAny = true;
+                                    }
+                                }
+                                if (failedAny) this.saveReocrQueue();
                             }
 
                             // 4. 若該任務已結束或暫停，且目前無任何單頁在 processing，關閉此連線
@@ -1851,6 +1883,21 @@
                     }
                 },
 
+                extractErrorMessage(errData, fallback = '操作失敗') {
+                    if (!errData) return fallback;
+                    if (typeof errData === 'string') return errData;
+                    if (errData.detail) {
+                        if (typeof errData.detail === 'string') return errData.detail;
+                        if (Array.isArray(errData.detail)) {
+                            return errData.detail.map(d => d.msg || (d.loc ? `${d.loc.join('.')}: ${d.msg}` : JSON.stringify(d))).join('; ');
+                        }
+                        return JSON.stringify(errData.detail);
+                    }
+                    if (errData.message && typeof errData.message === 'string') return errData.message;
+                    if (errData.error && typeof errData.error === 'string') return errData.error;
+                    return fallback;
+                },
+
                 showToast(msg) {
                     this.toastMessage = msg;
                     if (this.toastTimeout) clearTimeout(this.toastTimeout);
@@ -1881,6 +1928,16 @@
                     this.$nextTick(() => { lucide.createIcons(); });
                 },
 
+                async retryAllFailedReocr() {
+                    const failedJobs = this.reocrQueue.filter(j => j.status === 'failed');
+                    if (failedJobs.length === 0) return;
+                    this.showToast(`🔄 正在重新發起 ${failedJobs.length} 個失敗項目的重辨...`);
+                    for (const job of failedJobs) {
+                        await this.resumeReocrJob(job);
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                },
+
                 clearAllReocrQueue() {
                     if (this.reocrQueue.length === 0) return;
                     if (confirm('確定要清空所有重新辨識紀錄嗎？')) {
@@ -1903,7 +1960,7 @@
 
                 async goToReocrJob(job) {
                     if (!job || !job.taskId) return;
-                    if (this.currentTaskId !== job.taskId) {
+                    try {
                         let targetTask = this.allTasks.find(t => t.id === job.taskId);
                         if (!targetTask) {
                             await this.loadTasks();
@@ -1912,14 +1969,41 @@
                         if (targetTask) {
                             await this.inspectTask(targetTask);
                         } else {
-                            this.currentTaskId = job.taskId;
-                            await this.pollTaskDetail();
+                            const res = await fetch(`/api/tasks/${job.taskId}`);
+                            if (!res.ok) {
+                                job.status = 'failed';
+                                job.error = res.status === 404 ? '該任務不存在或已被刪除' : `伺服器回應異常 (HTTP ${res.status})`;
+                                this.saveReocrQueue();
+                                this.showToast(`⚠️ 無法載入任務：${job.error}`);
+                                return;
+                            }
+                            const data = await res.json();
+                            if (data && data.task) {
+                                this.currentTaskId = job.taskId;
+                                this.currentTask = data.task;
+                                this.pages = data.pages || [];
+                            } else {
+                                job.status = 'failed';
+                                job.error = '任務資料異常';
+                                this.saveReocrQueue();
+                                this.showToast('⚠️ 任務資料異常');
+                                return;
+                            }
                         }
+                        if (job.pageNum) {
+                            const exists = this.pages && this.pages.some(p => p.page_num === job.pageNum);
+                            if (exists) {
+                                this.selectPage(job.pageNum);
+                            } else if (this.pages && this.pages.length > 0) {
+                                this.selectPage(this.pages[0].page_num);
+                                this.showToast(`ℹ️ 該任務中未找到第 ${job.pageNum} 頁，已自動切換至第 ${this.pages[0].page_num} 頁`);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('前往校對任務出錯:', err);
+                        this.showToast(`⚠️ 前往校對連線異常: ${err.message || err}`);
+                        return;
                     }
-                    if (job.pageNum) {
-                        this.selectPage(job.pageNum);
-                    }
-                    // 點選前往校對本頁之後，自動關閉 重新辨識UI
                     this.showQueueModal = false;
                     this.$nextTick(() => {
                         const section = document.getElementById('proofread-section');
@@ -1938,54 +2022,83 @@
                     for (const tid of taskIds) {
                         try {
                             const res = await fetch(`/api/tasks/${tid}`);
-                            if (!res.ok) continue;
+                            if (!res.ok) {
+                                if (res.status === 404) {
+                                    const orphanedJobs = this.reocrQueue.filter(j => j.taskId === tid && j.status === 'processing');
+                                    for (const j of orphanedJobs) {
+                                        j.status = 'failed';
+                                        j.error = '任務不存在或已被刪除';
+                                    }
+                                    this.saveReocrQueue();
+                                }
+                                continue;
+                            }
                             const data = await res.json();
+                            const task = data.task;
                             const pages = data.pages || [];
-                            for (const page of pages) {
-                                const matchedJob = this.reocrQueue.find(j => j.taskId === tid && j.pageNum === page.page_num && j.status === 'processing');
-                                if (matchedJob) {
-                                    if (page.status === 'completed') {
-                                        matchedJob.status = 'completed';
-                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
-                                        if (page.used_model) matchedJob.model = page.used_model;
-                                        this.saveReocrQueue();
-                                        this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
-                                        if (this.currentTaskId === tid) {
-                                            const currP = this.pages.find(p => p.page_num === page.page_num);
-                                            if (currP) {
-                                                currP.status = 'completed';
-                                                currP.ocr_text = page.ocr_text;
-                                                currP.used_model = page.used_model;
-                                                currP.duration_seconds = page.duration_seconds;
-                                                if (this.selectedPageNum === page.page_num) {
-                                                    this.currentPageText = page.ocr_text || '';
-                                                }
-                                            }
-                                        }
-                                    } else if (page.status === 'failed') {
+                            const isTaskTerminated = task && ['completed', 'failed', 'cancelled', 'paused'].includes(task.status);
+
+                            for (const matchedJob of this.reocrQueue.filter(j => j.taskId === tid && j.status === 'processing')) {
+                                const page = pages.find(p => p.page_num === matchedJob.pageNum);
+                                if (!page) {
+                                    if (isTaskTerminated) {
                                         matchedJob.status = 'failed';
-                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
-                                        matchedJob.error = page.error_message || '辨識失敗';
+                                        matchedJob.error = '任務中找不到此頁面';
                                         this.saveReocrQueue();
-                                        this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
-                                        if (this.currentTaskId === tid) {
-                                            const currP = this.pages.find(p => p.page_num === page.page_num);
-                                            if (currP) {
-                                                currP.status = 'failed';
-                                                currP.error_message = page.error_message;
-                                            }
-                                        }
-                                    } else if (page.status === 'paused') {
-                                        matchedJob.status = 'paused';
-                                        matchedJob.error = page.error_message || '已手動暫停';
-                                        this.saveReocrQueue();
-                                        if (this.currentTaskId === tid) {
-                                            const currP = this.pages.find(p => p.page_num === page.page_num);
-                                            if (currP) {
-                                                currP.status = 'paused';
+                                    }
+                                    continue;
+                                }
+
+                                if (page.status === 'completed') {
+                                    matchedJob.status = 'completed';
+                                    matchedJob.duration = page.duration_seconds || (matchedJob.startedAt ? Math.round((Date.now() - matchedJob.startedAt) / 100) / 10 : null);
+                                    if (page.used_model) matchedJob.model = page.used_model;
+                                    matchedJob.error = null;
+                                    this.saveReocrQueue();
+                                    this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration || 0}s`);
+                                    if (this.currentTaskId === tid) {
+                                        const currP = this.pages.find(p => p.page_num === page.page_num);
+                                        if (currP) {
+                                            currP.status = 'completed';
+                                            currP.ocr_text = page.ocr_text;
+                                            currP.used_model = page.used_model;
+                                            currP.duration_seconds = page.duration_seconds;
+                                            if (this.selectedPageNum === page.page_num) {
+                                                this.currentPageText = page.ocr_text || '';
                                             }
                                         }
                                     }
+                                } else if (page.status === 'failed') {
+                                    matchedJob.status = 'failed';
+                                    matchedJob.duration = page.duration_seconds || (matchedJob.startedAt ? Math.round((Date.now() - matchedJob.startedAt) / 100) / 10 : null);
+                                    matchedJob.error = page.error_message || '辨識失敗或配額耗盡';
+                                    this.saveReocrQueue();
+                                    this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
+                                    if (this.currentTaskId === tid) {
+                                        const currP = this.pages.find(p => p.page_num === page.page_num);
+                                        if (currP) {
+                                            currP.status = 'failed';
+                                            currP.error_message = page.error_message;
+                                        }
+                                    }
+                                } else if (page.status === 'paused') {
+                                    matchedJob.status = 'paused';
+                                    matchedJob.error = page.error_message || '已手動暫停';
+                                    this.saveReocrQueue();
+                                    if (this.currentTaskId === tid) {
+                                        const currP = this.pages.find(p => p.page_num === page.page_num);
+                                        if (currP) {
+                                            currP.status = 'paused';
+                                        }
+                                    }
+                                } else if (task && task.status === 'failed' && page.status !== 'processing') {
+                                    matchedJob.status = 'failed';
+                                    matchedJob.error = task.error_message || '所屬任務已失敗';
+                                    this.saveReocrQueue();
+                                } else if (task && task.status === 'paused' && page.status !== 'processing') {
+                                    matchedJob.status = 'paused';
+                                    matchedJob.error = '所屬任務已暫停';
+                                    this.saveReocrQueue();
                                 }
                             }
                         } catch (err) {
@@ -2079,21 +2192,27 @@
                         } else {
                             const errData = await res.json().catch(() => ({}));
                             console.error('重新轉譯失敗:', errData);
+                            const errMsg = this.extractErrorMessage(errData, `發起重試失敗 (HTTP ${res.status})`);
                             newJob.status = 'failed';
-                            newJob.error = errData.detail || '發起重試失敗';
+                            newJob.error = errMsg;
                             this.saveReocrQueue();
                             if (this.currentPage) {
                                 this.currentPage.status = 'failed';
+                                this.currentPage.error_message = errMsg;
                             }
+                            this.showToast(`⚠️ 重新辨識失敗: ${errMsg}`);
                         }
                     } catch (err) {
                         console.error('重新轉譯網路錯誤:', err);
+                        const errMsg = err.message || String(err);
                         newJob.status = 'failed';
-                        newJob.error = String(err);
+                        newJob.error = errMsg;
                         this.saveReocrQueue();
                         if (this.currentPage) {
                             this.currentPage.status = 'failed';
+                            this.currentPage.error_message = errMsg;
                         }
+                        this.showToast(`⚠️ 重新辨識網路錯誤: ${errMsg}`);
                     } finally {
                         this.isRetryingPage = false;
                         this.isRetryingUpgrade = false;
@@ -2123,9 +2242,14 @@
                                 this.saveReocrQueue();
                             }
                             this.showToast(`⏸️ 第 ${pageNum} 頁轉譯已暫停`);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            const errMsg = this.extractErrorMessage(errData, `暫停失敗 (HTTP ${res.status})`);
+                            this.showToast(`⚠️ 暫停失敗: ${errMsg}`);
                         }
                     } catch (err) {
                         console.error('暫停單頁失敗:', err);
+                        this.showToast(`⚠️ 暫停連線異常: ${err.message || err}`);
                     } finally {
                         this.$nextTick(() => { lucide.createIcons(); });
                     }
@@ -2144,9 +2268,19 @@
                                 if (p) p.status = 'paused';
                             }
                             this.showToast(`⏸️ [${job.taskFilename}] 第 ${job.pageNum} 頁已暫停`);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            const errMsg = this.extractErrorMessage(errData, `暫停失敗 (HTTP ${res.status})`);
+                            if (res.status === 404) {
+                                job.status = 'failed';
+                                job.error = '任務不存在或已被刪除';
+                                this.saveReocrQueue();
+                            }
+                            this.showToast(`⚠️ [${job.taskFilename}] 第 ${job.pageNum} 頁暫停失敗: ${errMsg}`);
                         }
                     } catch (err) {
                         console.error('暫停重辨任務失敗:', err);
+                        this.showToast(`⚠️ 暫停連線異常: ${err.message || err}`);
                     } finally {
                         this.$nextTick(() => { lucide.createIcons(); });
                     }
@@ -2168,21 +2302,42 @@
                             this.saveReocrQueue();
                             if (this.currentTaskId === job.taskId) {
                                 const p = this.pages.find(page => page.page_num === job.pageNum);
-                                if (p) p.status = 'processing';
+                                if (p) {
+                                    p.status = 'processing';
+                                    p.error_message = null;
+                                }
                             }
                             this.listenTaskEvents(job.taskId);
-                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已繼續轉譯`);
+                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已啟動重辨 (模型: ${job.model})`);
                         } else {
                             const errData = await res.json().catch(() => ({}));
+                            const errMsg = this.extractErrorMessage(errData, `重試失敗 (HTTP ${res.status})`);
                             job.status = 'failed';
-                            job.error = errData.detail || '繼續轉譯失敗';
+                            job.error = errMsg;
                             this.saveReocrQueue();
+                            if (this.currentTaskId === job.taskId) {
+                                const p = this.pages.find(page => page.page_num === job.pageNum);
+                                if (p) {
+                                    p.status = 'failed';
+                                    p.error_message = errMsg;
+                                }
+                            }
+                            this.showToast(`⚠️ [${job.taskFilename}] 第 ${job.pageNum} 頁重試失敗: ${errMsg}`);
                         }
                     } catch (err) {
                         console.error('繼續重辨任務失敗:', err);
+                        const errMsg = err.message || String(err);
                         job.status = 'failed';
-                        job.error = String(err);
+                        job.error = errMsg;
                         this.saveReocrQueue();
+                        if (this.currentTaskId === job.taskId) {
+                            const p = this.pages.find(page => page.page_num === job.pageNum);
+                            if (p) {
+                                p.status = 'failed';
+                                p.error_message = errMsg;
+                            }
+                        }
+                        this.showToast(`⚠️ [${job.taskFilename}] 第 ${job.pageNum} 頁重試網路異常: ${errMsg}`);
                     } finally {
                         this.$nextTick(() => { lucide.createIcons(); });
                     }
