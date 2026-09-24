@@ -1,0 +1,1903 @@
+    <!-- Application Script -->
+    <script>
+        function ocrApp() {
+            return {
+                currentTheme: localStorage.getItem('ocr_theme') || 'light',
+                pendingFiles: [],
+                allTasks: [],
+                isSubmitting: false,
+                uploadProgress: 0,
+                get isCheckingAnyHash() {
+                    return this.pendingFiles && this.pendingFiles.some(f => f.isCheckingHash);
+                },
+                get pendingCheckingCount() {
+                    return this.pendingFiles ? this.pendingFiles.filter(f => f.isCheckingHash).length : 0;
+                },
+                formConfig: {
+                    model: '{{ default_model | default("gemini-3.5-flash-lite") }}',
+                    lang: 'traditional',
+                    direction: 'auto',
+                    column: 'auto',
+                    customPrompt: '',
+                    startPage: 1,
+                    endPage: 0,
+                    usePaidModel: false,
+                    paidAccountId: null
+                },
+                modelsList: {{ models | tojson }},
+                isLoadingModels: false,
+                accounts: [],
+                showAccountsModal: false,
+                showQueueModal: false,
+                // Auth & Admin State
+                authStatus: {
+                    admin_initialized: true,
+                    access_gate_enabled: false,
+                    has_access_password: false,
+                    is_admin: false,
+                    is_authenticated_user: true
+                },
+                showAdminModal: false,
+                showAdminLoginModal: false,
+                showSetupWizardModal: false,
+                adminTab: 'access_gate',
+                setupWizard: {
+                    password: '',
+                    confirmPassword: '',
+                    error: '',
+                    isLoading: false
+                },
+                accessGateLock: {
+                    password: '',
+                    error: '',
+                    isLoading: false
+                },
+                adminLogin: {
+                    password: '',
+                    error: '',
+                    isLoading: false
+                },
+                adminSettings: {
+                    access_gate_enabled: false,
+                    has_access_password: false,
+                    access_password: '',
+                    confirm_access_password: '',
+                    stats: {
+                        total_accounts: 0,
+                        active_accounts: 0,
+                        total_tasks: 0,
+                        completed_tasks: 0
+                    },
+                    isLoading: false,
+                    error: '',
+                    successMsg: ''
+                },
+                adminChangePassword: {
+                    old_password: '',
+                    new_password: '',
+                    confirm_new_password: '',
+                    isLoading: false,
+                    error: '',
+                    successMsg: ''
+                },
+                reocrQueue: (function() {
+                    try {
+                        const raw = JSON.parse(localStorage.getItem('gasocr_reocr_queue') || '[]');
+                        const seen = new Set();
+                        return raw.filter(j => {
+                            const key = `${j.taskId}_${j.pageNum}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                        });
+                    } catch (e) {
+                        return [];
+                    }
+                })(),
+                reocrFilter: 'all',
+                toastMessage: '',
+                toastTimeout: null,
+                authTab: 'api_key',
+                newKey: { name: '', api_key: '', is_paid: false },
+                newOAuth: { name: '', client_id: '', client_secret: '', refresh_token: '' },
+                webRpaConfig: {
+                    enabled: true,
+                    target_service: 'gemini',
+                    browser_mode: 'cdp',
+                    cdp_port: 9222,
+                    cdp_user_data_dir: 'data/chrome_profile_rpa',
+                    headless: true,
+                    timeout_seconds: 60,
+                    chrome_path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                    supported_models: ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-3-pro-preview']
+                },
+                cdpStatus: {
+                    available: false,
+                    logged_in: false,
+                    checking: false,
+                    connecting: false,
+                    command: '',
+                    endpoint: 'http://127.0.0.1:9222',
+                    message: ''
+                },
+                webRpaStatus: {
+                    logged_in: false,
+                    loading: false,
+                    launching: false,
+                    saving: false,
+                    verifying: false,
+                    message: ''
+                },
+                isTestingWebRpa: false,
+                
+                // Active task state
+                currentTaskId: null,
+                currentTask: null,
+                pages: [],
+                selectedPageNum: 1,
+                currentPageText: '',
+                eventSource: null,
+                isRetryingPage: false,
+                isRetryingUpgrade: false,
+                upgradeModel: 'gemini-2.5-pro',
+                liveAvgSpeed: 0,
+                liveEtaSeconds: 0,
+                liveActivePage: null,
+                liveActiveMsg: '',
+                formatEta(seconds) {
+                    if (!seconds || seconds <= 0) return '即將完成';
+                    if (seconds < 60) return `約 ${seconds} 秒`;
+                    const m = Math.floor(seconds / 60);
+                    const s = seconds % 60;
+                    return `約 ${m} 分 ${s} 秒`;
+                },
+                setTheme(theme) {
+                    this.currentTheme = theme;
+                    localStorage.setItem('ocr_theme', theme);
+                    document.documentElement.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+                    document.documentElement.classList.add('theme-' + theme);
+                    document.body.classList.remove('theme-light', 'theme-dark', 'theme-gruvbox');
+                    document.body.classList.add('theme-' + theme);
+                },
+
+                get paidAccounts() {
+                    return this.accounts.filter(a => a.is_paid === 1);
+                },
+                get freeAccounts() {
+                    return this.accounts.filter(a => !a.is_paid);
+                },
+                get activeAccountsCount() {
+                    return this.accounts.filter(a => a.is_active && !a.is_paid).length;
+                },
+                get activePaidAccountsCount() {
+                    return this.accounts.filter(a => a.is_active && a.is_paid === 1).length;
+                },
+
+                // ── Web RPA 狀態：依瀏覽器模式給出正確的判讀 ──
+                // ── 平台判斷（快捷鍵提示文字用）──
+                get isMacPlatform() {
+                    const ua = navigator.userAgent || '';
+                    return /Mac|iPhone|iPad|iPod/i.test(ua);
+                },
+                // macOS 顯示 ⌥，其他平台顯示 Alt
+                get modKeyLabel() { return this.isMacPlatform ? '⌥' : 'Alt'; },
+                get saveKeyLabel() { return this.isMacPlatform ? '⌘S' : 'Ctrl+S'; },
+                get pageUpKeyLabel() { return this.isMacPlatform ? 'Fn+↑' : 'PageUp'; },
+                get pageDownKeyLabel() { return this.isMacPlatform ? 'Fn+↓' : 'PageDown'; },
+
+                get isCdpMode() {
+                    return (this.webRpaConfig.browser_mode || 'cdp') === 'cdp';
+                },
+
+                get webRpaReady() {
+                    return this.isCdpMode ? !!this.cdpStatus.logged_in : !!this.webRpaStatus.logged_in;
+                },
+
+                get webRpaHeadline() {
+                    if (this.isCdpMode) {
+                        if (this.cdpStatus.logged_in) return '✅ 已接入並登入';
+                        if (this.cdpStatus.available) return '⚠️ 已找到 Chrome，尚未驗證';
+                        return '⚠️ 尚未開啟 Chrome';
+                    }
+                    return this.webRpaStatus.logged_in ? '✅ Cookie 有效，就緒' : '⚠️ 尚未登入';
+                },
+
+                get webRpaStatusMessage() {
+                    if (this.isCdpMode) {
+                        return this.cdpStatus.message
+                            || '請先執行 ./start_chrome_cdp.sh 開啟 Chrome 並手動登入，再點「檢查 CDP 連線」。';
+                    }
+                    return this.webRpaStatus.message || '請完成下方登入流程以啟用 [Web] 模型。';
+                },
+
+                get activeReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'processing').length;
+                },
+
+                get completedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'completed').length;
+                },
+
+                get pausedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'paused').length;
+                },
+
+                get failedReocrCount() {
+                    return this.reocrQueue.filter(j => j.status === 'failed').length;
+                },
+
+                get filteredReocrQueue() {
+                    if (this.reocrFilter === 'processing') {
+                        return this.reocrQueue.filter(j => j.status === 'processing');
+                    }
+                    if (this.reocrFilter === 'paused') {
+                        return this.reocrQueue.filter(j => j.status === 'paused');
+                    }
+                    if (this.reocrFilter === 'completed') {
+                        return this.reocrQueue.filter(j => j.status === 'completed');
+                    }
+                    if (this.reocrFilter === 'failed') {
+                        return this.reocrQueue.filter(j => j.status === 'failed');
+                    }
+                    return this.reocrQueue;
+                },
+
+                get progressPercent() {
+                    if (!this.currentTask || !this.currentTask.total_pages) return 0;
+                    if (this.currentTask.status === 'rendering') {
+                        const rendered = this.currentTask.rendered_pages || 0;
+                        return Math.min(100, Math.round((rendered / this.currentTask.total_pages) * 100));
+                    }
+                    return Math.min(100, Math.round(((this.currentTask.processed_pages || 0) / this.currentTask.total_pages) * 100));
+                },
+
+                get currentPage() {
+                    return this.pages.find(p => p.page_num === this.selectedPageNum) || null;
+                },
+
+                get isFirstPage() {
+                    if (!this.pages || this.pages.length === 0) return true;
+                    return this.selectedPageNum === this.pages[0].page_num;
+                },
+
+                get isLastPage() {
+                    if (!this.pages || this.pages.length === 0) return true;
+                    return this.selectedPageNum === this.pages[this.pages.length - 1].page_num;
+                },
+
+                async initApp() {
+                    this.setTheme(this.currentTheme);
+                    await this.checkAuthStatus();
+                    if (this.authStatus.is_authenticated_user) {
+                        this.postUnlockInit();
+                    }
+                    // 週期性檢查任務狀態 (2秒輪詢一次，讓批次多任務進行時進度條絲滑更新)
+                    setInterval(() => {
+                        if (this.authStatus.is_authenticated_user && this.allTasks.some(t => ['rendering', 'processing', 'pending'].includes(t.status))) {
+                            this.loadTasks();
+                        }
+                    }, 2000);
+                    // 週期性檢查重辨佇列中執行中任務的狀態
+                    setInterval(() => {
+                        if (this.authStatus.is_authenticated_user && this.activeReocrCount > 0) {
+                            this.checkActiveReocrJobs();
+                        }
+                    }, 2000);
+                    // 全域快速鍵監聽（佇列開關、校對翻頁、儲存、重辨）
+                    window.addEventListener('keydown', (e) => {
+                        this.handleKeyDown(e);
+                    });
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                postUnlockInit() {
+                    this.loadAccounts();
+                    this.loadWebRpaConfig();
+                    this.loadTasks();
+                    this.refreshModels(false);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async checkAuthStatus() {
+                    try {
+                        const res = await fetch('/api/auth/status');
+                        if (res.ok) {
+                            this.authStatus = await res.json();
+                            if (!this.authStatus.admin_initialized || (this.authStatus.access_gate_enabled && !this.authStatus.is_authenticated_user)) {
+                                window.location.reload();
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch auth status:', e);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitSetupWizard() {
+                    this.setupWizard.error = '';
+                    if (!this.setupWizard.password || this.setupWizard.password.length < 4) {
+                        this.setupWizard.error = '管理員密碼長度至少需 4 個字元';
+                        return;
+                    }
+                    if (this.setupWizard.password !== this.setupWizard.confirmPassword) {
+                        this.setupWizard.error = '兩次輸入的密碼不一致';
+                        return;
+                    }
+                    this.setupWizard.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/init', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.setupWizard.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.showSetupWizardModal = false;
+                            this.showToast('🎉 管理員密碼設定成功！');
+                            await this.checkAuthStatus();
+                            this.postUnlockInit();
+                        } else {
+                            this.setupWizard.error = data.detail || '初始化失敗';
+                        }
+                    } catch (e) {
+                        this.setupWizard.error = String(e);
+                    } finally {
+                        this.setupWizard.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitAccessUnlock() {
+                    this.accessGateLock.error = '';
+                    if (!this.accessGateLock.password) {
+                        this.accessGateLock.error = '請輸入通關密碼';
+                        return;
+                    }
+                    this.accessGateLock.isLoading = true;
+                    try {
+                        const res = await fetch('/api/auth/verify-access', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.accessGateLock.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.accessGateLock.password = '';
+                            this.showToast(data.message || '🔓 通關成功！');
+                            await this.checkAuthStatus();
+                            this.postUnlockInit();
+                        } else {
+                            this.accessGateLock.error = data.detail || '通關密碼錯誤，請重新輸入';
+                        }
+                    } catch (e) {
+                        this.accessGateLock.error = String(e);
+                    } finally {
+                        this.accessGateLock.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                openAdminModal() {
+                    if (this.authStatus.is_admin) {
+                        this.loadAdminSettings();
+                        this.showAdminModal = true;
+                    } else {
+                        this.adminLogin.password = '';
+                        this.adminLogin.error = '';
+                        this.showAdminLoginModal = true;
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async submitAdminLogin() {
+                    this.adminLogin.error = '';
+                    if (!this.adminLogin.password) {
+                        this.adminLogin.error = '請輸入管理員密碼';
+                        return;
+                    }
+                    this.adminLogin.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.adminLogin.password })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminLogin.password = '';
+                            this.showAdminLoginModal = false;
+                            this.showToast('🔑 管理員登入成功');
+                            await this.checkAuthStatus();
+                            this.loadAdminSettings();
+                            this.showAdminModal = true;
+                            this.postUnlockInit();
+                        } else {
+                            this.adminLogin.error = data.detail || '管理員密碼錯誤';
+                        }
+                    } catch (e) {
+                        this.adminLogin.error = String(e);
+                    } finally {
+                        this.adminLogin.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async loadAdminSettings() {
+                    this.adminSettings.isLoading = true;
+                    this.adminSettings.error = '';
+                    this.adminSettings.successMsg = '';
+                    try {
+                        const res = await fetch('/api/admin/settings');
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.adminSettings.access_gate_enabled = data.access_gate_enabled;
+                            this.adminSettings.has_access_password = data.has_access_password;
+                            if (data.stats) {
+                                this.adminSettings.stats = data.stats;
+                            }
+                        } else if (res.status === 401) {
+                            this.authStatus.is_admin = false;
+                            this.showAdminModal = false;
+                            this.showToast('⚠️ 管理員授權已過期，請重新登入');
+                        }
+                    } catch (e) {
+                        this.adminSettings.error = String(e);
+                    } finally {
+                        this.adminSettings.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async saveAccessGateSetting() {
+                    this.adminSettings.error = '';
+                    this.adminSettings.successMsg = '';
+                    
+                    if (this.adminSettings.access_password) {
+                        if (this.adminSettings.access_password !== this.adminSettings.confirm_access_password) {
+                            this.adminSettings.error = '兩次輸入的通關密碼不一致';
+                            return;
+                        }
+                    } else if (this.adminSettings.access_gate_enabled && !this.adminSettings.has_access_password) {
+                        this.adminSettings.error = '啟用通關保護前，請先設定一組通關密碼';
+                        return;
+                    }
+                    
+                    this.adminSettings.isLoading = true;
+                    try {
+                        const payload = {
+                            enabled: this.adminSettings.access_gate_enabled
+                        };
+                        if (this.adminSettings.access_password) {
+                            payload.password = this.adminSettings.access_password;
+                        }
+                        const res = await fetch('/api/admin/settings/access-gate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminSettings.successMsg = data.message;
+                            this.adminSettings.access_password = '';
+                            this.adminSettings.confirm_access_password = '';
+                            this.adminSettings.has_access_password = data.has_access_password;
+                            this.adminSettings.access_gate_enabled = data.access_gate_enabled;
+                            this.authStatus.access_gate_enabled = data.access_gate_enabled;
+                            this.showToast('✅ ' + data.message);
+                        } else {
+                            this.adminSettings.error = data.detail || '設定儲存失敗';
+                        }
+                    } catch (e) {
+                        this.adminSettings.error = String(e);
+                    } finally {
+                        this.adminSettings.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async submitChangeAdminPassword() {
+                    this.adminChangePassword.error = '';
+                    this.adminChangePassword.successMsg = '';
+                    if (!this.adminChangePassword.old_password) {
+                        this.adminChangePassword.error = '請輸入原管理員密碼';
+                        return;
+                    }
+                    if (!this.adminChangePassword.new_password || this.adminChangePassword.new_password.length < 4) {
+                        this.adminChangePassword.error = '新密碼長度至少需 4 個字元';
+                        return;
+                    }
+                    if (this.adminChangePassword.new_password !== this.adminChangePassword.confirm_new_password) {
+                        this.adminChangePassword.error = '兩次輸入的新密碼不一致';
+                        return;
+                    }
+                    this.adminChangePassword.isLoading = true;
+                    try {
+                        const res = await fetch('/api/admin/change-password', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                old_password: this.adminChangePassword.old_password,
+                                new_password: this.adminChangePassword.new_password
+                            })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.adminChangePassword.successMsg = data.message;
+                            this.adminChangePassword.old_password = '';
+                            this.adminChangePassword.new_password = '';
+                            this.adminChangePassword.confirm_new_password = '';
+                            this.showToast('🎉 ' + data.message);
+                        } else {
+                            this.adminChangePassword.error = data.detail || '密碼變更失敗';
+                        }
+                    } catch (e) {
+                        this.adminChangePassword.error = String(e);
+                    } finally {
+                        this.adminChangePassword.isLoading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async adminLogout() {
+                    try {
+                        await fetch('/api/admin/logout', { method: 'POST' });
+                        this.authStatus.is_admin = false;
+                        this.showAdminModal = false;
+                        this.showToast('已登出管理員身分');
+                        await this.checkAuthStatus();
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async reLockAccessGate() {
+                    try {
+                        await fetch('/api/auth/logout-access', { method: 'POST' });
+                        window.location.reload();
+                    } catch (e) {
+                        console.error('Failed to relock access gate:', e);
+                    }
+                },
+
+                async refreshModels(manual = false) {
+                    this.isLoadingModels = true;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                    try {
+                        const res = await fetch(`/api/models?refresh=${manual}`);
+                        const data = await res.json();
+                        if (data.models && data.models.length > 0) {
+                            this.modelsList = data.models;
+                            if (!this.upgradeModel) {
+                                const pro = this.modelsList.find(m => (m.id || m) === 'gemini-2.5-pro');
+                                this.upgradeModel = pro ? (pro.id || pro) : (this.modelsList[0].id || this.modelsList[0]);
+                            }
+                            if (manual) {
+                                alert(data.message || `已成功載入 ${data.models.length} 個 Google AI Studio 模型！`);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('刷新模型清單失敗:', err);
+                        if (manual) alert('刷新模型清單失敗: ' + err);
+                    } finally {
+                        this.isLoadingModels = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async addPendingFiles(files) {
+                    const validPdfs = files.filter(f => f.name && f.name.toLowerCase().endsWith('.pdf'));
+                    if (validPdfs.length === 0) {
+                        this.showToast('⚠️ 請選擇有效的 PDF 檔案！');
+                        return;
+                    }
+
+                    const newItems = [];
+                    for (const f of validPdfs) {
+                        const fileId = 'f_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now();
+                        const item = {
+                            id: fileId,
+                            file: f,
+                            name: f.name,
+                            size: f.size,
+                            hash: '',
+                            isCheckingHash: true,
+                            isCached: false,
+                            cachedPath: ''
+                        };
+                        newItems.push(item);
+                        this.pendingFiles.push(item);
+                    }
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+
+                    // 採用佇列排程，一次只處理 1 個檔案的 SHA-256。
+                    // crypto.subtle.digest 不支援串流，必須先把整個檔案讀成 ArrayBuffer
+                    // （使用者的 PDF 單檔可達 250MB），因此並行 2 個就會同時佔用 500MB+
+                    // 的瀏覽器記憶體，容易讓分頁卡死或崩潰。序列化最保險。
+                    const queue = [...newItems];
+                    const processItem = async (item) => {
+                        const f = item.file;
+                        let calculatedHash = '';
+                        let isCached = false;
+                        let cachedPath = '';
+                        try {
+                            if (window.crypto && window.crypto.subtle) {
+                                const arrayBuffer = await f.arrayBuffer();
+                                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                                calculatedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                            }
+                            
+                            if (calculatedHash) {
+                                const res = await fetch('/api/files/check-hash', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ hash: calculatedHash, filename: f.name, size: f.size })
+                                });
+                                if (res.ok) {
+                                    const data = await res.json();
+                                    if (data.exists) {
+                                        isCached = true;
+                                        cachedPath = data.filepath;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Hash check error for ' + f.name + ':', e);
+                        } finally {
+                            const target = this.pendingFiles.find(p => p.id === item.id);
+                            if (target) {
+                                target.hash = calculatedHash;
+                                target.isCached = isCached;
+                                target.cachedPath = cachedPath;
+                                target.isCheckingHash = false;
+                            }
+                            this.pendingFiles = [...this.pendingFiles];
+                            this.$nextTick(() => { 
+                                if (window.lucide) lucide.createIcons(); 
+                            });
+                        }
+                    };
+
+                    const maxWorkers = 1;
+                    const workers = Array.from({ length: Math.min(maxWorkers, queue.length) }, async () => {
+                        while (queue.length > 0) {
+                            const nextItem = queue.shift();
+                            if (nextItem) {
+                                await processItem(nextItem);
+                            }
+                        }
+                    });
+                    await Promise.all(workers);
+                },
+
+                handleFilesSelect(event) {
+                    const files = Array.from(event.target.files);
+                    this.addPendingFiles(files);
+                    event.target.value = '';
+                },
+
+                handleFilesDrop(event) {
+                    const files = Array.from(event.dataTransfer.files);
+                    this.addPendingFiles(files);
+                },
+
+                removePendingFile(index) {
+                    this.pendingFiles.splice(index, 1);
+                    this.pendingFiles = [...this.pendingFiles];
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                },
+
+                formatFileSize(bytes) {
+                    if (!bytes) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                },
+
+                async loadAccounts() {
+                    try {
+                        const res = await fetch('/api/accounts');
+                        const data = await res.json();
+                        this.accounts = data.accounts || [];
+                        if (this.paidAccounts.length > 0 && !this.formConfig.paidAccountId) {
+                            this.formConfig.paidAccountId = this.paidAccounts[0].id;
+                        }
+                    } catch (err) {
+                        console.error('Failed to load accounts:', err);
+                    }
+                },
+
+                async loadTasks() {
+                    try {
+                        const res = await fetch('/api/tasks');
+                        const data = await res.json();
+                        this.allTasks = data.tasks || [];
+                        if (this.currentTaskId) {
+                            const match = this.allTasks.find(t => t.id === this.currentTaskId);
+                            if (match && this.currentTask) {
+                                this.currentTask.status = match.status;
+                                this.currentTask.total_pages = match.total_pages;
+                                this.currentTask.processed_pages = match.processed_pages;
+                                this.currentTask.model = match.model;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to load tasks:', err);
+                    }
+                },
+
+                openAccountsModal() {
+                    this.loadAccounts();
+                    this.loadWebRpaConfig();
+                    this.checkWebRpaStatus();
+                    this.showAccountsModal = true;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async submitApiKeyAccount() {
+                    if (!this.newKey.name || !this.newKey.api_key) return;
+                    try {
+                        const res = await fetch('/api/accounts/api-key', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newKey)
+                        });
+                        if (res.ok) {
+                            const wasPaid = this.newKey.is_paid;
+                            this.newKey = { name: '', api_key: '', is_paid: false };
+                            await this.loadAccounts();
+                            alert(wasPaid ? '💎 付費 API Key 新增成功！' : 'API Key 新增成功！');
+                            this.refreshModels(false);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
+                        }
+                    } catch (err) {
+                        alert('新增失敗: ' + err);
+                    }
+                },
+
+                async submitOAuthAccount() {
+                    try {
+                        const res = await fetch('/api/accounts/oauth', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newOAuth)
+                        });
+                        if (res.ok) {
+                            this.newOAuth = { name: '', client_id: '', client_secret: '', refresh_token: '' };
+                            await this.loadAccounts();
+                            alert('OAuth 帳號新增成功！');
+                            this.refreshModels(false);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
+                        }
+                    } catch (err) {
+                        alert('新增失敗: ' + err);
+                    }
+                },
+
+                async toggleAccount(accId) {
+                    const res = await fetch(`/api/accounts/${accId}/toggle`, { method: 'POST' });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        alert('操作失敗: ' + (errData.detail || '需要管理員權限'));
+                    }
+                    await this.loadAccounts();
+                },
+
+                async testAccount(accId) {
+                    const btn = event.target;
+                    const originalText = btn.innerText;
+                    btn.innerText = '測試中...';
+                    btn.disabled = true;
+                    try {
+                        const res = await fetch(`/api/accounts/${accId}/test`, { method: 'POST' });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                            alert('測試失敗: ' + (data.detail || '需要管理員權限'));
+                        } else {
+                            alert(data.message);
+                        }
+                    } catch (err) {
+                        alert('測試請求異常: ' + err);
+                    } finally {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }
+                },
+
+                async deleteAccount(accId) {
+                    if (!confirm('確定要刪除這組帳號嗎？')) return;
+                    const res = await fetch(`/api/accounts/${accId}`, { method: 'DELETE' });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        alert('刪除失敗: ' + (errData.detail || '需要管理員權限'));
+                    }
+                    await this.loadAccounts();
+                },
+
+                async loadWebRpaConfig() {
+                    try {
+                        const res = await fetch('/api/web-rpa/config');
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.config) {
+                                this.webRpaConfig = data.config;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('載入 Web RPA 設定失敗:', err);
+                    }
+                    await this.refreshChromeCommand();
+                    await this.checkCdpStatus();
+                },
+
+                async refreshChromeCommand() {
+                    try {
+                        const res = await fetch('/api/web-rpa/chrome-command');
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.cdpStatus.command = data.command || '';
+                            this.cdpStatus.endpoint = data.cdp_endpoint || this.cdpStatus.endpoint;
+                        }
+                    } catch (err) {
+                        console.error('取得 Chrome 啟動指令失敗:', err);
+                    }
+                },
+
+                async checkCdpStatus() {
+                    if ((this.webRpaConfig.browser_mode || 'cdp') !== 'cdp') return;
+                    this.cdpStatus.checking = true;
+                    try {
+                        const res = await fetch('/api/web-rpa/cdp-status');
+                        const data = await res.json();
+                        this.cdpStatus.available = !!data.available;
+                        this.cdpStatus.message = data.message || '';
+                        if (data.launch_command) this.cdpStatus.command = data.launch_command;
+                        if (data.endpoint) this.cdpStatus.endpoint = data.endpoint;
+                    } catch (err) {
+                        this.cdpStatus.available = false;
+                        this.cdpStatus.message = '檢查 CDP 連線失敗: ' + err;
+                    } finally {
+                        this.cdpStatus.checking = false;
+                    }
+                },
+
+                async connectCdp() {
+                    this.cdpStatus.connecting = true;
+                    this.showToast('🔗 正在接入您的 Chrome...');
+                    try {
+                        const res = await fetch('/api/web-rpa/cdp-connect', { method: 'POST' });
+                        const data = await res.json();
+                        this.cdpStatus.logged_in = !!data.logged_in;
+                        this.cdpStatus.message = data.message || '';
+                        // 同步到共用的登入狀態卡片
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || '';
+                        if (data.logged_in) {
+                            this.showToast('✅ 已成功接入並確認登入！');
+                        } else {
+                            alert('⚠️ CDP 接入結果：\n\n' + (data.message || '未知狀態'));
+                        }
+                    } catch (err) {
+                        alert('接入 CDP 失敗: ' + err);
+                    } finally {
+                        this.cdpStatus.connecting = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async copyChromeCommand() {
+                    const cmd = this.cdpStatus.command || '';
+                    if (!cmd) { alert('尚未取得啟動指令，請稍候再試。'); return; }
+                    try {
+                        await navigator.clipboard.writeText(cmd);
+                        this.showToast('📋 啟動指令已複製到剪貼簿！');
+                    } catch (err) {
+                        // 剪貼簿 API 在非 HTTPS 環境可能被拒，改用 prompt 讓使用者手動複製
+                        window.prompt('請手動複製以下指令：', cmd);
+                    }
+                },
+
+                async saveWebRpaConfig() {
+                    try {
+                        const res = await fetch('/api/web-rpa/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.webRpaConfig)
+                        });
+                        if (res.ok) {
+                            await this.refreshModels(false);
+                            this.showToast('✅ 網頁自動化設定已儲存！');
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert('儲存 Web RPA 設定失敗: ' + (errData.detail || '需要管理員權限'));
+                        }
+                    } catch (err) {
+                        alert('儲存 Web RPA 設定失敗: ' + err);
+                    }
+                },
+
+                async launchWebLogin() {
+                    this.webRpaStatus.launching = true;
+                    this.showToast('🌐 正在啟動專屬登入視窗...');
+                    try {
+                        const target = this.webRpaConfig.target_service || 'gemini';
+                        const res = await fetch(`/api/web-rpa/launch-login?service=${target}`, {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.status === 'ok') {
+                            this.showToast('🌐 登入視窗已開啟！');
+                            alert('已為您開啟專屬 Chrome 登入視窗！\n\n【操作步驟】\n1. 請在彈出的瀏覽器視窗中完成 Google 帳號登入。\n2. 登入完成並確認進入 AI Studio / Gemini 首頁後。\n3. 回到此處點選「② 儲存登入狀態」即可！');
+                        } else {
+                            alert('啟動登入視窗失敗: ' + (data.detail || data.message || '未知錯誤'));
+                        }
+                    } catch (err) {
+                        alert('啟動視窗網路錯誤: ' + err);
+                    } finally {
+                        this.webRpaStatus.launching = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async saveWebRpaState() {
+                    this.webRpaStatus.saving = true;
+                    this.showToast('💾 正在提取並儲存登入憑證...');
+                    try {
+                        const res = await fetch('/api/web-rpa/save-state', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            this.showToast('✅ 登入狀態儲存成功！');
+                            alert('🎉 登入狀態儲存成功！\n\n' + data.message + '\n\n現在您可以在批次任務或重新辨識下拉選單中使用 [Web] 模型了！');
+                            await this.checkWebRpaStatus();
+                        } else {
+                            alert('⚠️ 儲存登入狀態失敗: ' + (data.message || '未知錯誤') + '\n\n請確認：\n1. 已在瀏覽器視窗完成 Google 登入\n2. 瀏覽器視窗未被提前手動關閉');
+                        }
+                    } catch (err) {
+                        alert('儲存請求失敗: ' + err);
+                    } finally {
+                        this.webRpaStatus.saving = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async verifyWebRpa() {
+                    this.webRpaStatus.verifying = true;
+                    this.showToast('🔍 正在以無頭瀏覽器驗證 Session 有效性...');
+                    try {
+                        const res = await fetch('/api/web-rpa/verify', { method: 'POST' });
+                        const data = await res.json();
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || (data.logged_in ? '✅ 登入驗證成功' : '⚠️ 登入已失效');
+                        if (data.logged_in) {
+                            alert('✅ 驗證成功！Session 運作正常，可直接進行 [Web] OCR。');
+                        } else {
+                            alert('⚠️ 驗證未通過: ' + (data.message || '無法連線至 AI Studio') + '\n\n請點選「① 開啟登入視窗」重新登入。');
+                        }
+                    } catch (err) {
+                        alert('驗證請求異常: ' + err);
+                    } finally {
+                        this.webRpaStatus.verifying = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async checkWebRpaStatus() {
+                    this.webRpaStatus.loading = true;
+                    try {
+                        const res = await fetch('/api/web-rpa/status');
+                        const data = await res.json();
+                        this.webRpaStatus.logged_in = !!data.logged_in;
+                        this.webRpaStatus.message = data.message || (data.logged_in ? '✅ 已連線 Google 帳號' : '尚未登入');
+                    } catch (err) {
+                        this.webRpaStatus.logged_in = false;
+                        this.webRpaStatus.message = '狀態檢測異常: ' + err;
+                    } finally {
+                        this.webRpaStatus.loading = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async testWebRpa() {
+                    if (this.isTestingWebRpa) return;
+                    this.isTestingWebRpa = true;
+                    this.showToast('🧪 正在向網頁端發送測試 OCR 請求，請稍候...');
+                    try {
+                        const res = await fetch('/api/web-rpa/test', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok && data.status === 'ok') {
+                            alert('🎉 網頁自動化 OCR 測試成功！\n回傳內容:\n' + data.message);
+                        } else {
+                            alert('⚠️ 測試未完全成功: ' + (data.message || '未知原因') + '\n\n提示：請確認已完成「① 開啟瀏覽器登入」＋「② 同步登入狀態」兩個步驟。');
+                        }
+                    } catch (err) {
+                        alert('測試請求失敗: ' + err);
+                    } finally {
+                        this.isTestingWebRpa = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async startBatchOcrTask() {
+                    if (this.pendingFiles.length === 0) return;
+                    this.isSubmitting = true;
+                    this.uploadProgress = 0;
+
+                    // ── 分批上傳設定 ─────────────────────────────────────
+                    // 為什麼要分批：先前把所有檔案塞進「同一個」FormData 一次送出。
+                    // 5 個 200MB+ 的 PDF 等於一個 1GB+ 的單一請求，結果是
+                    //   1. 兩端記憶體都被吃爆（Python 被 OOM 殺掉）
+                    //   2. 任何一個檔案出錯，整批一起失敗
+                    //   3. 無法顯示個別檔案的進度與錯誤
+                    // 因此改成依「檔案數」與「總位元組」切成多個請求，序列送出。
+                    const MAX_FILES_PER_REQUEST = 2;
+                    const MAX_BYTES_PER_REQUEST = 200 * 1024 * 1024;
+
+                    const cachedItems = this.pendingFiles.filter(i => i.isCached && i.hash);
+                    const newItems = this.pendingFiles.filter(i => !(i.isCached && i.hash));
+
+                    const batches = [];
+                    let cur = [];
+                    let curBytes = 0;
+                    for (const it of newItems) {
+                        const sz = (it.file && it.file.size) || 0;
+                        const wouldExceed = cur.length > 0 &&
+                            (cur.length >= MAX_FILES_PER_REQUEST ||
+                             curBytes + sz > MAX_BYTES_PER_REQUEST);
+                        if (wouldExceed) {
+                            batches.push(cur);
+                            cur = [];
+                            curBytes = 0;
+                        }
+                        cur.push(it);
+                        curBytes += sz;
+                    }
+                    if (cur.length > 0) batches.push(cur);
+
+                    const totalBytes = newItems.reduce((s, i) => s + ((i.file && i.file.size) || 0), 0);
+                    let uploadedBytes = 0;
+                    let totalCreated = 0;
+                    let firstTaskId = null;
+                    const failures = [];
+
+                    const buildFormData = (files, cached) => {
+                        const fd = new FormData();
+                        for (const it of files) {
+                            fd.append('files', it.file || it);
+                        }
+                        if (cached && cached.length > 0) {
+                            fd.append('existing_files', JSON.stringify(cached.map(i => ({
+                                hash: i.hash,
+                                filename: i.name,
+                                filepath: i.cachedPath
+                            }))));
+                        }
+                        fd.append('model', this.formConfig.model);
+                        fd.append('lang', this.formConfig.lang);
+                        fd.append('direction', this.formConfig.direction);
+                        fd.append('column', this.formConfig.column);
+                        fd.append('custom_prompt', this.formConfig.customPrompt);
+                        fd.append('start_page', this.formConfig.startPage || 1);
+                        fd.append('end_page', this.formConfig.endPage || 0);
+                        fd.append('use_paid_model', this.formConfig.usePaidModel ? 'true' : 'false');
+                        if (this.formConfig.usePaidModel && this.formConfig.paidAccountId) {
+                            fd.append('paid_account_id', this.formConfig.paidAccountId);
+                        }
+                        return fd;
+                    };
+
+                    const postBatch = (formData) => new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', '/api/tasks');
+                        // 先前沒有設定 timeout，導致 ontimeout 永遠是死碼。
+                        // 設太短會誤殺慢速上傳，因此給 15 分鐘上限。
+                        xhr.timeout = 15 * 60 * 1000;
+                        xhr.upload.onprogress = (e) => {
+                            if (e.lengthComputable && e.total > 0) {
+                                const denom = totalBytes > 0 ? totalBytes : 1;
+                                const done = uploadedBytes + e.loaded;
+                                this.uploadProgress = Math.min(99, Math.round((done / denom) * 100));
+                            }
+                        };
+                        xhr.onload = () => {
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                resolve({ status: xhr.status, data });
+                            } catch (err) {
+                                reject(new Error('伺服器回應格式錯誤: ' +
+                                    (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error('網路傳輸失敗，請檢查連線狀態'));
+                        xhr.ontimeout = () => reject(new Error('請求超時（15 分鐘），檔案過大或伺服器處理時間過長'));
+                        xhr.send(formData);
+                    });
+
+                    const absorb = (res, items) => {
+                        if (res.status === 200 && res.data && res.data.status === 'ok') {
+                            totalCreated += res.data.count || 0;
+                            if (!firstTaskId) firstTaskId = res.data.task_id;
+                            (res.data.failed || []).forEach(f => failures.push(f));
+                        } else {
+                            const m = (res.data && (res.data.detail || res.data.message)) || '未知原因';
+                            items.forEach(it => failures.push({ name: it.name, error: m }));
+                        }
+                    };
+
+                    try {
+                        // 1) 已快取（免上傳）的檔案：單獨送一次請求建立任務
+                        if (cachedItems.length > 0) {
+                            try {
+                                absorb(await postBatch(buildFormData([], cachedItems)), cachedItems);
+                            } catch (err) {
+                                cachedItems.forEach(it => failures.push({
+                                    name: it.name, error: err.message || String(err)
+                                }));
+                            }
+                        }
+
+                        // 2) 新上傳的檔案：逐批序列送出，避免同時佔用大量記憶體
+                        for (const batch of batches) {
+                            const bytesInBatch = batch.reduce(
+                                (s, it) => s + ((it.file && it.file.size) || 0), 0);
+                            try {
+                                absorb(await postBatch(buildFormData(batch, [])), batch);
+                            } catch (err) {
+                                batch.forEach(it => failures.push({
+                                    name: it.name, error: err.message || String(err)
+                                }));
+                            }
+                            uploadedBytes += bytesInBatch;
+                        }
+
+                        this.uploadProgress = 100;
+
+                        if (totalCreated > 0) {
+                            // 只把失敗的檔案留在佇列，方便直接重試
+                            const failedNames = new Set(failures.map(f => f.name));
+                            this.pendingFiles = this.pendingFiles.filter(p => failedNames.has(p.name));
+                            await this.loadTasks();
+                            if (firstTaskId) {
+                                const firstTask = this.allTasks.find(t => t.id === firstTaskId);
+                                if (firstTask) this.inspectTask(firstTask);
+                            }
+                            let msg = `🎉 已成功排入 ${totalCreated} 個檔案進行批次 OCR 轉譯！`;
+                            if (failures.length > 0) msg += ` （${failures.length} 個失敗，已保留在清單中可重試）`;
+                            this.showToast(msg);
+                            if (failures.length > 0) {
+                                alert('⚠️ 部分檔案未排入：\n\n' +
+                                    failures.slice(0, 10).map(f => `• ${f.name}\n  ${f.error}`).join('\n\n'));
+                            }
+                        } else {
+                            const detail = failures.length > 0
+                                ? failures.slice(0, 5).map(f => `${f.name}: ${f.error}`).join('\n')
+                                : '未知原因';
+                            this.showToast('⚠️ 啟動任務失敗');
+                            alert('⚠️ 沒有檔案成功排入：\n\n' + detail);
+                        }
+                    } catch (err) {
+                        this.showToast('⚠️ 送出任務錯誤: ' + (err.message || err));
+                    } finally {
+                        this.isSubmitting = false;
+                        this.uploadProgress = 0;
+                        this.$nextTick(() => { 
+                            if (window.lucide) lucide.createIcons(); 
+                        });
+                    }
+                },
+
+                inspectTask(task) {
+                    // 立即關閉先前的 SSE 連線，防止背景舊任務事件污染當前校對任務
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    this.currentTaskId = task.id;
+                    this.currentTask = { ...task };
+                    this.selectedPageNum = null;
+                    this.liveAvgSpeed = 0;
+                    this.liveEtaSeconds = 0;
+                    this.liveActivePage = null;
+                    this.liveActiveMsg = '';
+                    this.pollTaskDetail();
+                    if (['processing', 'rendering', 'pending'].includes(task.status)) {
+                        this.listenTaskEvents(task.id);
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async toggleTaskPause(task) {
+                    if (!task) return;
+                    const isResuming = ['paused', 'failed'].includes(task.status);
+                    const action = isResuming ? 'resume' : 'pause';
+                    const fetchOpts = { method: 'POST' };
+                    if (isResuming && task.model) {
+                        fetchOpts.headers = { 'Content-Type': 'application/json' };
+                        fetchOpts.body = JSON.stringify({ model: task.model });
+                    }
+                    try {
+                        const res = await fetch(`/api/tasks/${task.id}/${action}`, fetchOpts);
+                        if (res.ok) {
+                            const data = await res.json();
+                            task.status = data.task_status;
+                            if (data.model) task.model = data.model;
+
+                            const row = this.allTasks.find(t => t.id === task.id);
+                            if (row) {
+                                row.status = data.task_status;
+                                if (data.model) row.model = data.model;
+                            }
+
+                            if (this.currentTask && this.currentTask.id === task.id) {
+                                this.currentTask.status = data.task_status;
+                                if (data.model) this.currentTask.model = data.model;
+                                if (action === 'resume') {
+                                    this.listenTaskEvents(task.id);
+                                } else if (action === 'pause') {
+                                    if (this.eventSource) {
+                                        this.eventSource.close();
+                                        this.eventSource = null;
+                                    }
+                                }
+                            }
+                            await this.loadTasks();
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            alert(`操作失敗: ${errData.detail || res.statusText}`);
+                        }
+                    } catch (err) {
+                        alert(`操作失敗: ${err}`);
+                    }
+                },
+
+                async changeTaskModel(task) {
+                    if (!task || !task.model) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${task.id}/model`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model: task.model })
+                        });
+                        if (res.ok) {
+                            if (this.currentTask && this.currentTask.id === task.id) {
+                                this.currentTask.model = task.model;
+                            }
+                            const match = this.allTasks.find(t => t.id === task.id);
+                            if (match) match.model = task.model;
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            console.error('更新模型失敗:', errData);
+                        }
+                    } catch (err) {
+                        console.error('更新任務模型網路錯誤:', err);
+                    }
+                },
+
+                async deleteTask(taskId) {
+                    if (!confirm('確定要刪除此轉譯任務與相關檔案嗎？')) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            if (this.currentTaskId === taskId) {
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                                this.currentTaskId = null;
+                                this.currentTask = null;
+                                this.pages = [];
+                                this.selectedPageNum = null;
+                            }
+                            await this.loadTasks();
+                        }
+                    } catch (err) {
+                        alert('刪除失敗: ' + err);
+                    }
+                },
+
+                downloadTaskExport(taskId, fmt) {
+                    window.open(`/api/tasks/${taskId}/download/${fmt}`, '_blank');
+                },
+
+                async pollTaskDetail() {
+                    if (!this.currentTaskId) return;
+                    const reqTaskId = this.currentTaskId;
+                    try {
+                        const res = await fetch(`/api/tasks/${reqTaskId}`);
+                        const data = await res.json();
+                        // 確保返回的結果依然是當前選取的任務，防止異步競態
+                        if (this.currentTaskId === reqTaskId && data.task) {
+                            this.currentTask = data.task;
+                            this.pages = data.pages || [];
+                            if (this.pages.length > 0) {
+                                if (!this.selectedPageNum || !this.pages.some(p => p.page_num === this.selectedPageNum)) {
+                                    this.selectedPageNum = this.pages[0].page_num;
+                                }
+                            } else {
+                                this.selectedPageNum = null;
+                            }
+                            if (this.currentPage) {
+                                this.currentPageText = this.currentPage.ocr_text || '';
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to fetch task detail:', err);
+                    }
+                },
+
+                listenTaskEvents(taskId) {
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    this.eventSource = new EventSource(`/api/tasks/${taskId}/events`);
+                    this.eventSource.onmessage = async (event) => {
+                        try {
+                            const payload = JSON.parse(event.data);
+                            // 1. 精準更新任務清單中對應的 task 項目
+                            const targetTask = this.allTasks.find(t => t.id === payload.task_id);
+                            if (targetTask) {
+                                targetTask.status = payload.status;
+                                targetTask.total_pages = payload.total_pages;
+                                targetTask.processed_pages = payload.processed_pages;
+                                targetTask.rendered_pages = payload.rendered_pages || 0;
+                            }
+
+                            // 2. 只有當前檢視/校對的任務 ID 與事件的 task_id 一致時，才更新校對區塊與重新拉取頁面細節
+                            if (this.currentTaskId === payload.task_id && this.currentTask) {
+                                this.currentTask.status = payload.status;
+                                this.currentTask.total_pages = payload.total_pages;
+                                this.currentTask.processed_pages = payload.processed_pages;
+                                this.currentTask.rendered_pages = payload.rendered_pages || 0;
+                                if (payload.pdf_total_pages) this.currentTask.pdf_total_pages = payload.pdf_total_pages;
+                                if (payload.bg_render_status) this.currentTask.bg_render_status = payload.bg_render_status;
+                                if (payload.start_page) this.currentTask.start_page = payload.start_page;
+                                if (payload.end_page) this.currentTask.end_page = payload.end_page;
+                                if (payload.model) this.currentTask.model = payload.model;
+                                if (payload.is_paid !== undefined) this.currentTask.is_paid = payload.is_paid;
+
+                                this.liveAvgSpeed = payload.avg_speed || 0;
+                                this.liveEtaSeconds = payload.eta_seconds || 0;
+                                this.liveActivePage = payload.active_page || null;
+                                this.liveActiveMsg = payload.active_msg || '';
+
+                                await this.pollTaskDetail();
+                            }
+
+                            // 3. 同步更新重新辨識佇列中屬於此任務的單頁狀態
+                            if (payload.pages && Array.isArray(payload.pages)) {
+                                for (const p of payload.pages) {
+                                    const matchedJob = this.reocrQueue.find(j => j.taskId === payload.task_id && j.pageNum === p.page_num && j.status === 'processing');
+                                    if (matchedJob) {
+                                        if (p.status === 'completed') {
+                                            matchedJob.status = 'completed';
+                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                            if (p.used_model) matchedJob.model = p.used_model;
+                                            this.saveReocrQueue();
+                                            this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
+                                        } else if (p.status === 'failed') {
+                                            matchedJob.status = 'failed';
+                                            matchedJob.duration = p.duration || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                            matchedJob.error = p.error_message || '辨識失敗';
+                                            this.saveReocrQueue();
+                                            this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
+                                        } else if (p.status === 'paused') {
+                                            matchedJob.status = 'paused';
+                                            matchedJob.error = '已手動暫停';
+                                            this.saveReocrQueue();
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. 若該任務已結束或暫停，且目前無任何單頁在 processing，關閉此連線
+                            const hasProcessingPage = payload.pages && payload.pages.some(p => p.status === 'processing');
+                            if (['completed', 'failed', 'paused'].includes(payload.status) && !hasProcessingPage) {
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('SSE onmessage error:', err);
+                        }
+                    };
+                    this.eventSource.onerror = () => {
+                        if (this.eventSource) {
+                            this.eventSource.close();
+                            this.eventSource = null;
+                        }
+                    };
+                },
+
+                prevPage() {
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+                    const currentIndex = this.pages.findIndex(p => p.page_num === this.selectedPageNum);
+                    if (currentIndex > 0) {
+                        this.selectPage(this.pages[currentIndex - 1].page_num);
+                    }
+                },
+
+                nextPage() {
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+                    const currentIndex = this.pages.findIndex(p => p.page_num === this.selectedPageNum);
+                    if (currentIndex !== -1 && currentIndex < this.pages.length - 1) {
+                        this.selectPage(this.pages[currentIndex + 1].page_num);
+                    }
+                },
+
+                handleKeyDown(e) {
+                    const target = e.target;
+                    const tag = target && target.tagName;
+                    // 編輯焦點判斷需含 contenteditable，否則會搶走輸入框的按鍵
+                    const isEditing = !!target && (
+                        tag === 'TEXTAREA' || tag === 'INPUT' ||
+                        tag === 'SELECT' || target.isContentEditable === true
+                    );
+
+                    // ⚠️ 一律使用 e.code（實體鍵位置），不要用 e.key。
+                    //
+                    // macOS 的 Option(⌥) 是「組合鍵」，會改寫 e.key：
+                    //   ⌥Q → 'œ'   ⌥R → '®'   ⌥U → Dead(死鍵)
+                    //   ⌥P → 'π'   ⌥[ → '“'   ⌥] → '‘'
+                    // 所以用 e.key 比對字母／括號，在 macOS 上會全部失效。
+                    // e.code 不受修飾鍵與輸入法影響，兩個平台都可靠。
+                    const code = e.code || '';
+                    const key = (e.key || '').toLowerCase();
+                    const isPlain = !e.altKey && !e.ctrlKey && !e.metaKey;
+
+                    // 1. Esc 關閉彈窗
+                    if (code === 'Escape' || key === 'escape') {
+                        if (this.showQueueModal) {
+                            e.preventDefault();
+                            this.showQueueModal = false;
+                            return;
+                        }
+                        if (this.showAccountsModal) {
+                            e.preventDefault();
+                            this.showAccountsModal = false;
+                            return;
+                        }
+                        if (this.showAdminModal) {
+                            e.preventDefault();
+                            this.showAdminModal = false;
+                            return;
+                        }
+                        if (this.showAdminLoginModal) {
+                            e.preventDefault();
+                            this.showAdminLoginModal = false;
+                            return;
+                        }
+                    }
+
+                    // 2. ⌥/Alt + Q，或非編輯焦點下單按 Q：開關重辨佇列
+                    if ((e.altKey && code === 'KeyQ') ||
+                        (isPlain && !isEditing && code === 'KeyQ')) {
+                        e.preventDefault();
+                        this.toggleQueueModal();
+                        return;
+                    }
+
+                    // 3. 只有在校對狀態（已開啟任務且有頁面）才作用的快捷鍵
+                    if (!this.currentTask || !this.pages || this.pages.length === 0) return;
+
+                    // ⌘S / Ctrl+S 快速儲存（兩個平台的慣用鍵都支援）
+                    if ((e.metaKey || e.ctrlKey) && code === 'KeyS') {
+                        e.preventDefault();
+                        this.saveCurrentPageText();
+                        return;
+                    }
+
+                    // ⌥/Alt + R：以原任務模型重新辨識本頁
+                    if (e.altKey && code === 'KeyR') {
+                        e.preventDefault();
+                        this.retryCurrentPage();
+                        return;
+                    }
+
+                    // ⌥/Alt + U：以升級模型重新辨識本頁
+                    if (e.altKey && code === 'KeyU') {
+                        e.preventDefault();
+                        this.retryWithUpgradeModel();
+                        return;
+                    }
+
+                    // ⌥/Alt + P：暫停 / 繼續本頁
+                    if (e.altKey && code === 'KeyP') {
+                        e.preventDefault();
+                        if (this.currentPage?.status === 'processing') {
+                            this.pauseCurrentPage();
+                        } else if (this.currentPage?.status === 'paused') {
+                            this.retryCurrentPage();
+                        }
+                        return;
+                    }
+
+                    // ── 翻頁 ────────────────────────────────────────────
+                    const isPrev = code === 'ArrowLeft' || code === 'BracketLeft'
+                                || key === 'arrowleft' || key === 'pageup' || code === 'PageUp';
+                    const isNext = code === 'ArrowRight' || code === 'BracketRight'
+                                || key === 'arrowright' || key === 'pagedown' || code === 'PageDown';
+
+                    if (isEditing) {
+                        // 編輯中不搶單鍵（←/→ 是游標移動、[ ] 是打字）。
+                        //
+                        // macOS 特別處理：⌥←/⌥→ 是系統原生的「逐詞移動游標」，
+                        // 編輯時搶走會嚴重破壞打字體驗，因此改用 ⌥[ / ⌥] 翻頁。
+                        // Windows/Linux 的 Alt+←/→ 沒有這個衝突，維持可用。
+                        const allowAltArrow = !this.isMacPlatform;
+                        const altPrev = e.altKey &&
+                            (code === 'BracketLeft' || (allowAltArrow && code === 'ArrowLeft'));
+                        const altNext = e.altKey &&
+                            (code === 'BracketRight' || (allowAltArrow && code === 'ArrowRight'));
+                        // MacBook 沒有 PageUp/PageDown 實體鍵，需 Fn+↑ / Fn+↓
+                        const pgPrev = isPlain && (key === 'pageup' || code === 'PageUp');
+                        const pgNext = isPlain && (key === 'pagedown' || code === 'PageDown');
+
+                        if (altPrev || pgPrev) { e.preventDefault(); this.prevPage(); return; }
+                        if (altNext || pgNext) { e.preventDefault(); this.nextPage(); return; }
+                        return;
+                    }
+
+                    // 非編輯焦點：單鍵或 ⌥/Alt 組合皆可
+                    if (isPrev) {
+                        e.preventDefault();
+                        this.prevPage();
+                    } else if (isNext) {
+                        e.preventDefault();
+                        this.nextPage();
+                    }
+                },
+
+                showToast(msg) {
+                    this.toastMessage = msg;
+                    if (this.toastTimeout) clearTimeout(this.toastTimeout);
+                    this.toastTimeout = setTimeout(() => {
+                        this.toastMessage = '';
+                    }, 3500);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                saveReocrQueue() {
+                    try {
+                        const seen = new Set();
+                        this.reocrQueue = this.reocrQueue.filter(j => {
+                            const key = `${j.taskId}_${j.pageNum}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                        });
+                        localStorage.setItem('gasocr_reocr_queue', JSON.stringify(this.reocrQueue.slice(0, 50)));
+                    } catch (e) {
+                        console.error('Failed to save reocrQueue:', e);
+                    }
+                },
+
+                clearCompletedReocrQueue() {
+                    this.reocrQueue = this.reocrQueue.filter(j => j.status === 'processing' || j.status === 'paused');
+                    this.saveReocrQueue();
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                clearAllReocrQueue() {
+                    if (this.reocrQueue.length === 0) return;
+                    if (confirm('確定要清空所有重新辨識紀錄嗎？')) {
+                        this.reocrQueue = [];
+                        this.saveReocrQueue();
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                removeReocrJob(jobId) {
+                    this.reocrQueue = this.reocrQueue.filter(j => j.id !== jobId);
+                    this.saveReocrQueue();
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                toggleQueueModal() {
+                    this.showQueueModal = !this.showQueueModal;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async goToReocrJob(job) {
+                    if (!job || !job.taskId) return;
+                    if (this.currentTaskId !== job.taskId) {
+                        let targetTask = this.allTasks.find(t => t.id === job.taskId);
+                        if (!targetTask) {
+                            await this.loadTasks();
+                            targetTask = this.allTasks.find(t => t.id === job.taskId);
+                        }
+                        if (targetTask) {
+                            await this.inspectTask(targetTask);
+                        } else {
+                            this.currentTaskId = job.taskId;
+                            await this.pollTaskDetail();
+                        }
+                    }
+                    if (job.pageNum) {
+                        this.selectPage(job.pageNum);
+                    }
+                    // 點選前往校對本頁之後，自動關閉 重新辨識UI
+                    this.showQueueModal = false;
+                    this.$nextTick(() => {
+                        const section = document.getElementById('proofread-section');
+                        if (section) {
+                            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                        lucide.createIcons();
+                    });
+                },
+
+                async checkActiveReocrJobs() {
+                    const activeJobs = this.reocrQueue.filter(j => j.status === 'processing');
+                    if (activeJobs.length === 0) return;
+
+                    const taskIds = [...new Set(activeJobs.map(j => j.taskId))];
+                    for (const tid of taskIds) {
+                        try {
+                            const res = await fetch(`/api/tasks/${tid}`);
+                            if (!res.ok) continue;
+                            const data = await res.json();
+                            const pages = data.pages || [];
+                            for (const page of pages) {
+                                const matchedJob = this.reocrQueue.find(j => j.taskId === tid && j.pageNum === page.page_num && j.status === 'processing');
+                                if (matchedJob) {
+                                    if (page.status === 'completed') {
+                                        matchedJob.status = 'completed';
+                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                        if (page.used_model) matchedJob.model = page.used_model;
+                                        this.saveReocrQueue();
+                                        this.showToast(`✅ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識完成！耗時 ${matchedJob.duration}s`);
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'completed';
+                                                currP.ocr_text = page.ocr_text;
+                                                currP.used_model = page.used_model;
+                                                currP.duration_seconds = page.duration_seconds;
+                                                if (this.selectedPageNum === page.page_num) {
+                                                    this.currentPageText = page.ocr_text || '';
+                                                }
+                                            }
+                                        }
+                                    } else if (page.status === 'failed') {
+                                        matchedJob.status = 'failed';
+                                        matchedJob.duration = page.duration_seconds || Math.round((Date.now() - matchedJob.startedAt) / 100) / 10;
+                                        matchedJob.error = page.error_message || '辨識失敗';
+                                        this.saveReocrQueue();
+                                        this.showToast(`⚠️ [${matchedJob.taskFilename}] 第 ${matchedJob.pageNum} 頁辨識失敗: ${matchedJob.error}`);
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'failed';
+                                                currP.error_message = page.error_message;
+                                            }
+                                        }
+                                    } else if (page.status === 'paused') {
+                                        matchedJob.status = 'paused';
+                                        matchedJob.error = page.error_message || '已手動暫停';
+                                        this.saveReocrQueue();
+                                        if (this.currentTaskId === tid) {
+                                            const currP = this.pages.find(p => p.page_num === page.page_num);
+                                            if (currP) {
+                                                currP.status = 'paused';
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Error polling reocr jobs for task', tid, err);
+                        }
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                selectPage(pageNum) {
+                    this.selectedPageNum = pageNum;
+                    if (this.currentPage) {
+                        this.currentPageText = this.currentPage.ocr_text || '';
+                    }
+                    this.$nextTick(() => {
+                        lucide.createIcons();
+                        // 選取按鈕自動平滑滾動至可見區域
+                        const activeBtn = document.querySelector(`[data-page-btn="${pageNum}"]`);
+                        if (activeBtn) {
+                            activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        }
+                    });
+                },
+
+                async saveCurrentPageText() {
+                    if (!this.currentTaskId || !this.selectedPageNum) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${this.currentTaskId}/pages/${this.selectedPageNum}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: this.currentPageText })
+                        });
+                        if (res.ok) {
+                            if (this.currentPage) {
+                                this.currentPage.ocr_text = this.currentPageText;
+                            }
+                            alert(`第 ${this.selectedPageNum} 頁修改儲存成功！`);
+                        }
+                    } catch (err) {
+                        alert('儲存失敗: ' + err);
+                    }
+                },
+
+                async retryCurrentPage(modelOverride = null) {
+                    if (!this.currentTaskId || !this.selectedPageNum || this.isRetryingPage) return;
+                    this.isRetryingPage = true;
+                    this.isRetryingUpgrade = !!modelOverride;
+                    if (this.currentPage) {
+                        this.currentPage.status = 'processing';
+                    }
+
+                    const pageNum = this.selectedPageNum;
+                    const taskId = this.currentTaskId;
+                    const taskFilename = (this.currentTask && this.currentTask.filename) || '未命名任務';
+                    const targetModel = modelOverride || this.currentPage?.used_model || this.currentTask?.model || '{{ default_model | default("gemini-3.5-flash-lite") }}';
+                    const isUpgrade = !!modelOverride;
+
+                    // 1. 登記至重辨佇列：對每一頁只保留最新結果的一個 item
+                    this.reocrQueue = this.reocrQueue.filter(j => !(j.taskId === taskId && j.pageNum === pageNum));
+                    const newJob = {
+                        id: 'reocr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                        taskId: taskId,
+                        taskFilename: taskFilename,
+                        pageNum: pageNum,
+                        model: targetModel,
+                        isUpgrade: isUpgrade,
+                        status: 'processing',
+                        startedAt: Date.now(),
+                        formattedTime: new Date().toLocaleTimeString(),
+                        duration: null,
+                        error: null
+                    };
+                    this.reocrQueue.unshift(newJob);
+                    this.saveReocrQueue();
+
+                    const toastMsg = isUpgrade 
+                        ? `✨ 已啟動「升級重新辨識」：第 ${pageNum} 頁 (模型: ${targetModel})` 
+                        : `⚡ 已啟動重新辨識：第 ${pageNum} 頁 (模型: ${targetModel})`;
+                    this.showToast(toastMsg);
+
+                    const payload = modelOverride ? { model: modelOverride } : {};
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/retry`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            // 直接執行重新轉譯，不跳出 message 彈窗
+                            this.listenTaskEvents(taskId);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            console.error('重新轉譯失敗:', errData);
+                            newJob.status = 'failed';
+                            newJob.error = errData.detail || '發起重試失敗';
+                            this.saveReocrQueue();
+                            if (this.currentPage) {
+                                this.currentPage.status = 'failed';
+                            }
+                        }
+                    } catch (err) {
+                        console.error('重新轉譯網路錯誤:', err);
+                        newJob.status = 'failed';
+                        newJob.error = String(err);
+                        this.saveReocrQueue();
+                        if (this.currentPage) {
+                            this.currentPage.status = 'failed';
+                        }
+                    } finally {
+                        this.isRetryingPage = false;
+                        this.isRetryingUpgrade = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                retryWithUpgradeModel() {
+                    const target = this.upgradeModel || (this.currentTask ? this.currentTask.model : 'gemini-2.5-pro');
+                    this.retryCurrentPage(target);
+                },
+
+                async pauseCurrentPage() {
+                    if (!this.currentTaskId || !this.selectedPageNum) return;
+                    const taskId = this.currentTaskId;
+                    const pageNum = this.selectedPageNum;
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/pause`, { method: 'POST' });
+                        if (res.ok) {
+                            if (this.currentPage) {
+                                this.currentPage.status = 'paused';
+                            }
+                            const matchedJob = this.reocrQueue.find(j => j.taskId === taskId && j.pageNum === pageNum);
+                            if (matchedJob) {
+                                matchedJob.status = 'paused';
+                                matchedJob.error = '已手動暫停';
+                                this.saveReocrQueue();
+                            }
+                            this.showToast(`⏸️ 第 ${pageNum} 頁轉譯已暫停`);
+                        }
+                    } catch (err) {
+                        console.error('暫停單頁失敗:', err);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async pauseReocrJob(job) {
+                    if (!job || !job.taskId || !job.pageNum) return;
+                    try {
+                        const res = await fetch(`/api/tasks/${job.taskId}/pages/${job.pageNum}/pause`, { method: 'POST' });
+                        if (res.ok) {
+                            job.status = 'paused';
+                            job.error = '已手動暫停';
+                            this.saveReocrQueue();
+                            if (this.currentTaskId === job.taskId) {
+                                const p = this.pages.find(page => page.page_num === job.pageNum);
+                                if (p) p.status = 'paused';
+                            }
+                            this.showToast(`⏸️ [${job.taskFilename}] 第 ${job.pageNum} 頁已暫停`);
+                        }
+                    } catch (err) {
+                        console.error('暫停重辨任務失敗:', err);
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async resumeReocrJob(job) {
+                    if (!job || !job.taskId || !job.pageNum) return;
+                    try {
+                        const payload = job.model ? { model: job.model } : {};
+                        const res = await fetch(`/api/tasks/${job.taskId}/pages/${job.pageNum}/resume`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            job.status = 'processing';
+                            job.error = null;
+                            job.startedAt = Date.now();
+                            this.saveReocrQueue();
+                            if (this.currentTaskId === job.taskId) {
+                                const p = this.pages.find(page => page.page_num === job.pageNum);
+                                if (p) p.status = 'processing';
+                            }
+                            this.listenTaskEvents(job.taskId);
+                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已繼續轉譯`);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            job.status = 'failed';
+                            job.error = errData.detail || '繼續轉譯失敗';
+                            this.saveReocrQueue();
+                        }
+                    } catch (err) {
+                        console.error('繼續重辨任務失敗:', err);
+                        job.status = 'failed';
+                        job.error = String(err);
+                        this.saveReocrQueue();
+                    } finally {
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                downloadExport(fmt) {
+                    if (!this.currentTaskId) return;
+                    window.open(`/api/tasks/${this.currentTaskId}/download/${fmt}`, '_blank');
+                }
+            }
+        }
+    </script>

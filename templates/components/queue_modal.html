@@ -1,0 +1,271 @@
+    <!-- NEW: Re-OCR & Upgrade Jobs Queue Drawer -->
+    <div 
+        x-show="showQueueModal" 
+        class="fixed inset-0 z-50 overflow-hidden" 
+        style="display: none;"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+    >
+        <!-- Backdrop -->
+        <div 
+            class="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
+            @click="showQueueModal = false"
+        ></div>
+
+        <div class="fixed inset-y-0 right-0 max-w-full flex pl-8 sm:pl-12 pointer-events-none">
+            <div 
+                class="w-screen max-w-md sm:max-w-lg shadow-2xl border-l flex flex-col pointer-events-auto transition ease-in-out duration-300 transform reocr-drawer"
+                x-show="showQueueModal"
+                x-transition:enter="transform transition ease-in-out duration-300"
+                x-transition:enter-start="translate-x-full"
+                x-transition:enter-end="translate-x-0"
+                x-transition:leave="transform transition ease-in-out duration-200"
+                x-transition:leave-start="translate-x-0"
+                x-transition:leave-end="translate-x-full"
+                @click.stop
+            >
+                <!-- Drawer Header -->
+                <div class="p-4 sm:p-5 border-b flex flex-col gap-3 reocr-header">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 reocr-badge-upgrade">
+                                <i data-lucide="layers" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold flex items-center space-x-2">
+                                    <span>重新辨識與升級佇列</span>
+                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full reocr-badge-upgrade" x-text="`${reocrQueue.length} 項`"></span>
+                                </h3>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">每頁僅保留最新辨識成果，點擊項目自動前往校對並關閉佇列</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            <kbd class="text-[10px] font-mono px-1.5 py-0.5 rounded shadow-2xs hidden sm:inline">Esc 關閉</kbd>
+                            <button @click="showQueueModal = false" class="reocr-icon-btn cursor-pointer" title="關閉佇列 (Esc)">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filter Tabs & Batch Actions -->
+                    <div class="flex items-center justify-between pt-1 gap-2 flex-wrap">
+                        <div class="flex items-center space-x-1 p-0.5 rounded-lg text-xs shrink-0 reocr-filter-bar">
+                            <button 
+                                @click="reocrFilter = 'all'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                                :class="reocrFilter === 'all' ? 'reocr-filter-btn-active shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                全部 (<span x-text="reocrQueue.length"></span>)
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'processing'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition flex items-center space-x-1 cursor-pointer"
+                                :class="reocrFilter === 'processing' ? 'reocr-filter-btn-active reocr-filter-processing shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500" :class="{'animate-ping': activeReocrCount > 0}"></span>
+                                <span>執行中 (<span x-text="activeReocrCount"></span>)</span>
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'paused'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition flex items-center space-x-1 cursor-pointer"
+                                :class="reocrFilter === 'paused' ? 'reocr-filter-btn-active text-amber-600 shadow-xs' : 'reocr-filter-btn-inactive'"
+                                x-show="pausedReocrCount > 0"
+                            >
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                <span>已暫停 (<span x-text="pausedReocrCount"></span>)</span>
+                            </button>
+                            <button 
+                                @click="reocrFilter = 'completed'" 
+                                class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                                :class="reocrFilter === 'completed' ? 'reocr-filter-btn-active reocr-filter-completed shadow-xs' : 'reocr-filter-btn-inactive'"
+                            >
+                                完成 (<span x-text="completedReocrCount"></span>)
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2 text-xs">
+                            <button 
+                                @click="clearCompletedReocrQueue()" 
+                                x-show="completedReocrCount > 0 || failedReocrCount > 0"
+                                class="text-[11px] text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition underline cursor-pointer"
+                                title="清除所有已完成與失敗的項目"
+                            >
+                                清除已完成
+                            </button>
+                            <button 
+                                @click="clearAllReocrQueue()" 
+                                x-show="reocrQueue.length > 0"
+                                class="text-[11px] text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium transition cursor-pointer"
+                                title="清空全部佇列"
+                            >
+                                全部清空
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drawer Content List -->
+                <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-2.5">
+                    <template x-for="job in filteredReocrQueue" :key="job.id">
+                        <div 
+                            class="p-3.5 rounded-xl border transition shadow-xs flex flex-col gap-2 hover:shadow-md cursor-pointer reocr-card"
+                            :class="{
+                                'reocr-card-processing': job.status === 'processing',
+                                'reocr-card-completed': job.status === 'completed',
+                                'reocr-card-failed': job.status === 'failed',
+                                'reocr-card-paused': job.status === 'paused'
+                            }"
+                            @click="goToReocrJob(job)"
+                        >
+                            <!-- Top: Status & Model -->
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                                    <!-- Status Pill -->
+                                    <template x-if="job.status === 'processing'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-processing">
+                                            <i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>
+                                            <span>轉譯中...</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'paused'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-paused">
+                                            <i data-lucide="pause-circle" class="w-3 h-3"></i>
+                                            <span>已暫停</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'completed'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-completed">
+                                            <i data-lucide="check" class="w-3 h-3"></i>
+                                            <span>已完成</span>
+                                        </span>
+                                    </template>
+                                    <template x-if="job.status === 'failed'">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold border reocr-status-failed">
+                                            <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                                            <span>失敗</span>
+                                        </span>
+                                    </template>
+
+                                    <!-- Model Badge -->
+                                    <template x-if="job.isUpgrade">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border font-mono reocr-badge-upgrade">
+                                            <i data-lucide="sparkles" class="w-3 h-3"></i>
+                                            <span x-text="`升級: ${job.model}`"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="!job.isUpgrade">
+                                        <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border font-mono reocr-badge-standard">
+                                            <span x-text="job.model"></span>
+                                        </span>
+                                    </template>
+                                </div>
+
+                                <!-- Time / Duration -->
+                                <div class="text-[11px] text-slate-400 font-mono shrink-0">
+                                    <span x-text="job.formattedTime || ''"></span>
+                                    <template x-if="job.duration">
+                                        <span class="font-semibold text-slate-500 dark:text-slate-400" x-text="` (${job.duration}s)`"></span>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Middle: Task Filename and Page Num -->
+                            <div class="flex items-center justify-between text-xs pt-0.5">
+                                <div class="flex items-center space-x-1.5 truncate max-w-[260px] sm:max-w-xs">
+                                    <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 truncate" :title="job.taskFilename" x-text="job.taskFilename"></span>
+                                </div>
+                                <span class="px-2 py-0.5 rounded-md font-bold text-xs border shrink-0 reocr-badge-page" x-text="`第 ${job.pageNum} 頁`"></span>
+                            </div>
+
+                            <!-- Error info if failed or paused -->
+                            <template x-if="(job.status === 'failed' || job.status === 'paused') && job.error">
+                                <p class="text-[11px] p-2 rounded-lg border font-mono truncate" :class="job.status === 'paused' ? 'reocr-status-paused' : 'reocr-error-box'" :title="job.error" x-text="job.error"></p>
+                            </template>
+
+                            <!-- Bottom Action: Pause/Resume, Jump, Remove -->
+                            <div class="flex items-center justify-between pt-1 border-t border-slate-100/70 dark:border-slate-800/80">
+                                <div class="flex items-center space-x-1.5">
+                                    <!-- 暫停 / 繼續按鈕 -->
+                                    <template x-if="job.status === 'processing'">
+                                        <button 
+                                            @click.stop="pauseReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-pause"
+                                            title="暫停此項重新轉譯"
+                                        >
+                                            <i data-lucide="pause" class="w-3 h-3"></i>
+                                            <span>暫停</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="job.status === 'paused'">
+                                        <button 
+                                            @click.stop="resumeReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-resume"
+                                            title="繼續此項重新轉譯"
+                                        >
+                                            <i data-lucide="play" class="w-3 h-3"></i>
+                                            <span>繼續</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="job.status === 'failed'">
+                                        <button 
+                                            @click.stop="resumeReocrJob(job)" 
+                                            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-retry"
+                                            title="重試此項重新轉譯"
+                                        >
+                                            <i data-lucide="rotate-cw" class="w-3 h-3"></i>
+                                            <span>重試</span>
+                                        </button>
+                                    </template>
+                                    <span class="text-[11px] text-slate-400 hidden sm:inline" x-show="job.status === 'completed'">已完成</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <button 
+                                        @click.stop="goToReocrJob(job)" 
+                                        class="px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs cursor-pointer reocr-btn-jump"
+                                    >
+                                        <span>🔍 前往校對</span>
+                                    </button>
+                                    <button 
+                                        @click.stop="removeReocrJob(job.id)" 
+                                        class="p-1 rounded transition cursor-pointer reocr-btn-remove" 
+                                        title="從清單移除"
+                                    >
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Empty State -->
+                    <template x-if="filteredReocrQueue.length === 0">
+                        <div class="py-12 px-4 text-center flex flex-col items-center justify-center">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center mb-3 reocr-empty-icon">
+                                <i data-lucide="layers" class="w-6 h-6"></i>
+                            </div>
+                            <h4 class="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">重辨佇列中尚無紀錄</h4>
+                            <p class="text-xs text-slate-400 max-w-xs leading-relaxed">
+                                在下方校對區點選「重新辨識本頁」或「升級重新辨識」，系統將自動加入此佇列並在背景追蹤成果。
+                            </p>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Drawer Footer: Quick Key Hints -->
+                <div class="p-3.5 border-t text-[11px] flex flex-wrap items-center justify-between gap-2 reocr-footer">
+                    <div class="flex items-center space-x-3">
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+Q'">Alt+Q</kbd> / <kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Q</kbd> 開關佇列</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs">Esc</kbd> 關閉</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+R'">Alt+R</kbd> 原模重辨</span>
+                        <span><kbd class="font-mono px-1 py-0.5 rounded shadow-2xs" x-text="modKeyLabel + '+U'">Alt+U</kbd> 升級重辨</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

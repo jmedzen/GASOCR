@@ -1,0 +1,139 @@
+        <!-- NEW: Batch Tasks Queue & History Box -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800">批次轉譯檔案列表 (Batch Tasks Box)</h3>
+                        <p class="text-xs text-slate-400">已上傳之所有 PDF 檔案與其轉譯狀態，點擊項目可於下方進行校對與成果下載</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700" x-text="`共 ${allTasks.length} 個任務`"></span>
+                    <button @click="loadTasks()" class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition" title="重新整理任務列表">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Task List Table -->
+            <div class="border border-slate-200 rounded-xl overflow-x-auto custom-scroll">
+                <table class="w-full min-w-[880px] text-left text-xs">
+                    <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                        <tr>
+                            <th class="p-3 w-3/12 min-w-[180px]">檔案名稱</th>
+                            <th class="p-3 whitespace-nowrap min-w-[110px]">轉譯範圍</th>
+                            <th class="p-3 whitespace-nowrap min-w-[180px]">模型與語言</th>
+                            <th class="p-3 whitespace-nowrap min-w-[120px]">進度</th>
+                            <th class="p-3 whitespace-nowrap min-w-[90px]">狀態</th>
+                            <th class="p-3 pr-4 text-right whitespace-nowrap min-w-[260px]">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="task in allTasks" :key="task.id">
+                            <tr class="hover:bg-slate-50/70 transition cursor-pointer" :class="{'bg-blue-50/50': currentTaskId === task.id}" @click="inspectTask(task)">
+                                <td class="p-3 font-medium text-slate-800">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="file-text" class="w-4 h-4 text-blue-600 shrink-0"></i>
+                                        <span class="truncate max-w-[180px] sm:max-w-xs font-semibold" :title="task.filename" x-text="task.filename"></span>
+                                        <template x-if="task.is_paid">
+                                            <span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 shrink-0">💎 付費</span>
+                                        </template>
+                                    </div>
+                                </td>
+                                <td class="p-3 font-mono whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded-md bg-slate-100/80 border border-slate-200/60 text-xs font-semibold text-slate-700"
+                                        x-text="task.end_page && task.end_page > 0 ? `P.${task.start_page || 1} ~ P.${task.end_page}` : `P.${task.start_page || 1} ~ 全本`"></span>
+                                </td>
+                                <td class="p-3 whitespace-nowrap" @click.stop>
+                                    <template x-if="task.status === 'paused'">
+                                        <div class="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100/60 transition shadow-xs">
+                                            <span class="text-[11px] text-amber-600 font-bold">⚡</span>
+                                            <div class="relative inline-flex items-center">
+                                                <select 
+                                                    x-model="task.model" 
+                                                    @change="changeTaskModel(task)"
+                                                    class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                                                    title="點擊更換接續執行的模型"
+                                                >
+                                                    <template x-for="m in modelsList" :key="m.id || m">
+                                                        <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === task.model"></option>
+                                                    </template>
+                                                </select>
+                                                <svg class="w-3.5 h-3.5 text-amber-600 absolute right-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template x-if="task.status !== 'paused'">
+                                        <div class="inline-flex items-center space-x-1.5">
+                                            <span class="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60" x-text="task.model"></span>
+                                            <span class="text-slate-400 text-[11px]" x-text="`(${task.lang_pref})`"></span>
+                                        </div>
+                                    </template>
+                                </td>
+                                <td class="p-3 whitespace-nowrap">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-16 bg-slate-200/70 rounded-full h-1.5 overflow-hidden">
+                                            <div class="h-1.5 rounded-full transition-all duration-300"
+                                                :class="{
+                                                    'bg-emerald-500': task.status === 'completed',
+                                                    'bg-blue-600': task.status === 'processing',
+                                                    'bg-amber-500 animate-pulse': task.status === 'rendering',
+                                                    'bg-purple-500': task.status === 'paused',
+                                                    'bg-red-500': task.status === 'failed',
+                                                    'bg-slate-300': task.status === 'pending'
+                                                }"
+                                                :style="`width: ${task.total_pages ? (task.status === 'rendering' ? Math.min(100, Math.round((task.rendered_pages || 0)/task.total_pages*100)) : Math.min(100, Math.round((task.processed_pages || 0)/task.total_pages*100))) : 0}%`"></div>
+                                        </div>
+                                        <span class="font-mono text-xs font-semibold" 
+                                            :class="task.status === 'rendering' ? 'text-amber-700' : 'text-slate-700'"
+                                            x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : `${task.processed_pages || 0}/${task.total_pages || 0}`"></span>
+                                    </div>
+                                </td>
+                                <td class="p-3 whitespace-nowrap">
+                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide"
+                                        :class="{
+                                            'bg-blue-100/80 text-blue-800 border border-blue-200': task.status === 'processing',
+                                            'bg-amber-100/80 text-amber-800 border border-amber-200': task.status === 'rendering',
+                                            'bg-purple-100/80 text-purple-800 border border-purple-200': task.status === 'paused',
+                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200': task.status === 'completed',
+                                            'bg-red-100/80 text-red-800 border border-red-200': task.status === 'failed',
+                                            'bg-slate-100 text-slate-600 border border-slate-200': task.status === 'pending'
+                                        }"
+                                    >
+                                        <span class="w-1.5 h-1.5 rounded-full" :class="{
+                                            'bg-blue-500 animate-ping': task.status === 'processing',
+                                            'bg-amber-500 animate-pulse': task.status === 'rendering',
+                                            'bg-purple-500': task.status === 'paused',
+                                            'bg-emerald-500': task.status === 'completed',
+                                            'bg-red-500': task.status === 'failed',
+                                            'bg-slate-400': task.status === 'pending'
+                                        }"></span>
+                                        <span x-text="task.status === 'paused' ? '已暫停' : (task.status === 'processing' ? '轉譯中' : (task.status === 'completed' ? '已完成' : (task.status === 'rendering' ? '切圖中' : task.status)))"></span>
+                                    </span>
+                                </td>
+                                <td class="p-3 pr-4 text-right space-x-1.5 whitespace-nowrap" @click.stop>
+                                    <template x-if="['processing', 'rendering', 'pending'].includes(task.status)">
+                                        <button @click="toggleTaskPause(task)" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-semibold transition" title="暫停轉譯">⏸ 暫停</button>
+                                    </template>
+                                    <template x-if="['paused', 'failed'].includes(task.status)">
+                                        <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition shadow-xs" title="繼續轉譯">▶ 繼續</button>
+                                    </template>
+                                    <button @click="inspectTask(task)" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">校對</button>
+                                    <button @click="downloadTaskExport(task.id, 'docx')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Word">Word</button>
+                                    <button @click="downloadTaskExport(task.id, 'md')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Markdown">MD</button>
+                                    <button @click="deleteTask(task.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-medium transition" title="刪除任務">刪除</button>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="allTasks.length === 0">
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-slate-400">目前尚無任何轉譯任務，請在上方選取 PDF 檔案開始批次轉譯</td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>

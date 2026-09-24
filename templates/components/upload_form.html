@@ -1,0 +1,242 @@
+        <!-- Top Row: Upload & Configuration Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left: Multiple File Upload Dropzone (5 cols) -->
+            <div class="lg:col-span-5 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
+                        <i data-lucide="files" class="w-4 h-4 text-blue-600"></i>
+                        <span>1. 選擇待轉譯 PDF 檔案 (可多選)</span>
+                    </h2>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700" x-show="pendingFiles.length > 0" x-text="`已選取 ${pendingFiles.length} 個檔案`"></span>
+                </div>
+
+                <div 
+                    class="flex-1 border-2 border-dashed rounded-xl flex flex-col transition min-h-[220px]"
+                    :class="pendingFiles.length > 0 ? 'border-blue-500 bg-blue-50/20 cursor-default p-4' : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 items-center justify-center text-center cursor-pointer p-5'"
+                    @dragover.prevent="$el.classList.add('border-blue-500')"
+                    @dragleave.prevent="$el.classList.remove('border-blue-500')"
+                    @drop.prevent="handleFilesDrop($event)"
+                    @click="pendingFiles.length === 0 ? $refs.fileInput.click() : null"
+                >
+                    <input type="file" x-ref="fileInput" class="hidden" accept=".pdf" multiple @change="handleFilesSelect($event)">
+                    
+                    <template x-if="pendingFiles.length === 0">
+                        <div class="flex flex-col items-center">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-2">
+                                <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                            </div>
+                            <p class="text-sm font-bold text-slate-700 mb-1">點擊上傳或拖曳多個 PDF 檔案至此</p>
+                            <p class="text-xs text-slate-400">支援一次批次選取多個 PDF，將依序自動進行 OCR 轉譯</p>
+                        </div>
+                    </template>
+
+                    <!-- Selected Files Queue Display -->
+                    <template x-if="pendingFiles.length > 0">
+                        <div class="w-full flex-1 flex flex-col h-full text-left min-h-0" @click.stop>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2 shrink-0">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs font-semibold text-slate-700">待上傳轉譯清單</span>
+                                    <span class="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700" x-text="`${pendingFiles.length} 個檔案`"></span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button type="button" @click="$refs.fileInput.click()" class="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center space-x-1 transition cursor-pointer">
+                                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                        <span>繼續新增</span>
+                                    </button>
+                                    <span class="text-slate-300">|</span>
+                                    <button type="button" @click="pendingFiles = []" class="text-xs text-red-500 hover:text-red-600 font-medium transition cursor-pointer">清空</button>
+                                </div>
+                            </div>
+                            <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-1.5 pr-1">
+                                <template x-for="(item, idx) in pendingFiles" :key="item.id || idx">
+                                    <div class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs hover:border-slate-300 transition shadow-xs">
+                                        <div class="flex items-center space-x-2 truncate mr-2">
+                                            <i data-lucide="file-text" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+                                            <span class="font-medium text-slate-800 truncate" x-text="item.name"></span>
+                                            <template x-if="item.isCheckingHash">
+                                                <span class="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center space-x-1 shrink-0">
+                                                    <i data-lucide="loader-2" class="w-2.5 h-2.5 animate-spin"></i>
+                                                    <span>比對特徵碼...</span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!item.isCheckingHash && item.isCached">
+                                                <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold flex items-center space-x-1 shrink-0" title="此檔案在伺服器端已有快取，按下轉譯時將秒傳免除上傳！">
+                                                    <span>⚡ 已快取 (秒傳免上傳)</span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!item.isCheckingHash && !item.isCached">
+                                                <span class="text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 flex items-center space-x-1 shrink-0" title="伺服器端無快取，按下轉譯時將自動上傳">
+                                                    <span>待上傳</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                        <div class="flex items-center space-x-2 shrink-0">
+                                            <span class="text-[11px] text-slate-400 font-mono" x-text="formatFileSize(item.size)"></span>
+                                            <button type="button" @click="removePendingFile(idx)" class="text-slate-400 hover:text-red-500 transition cursor-pointer" title="移除此檔案">
+                                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Right: Layout & Parameter Controls (7 cols) -->
+            <div class="lg:col-span-7 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                        <i data-lucide="sliders" class="w-4 h-4 text-blue-600"></i>
+                        <span>2. 排版與 OCR 頁面參數配置</span>
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        <!-- Model Selection with Live Refresh -->
+                        <div class="md:col-span-2">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-semibold text-slate-600">Gemini 轉譯模型</label>
+                                <button 
+                                    type="button" 
+                                    @click="refreshModels(true)" 
+                                    :disabled="isLoadingModels" 
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1 font-medium transition disabled:opacity-50"
+                                >
+                                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="{'animate-spin': isLoadingModels}"></i>
+                                    <span x-text="isLoadingModels ? '查詢中...' : '刷新模型清單'"></span>
+                                </button>
+                            </div>
+                            <select x-model="formConfig.model" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700">
+                                <template x-for="m in modelsList" :key="m.id">
+                                    <option :value="m.id" x-text="m.name" :selected="formConfig.model === m.id"></option>
+                                </template>
+                            </select>
+                        </div>
+
+                        <!-- Paid API Option (使用付費 API 與金鑰選擇) -->
+                        <div class="md:col-span-2 p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2.5">
+                            <div class="flex items-center justify-between flex-wrap gap-2">
+                                <label class="flex items-center space-x-2 cursor-pointer select-none">
+                                    <input type="checkbox" x-model="formConfig.usePaidModel" class="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer">
+                                    <span class="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                        <span>💎 使用付費 API</span>
+                                        <span class="text-[10px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full border border-amber-300">極速免 15 RPM 節流·獨立專屬 API</span>
+                                    </span>
+                                </label>
+                                <span class="text-[11px] text-amber-700 font-medium" x-show="formConfig.usePaidModel">⚠️ 批次 OCR 將只使用所選的付費 API 金鑰</span>
+                            </div>
+                            
+                            <div x-show="formConfig.usePaidModel" x-transition class="pt-1 border-t border-amber-200/60">
+                                <label class="block text-[11px] font-semibold text-amber-900 mb-1 flex items-center justify-between">
+                                    <span>選擇專屬付費 API Key：</span>
+                                    <span class="text-[10px] text-amber-700" x-text="`可選 ${paidAccounts.length} 組`"></span>
+                                </label>
+                                <template x-if="paidAccounts.length > 0">
+                                    <select x-model.number="formConfig.paidAccountId" class="w-full text-xs font-medium rounded-lg border border-amber-300 bg-white p-2 text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer">
+                                        <template x-for="acc in paidAccounts" :key="acc.id">
+                                            <option :value="acc.id" x-text="`${acc.name} (${acc.masked_key || 'API Key'})`" :selected="formConfig.paidAccountId === acc.id"></option>
+                                        </template>
+                                    </select>
+                                </template>
+                                <template x-if="paidAccounts.length === 0">
+                                    <div class="text-xs text-amber-800 bg-white/80 p-2.5 rounded-lg border border-amber-200 flex items-center justify-between">
+                                        <span>⚠️ 目前尚未設定任何「付費金鑰」。</span>
+                                        <button type="button" @click="openAccountsModal(); authTab = 'api_key'; newKey.is_paid = true;" class="text-amber-900 underline font-bold hover:text-amber-700 cursor-pointer">立即前往新增</button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Page Range Selection (start, end) -->
+                        <div class="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-bold text-slate-700 flex items-center space-x-1.5">
+                                    <i data-lucide="book-open" class="w-4 h-4 text-blue-600"></i>
+                                    <span>OCR 頁面範圍選擇 (Page Start ~ Page End)</span>
+                                </label>
+                                <span class="text-[11px] text-slate-400">結束頁填 0 或留空表示轉譯至最後一頁</span>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+                                <div>
+                                    <label class="block text-[11px] text-slate-500 mb-0.5">起始頁 (Start)</label>
+                                    <input type="number" min="1" x-model.number="formConfig.startPage" class="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-500 mb-0.5">結束頁 (End)</label>
+                                    <input type="number" min="0" x-model.number="formConfig.endPage" placeholder="0 (全部)" class="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                </div>
+                                <div class="col-span-2 flex items-center space-x-1.5 pt-3.5">
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=0" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">全本</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=1" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">僅第 1 頁</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=5" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">前 5 頁</button>
+                                    <button type="button" @click="formConfig.startPage=1; formConfig.endPage=10" class="px-2 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 transition">前 10 頁</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Language Preference -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">轉譯語言偏好</label>
+                            <select x-model="formConfig.lang" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in languages.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Text Direction -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">文字閱讀方向</label>
+                            <select x-model="formConfig.direction" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in directions.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Column Structure -->
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">分欄排版結構</label>
+                            <select x-model="formConfig.column" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                                {% for k, v in columns.items() %}
+                                <option value="{{ k }}">{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Custom Instructions (Large Text Box) -->
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                <span>自訂附加提示詞（選填，多行大輸入框）</span>
+                                <span class="text-[11px] text-slate-400">可自訂格式細節、專有名詞對照、排版過濾規則等</span>
+                            </label>
+                            <textarea rows="4" x-model="formConfig.customPrompt" placeholder="例：&#10;1. 請保留原書古籍頁碼標記。&#10;2. 表格請強制轉為精確之 Markdown 語法輸出。&#10;3. 專有名詞對照：將「AI Studio」統一翻譯為「人工智慧工作坊」。&#10;4. 忽略頁眉與頁腳版權宣告。" class="w-full text-xs rounded-xl border border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 leading-relaxed font-mono custom-scroll resize-y"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div class="text-xs flex items-center space-x-1" :class="formConfig.usePaidModel ? 'text-amber-700 font-semibold' : 'text-slate-500'">
+                        <i :data-lucide="formConfig.usePaidModel ? 'gem' : 'shield-check'" class="w-4 h-4" :class="formConfig.usePaidModel ? 'text-amber-600' : 'text-emerald-600'"></i>
+                        <span x-text="formConfig.usePaidModel ? '💎 付費極速模式（鎖定付費專屬金鑰）' : '零費用 15 RPM 自動節流防護'"></span>
+                    </div>
+                    <button 
+                        @click="startBatchOcrTask()"
+                        :disabled="pendingFiles.length === 0 || isSubmitting || isCheckingAnyHash || (formConfig.usePaidModel ? (activePaidAccountsCount === 0 || !formConfig.paidAccountId) : activeAccountsCount === 0)"
+                        class="px-6 py-2 rounded-xl text-white font-semibold text-sm shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition cursor-pointer"
+                        :class="formConfig.usePaidModel ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'"
+                    >
+                        <i data-lucide="play" class="w-4 h-4" x-show="!isSubmitting && !isCheckingAnyHash"></i>
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin" x-show="isSubmitting || isCheckingAnyHash"></i>
+                        <span x-text="
+                            isSubmitting ? (uploadProgress > 0 && uploadProgress < 100 ? `上傳中 ${uploadProgress}%...` : '啟動中...') : 
+                            (isCheckingAnyHash ? `比對特徵碼中 (剩餘 ${pendingCheckingCount} 個)...` : 
+                            (pendingFiles.length > 0 ? (formConfig.usePaidModel ? `開始付費批次轉譯 (${pendingFiles.length} 個檔案)` : `開始批次轉譯 (${pendingFiles.length} 個檔案)`) : '請先選取 PDF 檔案'))
+                        "></span>
+                    </button>
+                </div>
+            </div>
+        </div>

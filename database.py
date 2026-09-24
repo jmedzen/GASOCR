@@ -126,15 +126,10 @@ async def init_db():
         if "used_model" not in page_cols:
             await db.execute("ALTER TABLE task_pages ADD COLUMN used_model TEXT DEFAULT ''")
 
-        # 啟動時自動重置上次非正常中斷而殘留為 processing 的頁面
-        now = time.time()
-        await db.execute("""
-            UPDATE task_pages 
-            SET status = 'pending', error_message = '前次轉譯中斷，已重設等待重辨', updated_at = ?
-            WHERE status = 'processing'
-        """, (now,))
-
         await db.commit()
+
+    # 伺服器啟動時自動修復中斷與殘留任務
+    await recover_stale_tasks_on_startup()
 
     # 檢查環境變數是否提供 ADMIN_PASSWORD，若有且尚未初始化則自動完成設定
     env_admin_pwd = os.environ.get("ADMIN_PASSWORD")
@@ -144,6 +139,78 @@ async def init_db():
 
     # 自動建立 uploads 目錄現有檔案的 Hash 索引
     await index_existing_uploads()
+
+async def recover_stale_tasks_on_startup() -> Dict[str, int]:
+    """
+    伺服器重啟或崩潰時的任務自動修復 (Stale Task Recovery)：
+    1. 修復掛在 processing / rendering 的 tasks：
+       - 若該任務的所有頁面皆已完成 (total_pages > 0 且 completed >= total)，自動標記為 completed
+       - 否則標記為 paused (已暫停，可由使用者按「續傳」無縫接續)
+       - 若 bg_render_status 為 rendering，重置為 paused
+    2. 修復掛在 processing 的 task_pages：
+       - 自動標記為 paused，並註記 error_message = '伺服器重新啟動中斷，已轉為暫停狀態以供續傳'
+    回傳修復統計字典：{"tasks_paused": int, "tasks_completed": int, "pages_recovered": int}
+    """
+    now = time.time()
+    stats = {
+        "tasks_paused": 0,
+        "tasks_completed": 0,
+        "pages_recovered": 0
+    }
+    
+    async with get_db() as db:
+        # 1. 處理殘留為 processing 的 task_pages
+        cursor = await db.execute("""
+            UPDATE task_pages 
+            SET status = 'paused', 
+                error_message = '伺服器重新啟動中斷，已轉為暫停狀態以供續傳', 
+                updated_at = ?
+            WHERE status = 'processing'
+        """, (now,))
+        stats["pages_recovered"] = cursor.rowcount
+        
+        # 2. 檢索掛在 processing 或 rendering 的 tasks
+        cursor = await db.execute("""
+            SELECT id, total_pages, processed_pages, status, bg_render_status
+            FROM tasks
+            WHERE status IN ('processing', 'rendering')
+        """)
+        stale_tasks = await cursor.fetchall()
+        
+        for task in stale_tasks:
+            t_id = task["id"]
+            # 統計該任務實際頁面完成情況
+            page_cur = await db.execute("""
+                SELECT 
+                    COUNT(*) as total_count,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count
+                FROM task_pages
+                WHERE task_id = ?
+            """, (t_id,))
+            page_stat = await page_cur.fetchone()
+            total_count = page_stat["total_count"] if page_stat else 0
+            completed_count = page_stat["completed_count"] if page_stat else 0
+            
+            # 若所有頁面實際上已全數完成
+            if total_count > 0 and completed_count >= total_count:
+                await db.execute("""
+                    UPDATE tasks 
+                    SET status = 'completed', processed_pages = total_pages, updated_at = ?
+                    WHERE id = ?
+                """, (now, t_id))
+                stats["tasks_completed"] += 1
+            else:
+                new_bg = 'paused' if task["bg_render_status"] == 'rendering' else task["bg_render_status"]
+                await db.execute("""
+                    UPDATE tasks 
+                    SET status = 'paused', bg_render_status = ?, updated_at = ?
+                    WHERE id = ?
+                """, (new_bg, now, t_id))
+                stats["tasks_paused"] += 1
+                
+        await db.commit()
+        
+    return stats
 
 def compute_file_sha256(filepath: Any) -> str:
     """計算檔案的 SHA-256 哈希值"""

@@ -194,6 +194,14 @@ async def lifespan(app: FastAPI):
     # 初始化資料庫
     await database.init_db()
 
+    # 伺服器啟動時自動修復中斷與未完成任務 (Stale Task Recovery)
+    try:
+        recovery_stats = await database.recover_stale_tasks_on_startup()
+        if any(recovery_stats.values()):
+            print(f"🔄 [Stale Task Recovery] 伺服器啟動修復：暫停了 {recovery_stats['tasks_paused']} 個中斷任務、完成 {recovery_stats['tasks_completed']} 個已辨識任務、恢復 {recovery_stats['pages_recovered']} 個進行中頁面為可續傳狀態")
+    except Exception as e:
+        print(f"⚠️ [Stale Task Recovery] 任務修復執行例外: {e}")
+
     # 清理上次異常中斷（例如當機）留下的半截上傳暫存檔，避免持續佔用磁碟。
     # 磁碟只剩個位數 GB 時，這些孤兒檔會讓後續上傳直接被拒。
     try:
@@ -515,6 +523,26 @@ async def run_page_ocr(
                 account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=target_account_id)
                 
             if not account:
+                # 智慧降級備援：若指定付費通道但無可用金鑰（冷卻或已耗盡），自動降級至免費池預設模型
+                if target_account_id is not None or is_paid_call:
+                    fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
+                    prev_label = clean_model + (" 💎" if is_paid_call else "")
+                    print(f"⚠️ [Page OCR Fallback] 任務 {task_id} 第 {page_num} 頁：{prev_label} 無可用金鑰或冷卻超時，智慧降級至免費 API ({fallback_model}) 接續執行")
+                    await database.update_page_status(
+                        task_id, page_num, "processing",
+                        error_message=f"[智慧降級備援] 付費 API 配額耗盡/冷卻中，已自動切換至免費 API ({fallback_model}) 接續轉譯..."
+                    )
+                    target_account_id = None
+                    is_paid_call = False
+                    clean_model = fallback_model
+                    used_model_display = f"{clean_model} [降級備援]"
+                    
+                    # 重新向免費金鑰池索取可用帳號
+                    account = await scheduler.get_next_available_account(specific_account_id=None)
+                    if not account:
+                        account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=None)
+
+            if not account:
                 await database.update_page_result(
                     task_id, page_num, "failed",
                     error_message="無可用的 Google 帳號或 API Key。請至「帳號管理」新增或檢查帳號狀態。"
@@ -557,8 +585,35 @@ async def run_page_ocr(
                     return
                 continue
             elif status_code == 429:
-                # 觸發 429 限額，登記該帳號冷卻，並以其他帳號重試本頁
+                # 觸發 429 限額，登記該帳號冷卻
                 await scheduler.report_rate_limited(account["id"])
+                
+                # 智慧降級備援：若為付費 API 帳號或指定付費通道觸發 429，或高級模型（非預設模型）重試多次遭遇 429
+                fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
+                should_fallback = False
+                fallback_reason = ""
+                
+                if is_paid_call or target_account_id is not None:
+                    should_fallback = True
+                    fallback_reason = f"付費 API ({account['name']}) 配額耗盡 (429)"
+                elif clean_model != fallback_model and retries >= 1:
+                    should_fallback = True
+                    fallback_reason = f"高級模型 ({clean_model}) 頻繁觸發 429 限額"
+                    
+                if should_fallback:
+                    print(f"⚠️ [Page OCR Fallback] 任務 {task_id} 第 {page_num} 頁：{fallback_reason}，智慧降級至免費 API ({fallback_model})")
+                    await database.update_page_status(
+                        task_id, page_num, "processing",
+                        error_message=f"[智慧降級備援] {fallback_reason}，已轉為免費 API ({fallback_model}) 續跑..."
+                    )
+                    target_account_id = None
+                    is_paid_call = False
+                    clean_model = fallback_model
+                    used_model_display = f"{clean_model} [降級備援]"
+                    retries += 1
+                    await asyncio.sleep(1.0)
+                    continue
+
                 retries += 1
                 await asyncio.sleep(2.0)
             else:
@@ -1050,13 +1105,14 @@ async def delete_account(account_id: int):
     return {"status": "ok"}
 
 @app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_admin)])
-async def test_account(account_id: int):
+async def test_account(account_id: int, model: Optional[str] = None):
     account = await database.get_account_by_id(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
         
-    # 測試發送一個極小的測試請求
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    # 使用系統預設模型 (定義於 config.py 的 DEFAULT_MODEL) 進行驗證
+    target_model = (model or config.DEFAULT_MODEL).replace("[PAID]", "").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
     headers = {"Content-Type": "application/json"}
     params = {}
     
@@ -1074,13 +1130,25 @@ async def test_account(account_id: int):
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, headers=headers, params=params, json=payload)
             if resp.status_code == 200:
-                return {"status": "success", "message": "連線成功！金鑰驗證通過。"}
+                return {
+                    "status": "success", 
+                    "model": target_model,
+                    "message": f"連線成功！金鑰驗證通過（測試模型: {target_model}）。"
+                }
             elif resp.status_code == 429:
-                return {"status": "warning", "message": "此金鑰目前達到 Google 配額限制 (429)。"}
+                return {
+                    "status": "warning", 
+                    "model": target_model,
+                    "message": f"此金鑰目前達到 Google 配額限制 (429 - {target_model})。"
+                }
             else:
-                return {"status": "error", "message": f"驗證失敗 ({resp.status_code}): {resp.text}"}
+                return {
+                    "status": "error", 
+                    "model": target_model,
+                    "message": f"驗證失敗 ({resp.status_code} - {target_model}): {resp.text}"
+                }
     except Exception as e:
-        return {"status": "error", "message": f"連線異常: {str(e)}"}
+        return {"status": "error", "model": target_model, "message": f"連線異常: {str(e)}"}
 
 # --- Web RPA Automation API ---
 

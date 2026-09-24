@@ -1,0 +1,222 @@
+        <!-- Task In-Progress Banner / Detailed Live Dashboard -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm" x-show="currentTask">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                        <span class="text-xs font-bold px-2.5 py-0.5 rounded-full uppercase"
+                            :class="{
+                                'bg-blue-100 text-blue-800': currentTask?.status === 'processing',
+                                'bg-amber-100 text-amber-800': currentTask?.status === 'rendering',
+                                'bg-purple-100 text-purple-800': currentTask?.status === 'paused',
+                                'bg-emerald-100 text-emerald-800': currentTask?.status === 'completed',
+                                'bg-red-100 text-red-800': currentTask?.status === 'failed'
+                            }"
+                            x-text="currentTask?.status === 'paused' ? '已暫停' : (currentTask?.status === 'completed' ? '已完成' : (currentTask?.status === 'processing' ? '轉譯中' : (currentTask?.status === 'rendering' ? '切圖中' : (currentTask?.status === 'failed' ? '失敗' : currentTask?.status))))"
+                        ></span>
+                        <h3 class="text-base font-bold text-slate-800" x-text="currentTask?.filename"></h3>
+                        <template x-if="currentTask?.is_paid">
+                            <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0">💎 付費極速模式</span>
+                        </template>
+                        <template x-if="currentTask?.bg_render_status === 'rendering'">
+                            <span class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 animate-pulse flex items-center space-x-1 shrink-0">
+                                <span>🎨 背景自動渲染其餘頁面中...</span>
+                            </span>
+                        </template>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                        <span>本次轉譯範圍：<strong class="text-slate-800" x-text="`第 ${currentTask?.start_page || 1} 頁 ~ 第 ${currentTask?.end_page && currentTask?.end_page > 0 ? currentTask?.end_page : (currentTask?.pdf_total_pages || currentTask?.total_pages || 1)} 頁`"></strong></span>
+                        <span class="text-slate-400">·</span>
+                        <span>原書全本：<strong class="text-slate-700" x-text="`${currentTask?.pdf_total_pages || currentTask?.total_pages || 0} 頁`"></strong></span>
+                        <span class="text-slate-400">·</span>
+                        <template x-if="currentTask?.status === 'paused'">
+                            <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-lg border border-amber-300/90 bg-amber-50/60 shadow-xs">
+                                <span class="text-amber-600 font-bold text-xs">⚡ 更換模型續傳:</span>
+                                <div class="relative inline-flex items-center">
+                                    <select 
+                                        x-model="currentTask.model" 
+                                        @change="changeTaskModel(currentTask)"
+                                        class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[200px] truncate"
+                                    >
+                                        <template x-for="m in modelsList" :key="m.id || m">
+                                            <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === currentTask.model"></option>
+                                        </template>
+                                    </select>
+                                    <svg class="w-3 h-3 text-amber-600 absolute right-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </div>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status !== 'paused'">
+                            <span class="text-slate-500 font-mono text-xs" x-text="`使用模型: ${currentTask?.model || ''}`"></span>
+                        </template>
+                    </p>
+                </div>
+
+                <!-- Export & Control Action Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <template x-if="['processing', 'rendering', 'pending'].includes(currentTask?.status)">
+                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-amber-300 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 text-xs font-medium text-amber-800 transition flex items-center space-x-1.5 shadow-sm">
+                            <span>⏸ 暫停轉譯</span>
+                        </button>
+                    </template>
+                    <template x-if="['paused', 'failed'].includes(currentTask?.status)">
+                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-800 transition flex items-center space-x-1.5 shadow-sm">
+                            <span>▶ 繼續轉譯</span>
+                        </button>
+                    </template>
+                    <button @click="downloadExport('md')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-code" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>下載 Markdown (.md)</span>
+                    </button>
+                    <button @click="downloadExport('docx')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-type-2" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>下載 Word (.docx)</span>
+                    </button>
+                    <button @click="downloadExport('txt')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>純文字 (.txt)</span>
+                    </button>
+                    <button @click="downloadExport('zip')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm">
+                        <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+                        <span>打包 ZIP (含原圖)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Detailed Telemetry Stat Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-100">
+                <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+                    <div class="text-[11px] text-slate-400 font-medium">
+                        <span x-text="currentTask?.status === 'rendering' ? '圖片預處理進度' : '本次指定頁數'"></span>
+                    </div>
+                    <div class="text-sm font-bold text-slate-800 flex items-baseline space-x-1 mt-0.5">
+                        <span x-text="currentTask?.status === 'rendering' ? `${currentTask?.rendered_pages || 0} / ${currentTask?.total_pages || 0} 頁` : `${currentTask?.processed_pages || 0} / ${currentTask?.total_pages || 0} 頁`"></span>
+                        <span class="text-xs font-semibold" :class="currentTask?.status === 'rendering' ? 'text-amber-600' : 'text-blue-600'" x-text="`(${progressPercent}%)`"></span>
+                    </div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+                    <div class="text-[11px] text-slate-400 font-medium">預估剩餘時間 (ETA)</div>
+                    <div class="text-sm font-bold text-slate-800 mt-0.5">
+                        <span x-text="currentTask?.status === 'completed' ? '已完成' : (currentTask?.status === 'rendering' ? '切圖處理中...' : formatEta(liveEtaSeconds))"></span>
+                    </div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+                    <div class="text-[11px] text-slate-400 font-medium">平均轉譯速度</div>
+                    <div class="text-sm font-bold text-slate-800 mt-0.5">
+                        <span x-text="currentTask?.status === 'rendering' ? '300 DPI 解析中' : (liveAvgSpeed > 0 ? `${liveAvgSpeed} 秒 / 頁` : '計算中...')"></span>
+                    </div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+                    <div class="text-[11px] text-slate-400 font-medium">當前即時進展</div>
+                    <div class="text-xs font-bold text-slate-800 truncate mt-1 flex items-center space-x-1.5" :title="liveActiveMsg">
+                        <template x-if="currentTask?.status === 'processing'">
+                            <span class="flex items-center space-x-1 text-blue-600">
+                                <span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+                                <span x-text="liveActivePage ? `第 ${liveActivePage} 頁處理中` : '轉譯中...'"></span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'rendering'">
+                            <span class="flex items-center space-x-1 text-amber-600 truncate">
+                                <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0"></span>
+                                <span class="truncate" x-text="liveActiveMsg || '300 DPI 切圖中...'"></span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'completed'">
+                            <span class="text-emerald-600">✅ 指定頁面轉譯完成</span>
+                        </template>
+                        <template x-if="currentTask?.status === 'paused'">
+                            <span class="text-purple-600">⏸ 已暫停</span>
+                        </template>
+                        <template x-if="currentTask?.status === 'failed'">
+                            <span class="text-red-600">❌ 轉譯遇到錯誤</span>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Enhanced Gradient Progress Bar -->
+            <div class="mt-3">
+                <div class="flex items-center justify-between text-xs mb-1 font-semibold">
+                    <span class="flex items-center space-x-1.5" :class="currentTask?.status === 'rendering' ? 'text-amber-700' : 'text-slate-600'">
+                        <template x-if="currentTask?.status === 'rendering'">
+                            <span class="flex items-center space-x-1">
+                                <i data-lucide="image" class="w-3.5 h-3.5 animate-pulse text-amber-600 shrink-0"></i>
+                                <span>[階段 1/2] 300 DPI 圖片預處理切圖進度 (原書高清解析)</span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'processing'">
+                            <span class="flex items-center space-x-1">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
+                                <span>[階段 2/2] Gemini AI OCR 辨識進度 (僅顯示您選取的指定頁面)</span>
+                            </span>
+                        </template>
+                        <template x-if="currentTask?.status === 'completed'">
+                            <span class="text-emerald-700 flex items-center space-x-1">
+                                <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i>
+                                <span>圖片預處理與 AI 轉譯已全數完成</span>
+                            </span>
+                        </template>
+                        <template x-if="!['rendering', 'processing', 'completed'].includes(currentTask?.status)">
+                            <span>本次轉譯頁面進度條 (僅顯示您選取的指定頁面)</span>
+                        </template>
+                        <template x-if="liveActiveMsg && liveActiveMsg.includes('503')">
+                            <span class="text-amber-600 font-bold animate-pulse text-[11px]" x-text="liveActiveMsg"></span>
+                        </template>
+                    </span>
+                    <span class="font-mono font-bold" :class="currentTask?.status === 'rendering' ? 'text-amber-600' : 'text-blue-600'" x-text="`${progressPercent}%`"></span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200">
+                    <div class="h-full rounded-full transition-all duration-300 shadow-xs"
+                        :class="{
+                            'bg-emerald-500': currentTask?.status === 'completed',
+                            'bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600': currentTask?.status === 'processing',
+                            'bg-gradient-to-r from-amber-400 to-amber-500 animate-pulse': currentTask?.status === 'rendering',
+                            'bg-purple-500': currentTask?.status === 'paused',
+                            'bg-red-500': currentTask?.status === 'failed',
+                            'bg-slate-300': currentTask?.status === 'pending'
+                        }"
+                        :style="`width: ${progressPercent}%`"></div>
+                </div>
+            </div>
+
+            <!-- Per-Page Status Capsules Matrix -->
+            <div class="mt-3 pt-2.5 border-t border-slate-100" x-show="pages.length > 0">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-semibold text-slate-500">頁面執行狀態燈號（點選可直接預覽校對）：</span>
+                    <div class="flex items-center space-x-3 text-[11px] text-slate-400">
+                        <template x-if="currentTask?.status === 'rendering'">
+                            <span class="flex items-center space-x-1 text-amber-600 font-semibold"><span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span>300 DPI 切圖中</span></span>
+                        </template>
+                        <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>完成</span></span>
+                        <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span><span>轉譯中</span></span>
+                        <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span>重試/忙碌</span></span>
+                        <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-slate-300"></span><span>等待</span></span>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto custom-scroll pr-1">
+                    <template x-for="p in pages" :key="p.page_num">
+                        <button 
+                            type="button"
+                            @click="selectPage(p.page_num)"
+                            class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition border flex items-center space-x-1 cursor-pointer"
+                            :class="{
+                                'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300': selectedPageNum === p.page_num,
+                                'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100': selectedPageNum !== p.page_num && p.status === 'completed',
+                                'bg-blue-50 text-blue-700 border-blue-300 animate-pulse': selectedPageNum !== p.page_num && p.status === 'processing',
+                                'bg-amber-50 text-amber-800 border-amber-300': selectedPageNum !== p.page_num && p.status === 'processing' && p.error_message && p.error_message.includes('503'),
+                                'bg-red-50 text-red-700 border-red-300': selectedPageNum !== p.page_num && p.status === 'failed',
+                                'bg-purple-50 text-purple-700 border-purple-300': selectedPageNum !== p.page_num && p.status === 'paused',
+                                'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100': selectedPageNum !== p.page_num && (p.status === 'pending' || p.status === 'rendered')
+                            }"
+                            :title="p.error_message ? `第 ${p.page_num} 頁: ${p.error_message}` : `第 ${p.page_num} 頁 (${p.status})`"
+                        >
+                            <span x-text="`P.${p.page_num}`"></span>
+                            <span x-show="currentTask?.status === 'rendering' && p.page_num <= (currentTask?.rendered_pages || 0)" class="text-[9px] text-amber-600 font-bold" title="已完成 300 DPI 切圖">🖼️</span>
+                            <span x-show="p.status === 'completed'">✓</span>
+                            <span x-show="p.status === 'processing'" class="text-[9px]">⚡</span>
+                            <span x-show="p.status === 'failed'">✗</span>
+                            <span class="text-[9px] opacity-75 font-normal" x-show="p.duration > 0" x-text="`${p.duration}s`"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>

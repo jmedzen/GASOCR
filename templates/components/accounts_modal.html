@@ -1,0 +1,438 @@
+    <!-- Modal: Accounts Management -->
+    <div x-show="showAccountsModal" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-3xl w-full border border-slate-200 shadow-2xl p-6" @click.outside="showAccountsModal = false">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="key-round" class="w-5 h-5 text-blue-600"></i>
+                    <h3 class="text-base font-bold text-slate-800">Google 帳號與 API Key 管理池</h3>
+                </div>
+                <button @click="showAccountsModal = false" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Dedicated Paid API Keys Section -->
+            <div class="my-4 bg-gradient-to-r from-amber-50/80 via-orange-50/50 to-amber-50/80 rounded-xl border border-amber-200 p-4 shadow-2xs">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm">💎</span>
+                        <div>
+                            <h3 class="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                <span>付費 API 金鑰專區 (Paid API Keys)</span>
+                                <span class="text-[10px] font-semibold px-2 py-0.5 bg-amber-200/80 text-amber-900 rounded-full border border-amber-300">專屬付費通道·1000 RPM 極速</span>
+                            </h3>
+                            <p class="text-[11px] text-amber-800/80">批次 OCR 勾選「使用付費 API」時專屬調用此處金鑰，享有每頁 0.2 秒極速防抖，絕不與免費池共用</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-bold" x-text="`${paidAccounts.length} 組金鑰`"></span>
+                </div>
+
+                <div class="border border-amber-200 rounded-lg overflow-hidden bg-white shadow-2xs">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-amber-100/60 border-b border-amber-200 font-semibold text-amber-900">
+                            <tr>
+                                <th class="p-2.5">帳號備註</th>
+                                <th class="p-2.5">通道類型</th>
+                                <th class="p-2.5">金鑰識別</th>
+                                <th class="p-2.5">今日請求</th>
+                                <th class="p-2.5">狀態</th>
+                                <th class="p-2.5 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-amber-100">
+                            <template x-for="acc in paidAccounts" :key="acc.id">
+                                <tr class="hover:bg-amber-50/40 transition">
+                                    <td class="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                                        <span class="text-amber-600 font-bold">💎</span>
+                                        <span x-text="acc.name"></span>
+                                    </td>
+                                    <td class="p-2.5">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">付費通道 (1000 RPM)</span>
+                                    </td>
+                                    <td class="p-2.5 font-mono text-slate-600" x-text="acc.masked_key || 'API Key'"></td>
+                                    <td class="p-2.5 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
+                                    <td class="p-2.5">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                            :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                                            x-text="acc.is_active ? '啟用中' : '已停用'"></span>
+                                    </td>
+                                    <td class="p-2.5 text-right space-x-1">
+                                        <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px] cursor-pointer" title="使用系統預設模型測試金鑰連線">測試</button>
+                                        <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px] cursor-pointer" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
+                                        <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px] cursor-pointer">刪除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="paidAccounts.length === 0">
+                                <tr>
+                                    <td colspan="6" class="p-4 text-center text-amber-700/70 bg-amber-50/20">
+                                        目前尚無付費金鑰。若需極速大量處理，請於下方新增 API Key 時勾選「設為付費金鑰」。
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Free Accounts Section -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 bg-emerald-100 text-emerald-800 rounded text-xs font-bold">🌿</span>
+                        <h3 class="text-xs font-bold text-slate-700">免費 API 金鑰池 (Free API Keys)</h3>
+                    </div>
+                    <span class="text-xs text-slate-500 font-medium" x-text="`${freeAccounts.length} 組金鑰`"></span>
+                </div>
+
+                <!-- Zero-cost Info Box -->
+                <div class="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-start space-x-2.5">
+                    <i data-lucide="info" class="w-4 h-4 text-blue-600 shrink-0 mt-0.5"></i>
+                    <div class="leading-relaxed">
+                        <strong>如何達成 0 元費用？</strong> 請直接使用多個 Google 帳號分別登入 
+                        <a href="https://aistudio.google.com/" target="_blank" class="underline font-semibold hover:text-blue-900">Google AI Studio</a> 
+                        建立免費 API Key。在此處新增多組金鑰後，系統會自動分配請求，避開單一帳號 15 RPM 限制，且絕不觸發付費扣款。
+                    </div>
+                </div>
+
+                <!-- Current Free Accounts Table -->
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                            <tr>
+                                <th class="p-3">帳號備註</th>
+                                <th class="p-3">類型</th>
+                                <th class="p-3">金鑰識別</th>
+                                <th class="p-3">今日請求</th>
+                                <th class="p-3">狀態</th>
+                                <th class="p-3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="acc in freeAccounts" :key="acc.id">
+                                <tr class="hover:bg-slate-50/60 transition">
+                                    <td class="p-3 font-medium text-slate-800" x-text="acc.name"></td>
+                                    <td class="p-3 uppercase text-slate-500" x-text="acc.auth_type"></td>
+                                    <td class="p-3 font-mono text-slate-600" x-text="acc.masked_key || 'OAuth Token'"></td>
+                                    <td class="p-3 font-semibold text-slate-700" x-text="acc.requests_today || 0"></td>
+                                    <td class="p-3">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                            :class="acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                                            x-text="acc.is_active ? '啟用中' : '已停用'"></span>
+                                    </td>
+                                    <td class="p-3 text-right space-x-1.5">
+                                        <button @click="testAccount(acc.id)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 text-[11px] cursor-pointer" title="使用系統預設模型測試金鑰連線">測試</button>
+                                        <button @click="toggleAccount(acc.id)" class="px-2 py-1 rounded text-[11px] cursor-pointer" :class="acc.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" x-text="acc.is_active ? '暫停' : '啟用'"></button>
+                                        <button @click="deleteAccount(acc.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[11px] cursor-pointer">刪除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="freeAccounts.length === 0">
+                                <tr>
+                                    <td colspan="6" class="p-6 text-center text-slate-400">目前尚無任何免費金鑰，請於下方新增</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tabs: Add API Key, OAuth, or Web RPA -->
+            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div class="flex items-center space-x-3 mb-3 border-b border-slate-200 pb-2">
+                    <button @click="authTab = 'api_key'" class="text-xs font-bold pb-1 cursor-pointer" :class="authTab === 'api_key' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'">+ 新增 API Key</button>
+                    <button @click="authTab = 'oauth'" class="text-xs font-bold pb-1 cursor-pointer" :class="authTab === 'oauth' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'">+ 新增 Google OAuth 帳號</button>
+                    <button @click="authTab = 'web_rpa'; checkWebRpaStatus();" class="text-xs font-bold pb-1 flex items-center space-x-1.5 cursor-pointer ml-auto" :class="authTab === 'web_rpa' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-slate-500 hover:text-purple-600'">
+                        <span>🌐 網頁自動化 (Web RPA)</span>
+                        <span class="w-2 h-2 rounded-full" :class="webRpaStatus.logged_in ? 'bg-emerald-500' : 'bg-amber-400'"></span>
+                    </button>
+                </div>
+
+                <!-- Form: Add API Key -->
+                <form x-show="authTab === 'api_key'" @submit.prevent="submitApiKeyAccount()" class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">帳號備註名稱</label>
+                            <input type="text" x-model="newKey.name" required placeholder="例：付費帳號 1 / 免費帳號 1" class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Google API Key</label>
+                            <input type="password" x-model="newKey.api_key" required placeholder="AIzaSy..." class="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+                        </div>
+                    </div>
+
+                    <!-- Paid Key Checkbox Option -->
+                    <div class="flex items-center space-x-2 pt-1 p-2 bg-amber-50/60 rounded-lg border border-amber-200">
+                        <input type="checkbox" id="modal_new_key_is_paid" x-model="newKey.is_paid" class="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer">
+                        <label for="modal_new_key_is_paid" class="text-xs font-bold text-amber-900 cursor-pointer flex items-center gap-1.5 select-none">
+                            <span>💎 設為付費金鑰 (Paid API Key)</span>
+                            <span class="text-[10px] text-amber-700 font-normal">（獨立專屬通道，享有 1000 RPM 極速，不與免費池共用）</span>
+                        </label>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="submit" 
+                            class="px-4 py-1.5 rounded-lg text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+                            :class="newKey.is_paid ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'"
+                            x-text="newKey.is_paid ? '💎 確認新增付費金鑰' : '確認新增免費金鑰'"></button>
+                    </div>
+                </form>
+
+                <!-- Form: Add OAuth Account -->
+                <form x-show="authTab === 'oauth'" @submit.prevent="submitOAuthAccount()" class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">帳號名稱</label>
+                            <input type="text" x-model="newOAuth.name" required placeholder="Google OAuth 帳號" class="w-full text-xs rounded-lg border border-slate-300 p-2">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Client ID</label>
+                            <input type="text" x-model="newOAuth.client_id" required placeholder="...apps.googleusercontent.com" class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Client Secret</label>
+                            <input type="password" x-model="newOAuth.client_secret" required placeholder="GOCSPX-..." class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Refresh Token</label>
+                        <input type="text" x-model="newOAuth.refresh_token" required placeholder="1//0..." class="w-full text-xs rounded-lg border border-slate-300 p-2 font-mono">
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer">儲存 OAuth 憑證</button>
+                    </div>
+                </form>
+
+                <!-- Panel: Web RPA Settings -->
+                <div x-show="authTab === 'web_rpa'" class="space-y-3">
+
+                    <!-- Login Status Card -->
+                    <div class="rounded-xl border p-3.5"
+                        :class="webRpaReady 
+                            ? 'border-emerald-200 bg-emerald-50/60' 
+                            : 'border-amber-200 bg-amber-50/60'">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-start space-x-2.5 min-w-0">
+                                <div class="p-1.5 rounded-lg shrink-0 mt-0.5"
+                                    :class="webRpaReady ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
+                                    <i :data-lucide="webRpaReady ? 'shield-check' : 'shield-alert'" class="w-4 h-4"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="text-xs font-bold text-slate-800">登入狀態</span>
+                                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1"
+                                            :class="webRpaReady 
+                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                                : 'bg-amber-100 text-amber-800 border border-amber-300'">
+                                            <span class="w-1.5 h-1.5 rounded-full"
+                                                :class="webRpaReady ? 'bg-emerald-500' : 'bg-amber-500'"></span>
+                                            <span x-text="webRpaHeadline"></span>
+                                        </span>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border border-slate-300 bg-white text-slate-600"
+                                            x-text="isCdpMode ? 'CDP 模式' : '舊版 launch 模式'"></span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-600 mt-1 leading-relaxed break-words"
+                                        x-text="webRpaStatusMessage"></p>
+                                </div>
+                            </div>
+                            <!-- Refresh status button -->
+                            <button type="button" @click="checkWebRpaStatus()" :disabled="webRpaStatus.loading"
+                                class="shrink-0 px-2 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 bg-white text-slate-600 text-xs transition flex items-center gap-1 cursor-pointer"
+                                title="刷新登入快取狀態">
+                                <i data-lucide="refresh-cw" class="w-3 h-3" :class="{'animate-spin': webRpaStatus.loading}"></i>
+                                <span class="hidden sm:inline">刷新</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── CDP 模式：接入使用者自己開的 Chrome（建議）── -->
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'cdp'"
+                        class="rounded-xl border border-sky-200 bg-sky-50/40 p-3.5 space-y-3">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="plug" class="w-3.5 h-3.5 text-sky-600"></i>
+                                <span class="text-xs font-bold text-sky-800">接入您自己的 Chrome（建議）</span>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                :class="cdpStatus.available ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-300'"
+                                x-text="cdpStatus.available ? '● 已偵測到 Chrome' : '○ 未偵測到 Chrome'"></span>
+                        </div>
+
+                        <p class="text-[11px] text-sky-900/80 leading-relaxed">
+                            由<b>您自己</b>開啟一個帶除錯埠的 Chrome 並手動登入，GASOCR 再接入這個「真實」session。
+                            這能避開 AI Studio 的自動化偵測（<code class="font-mono text-[10px]">permission denied</code>），
+                            因為反機器人通行證綁在瀏覽器指紋與 IP 上，<b>不是只綁 cookie</b>。
+                        </p>
+                        <p class="text-[11px] text-sky-900/80 leading-relaxed">
+                            ⚠️ 執行期間請<b>保持該 Chrome 視窗開著</b>，且不要在同一視窗手動操作分頁。
+                            關閉 GASOCR 不會關閉您的 Chrome。
+                        </p>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" @click="checkCdpStatus()" :disabled="cdpStatus.checking"
+                                class="px-3 py-1.5 rounded-lg border border-sky-300 bg-white hover:bg-sky-50 text-sky-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                <i data-lucide="search" class="w-3.5 h-3.5" :class="{'animate-spin': cdpStatus.checking}"></i>
+                                <span x-text="cdpStatus.checking ? '檢查中...' : '① 檢查 CDP 連線'"></span>
+                            </button>
+                            <button type="button" @click="connectCdp()" :disabled="cdpStatus.connecting || !cdpStatus.available"
+                                class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                                <i data-lucide="plug-zap" class="w-3.5 h-3.5" :class="{'animate-pulse': cdpStatus.connecting}"></i>
+                                <span x-text="cdpStatus.connecting ? '接入中...' : '② 接入並驗證登入'"></span>
+                            </button>
+                            <button type="button" @click="copyChromeCommand()"
+                                class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                <span>複製啟動指令</span>
+                            </button>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[11px] font-semibold text-slate-600">
+                                    步驟 1：在終端機執行（或直接跑 <code class="font-mono">./start_chrome_cdp.sh</code>）
+                                </span>
+                            </div>
+                            <div class="rounded-lg bg-slate-900 p-2.5 overflow-x-auto">
+                                <pre class="text-[10.5px] leading-relaxed font-mono whitespace-pre text-slate-100"
+                                    x-text="cdpStatus.command || '（載入中…）'"></pre>
+                            </div>
+                        </div>
+
+                        <p class="text-[11px] leading-relaxed rounded-lg px-2.5 py-2 border"
+                            :class="cdpStatus.logged_in
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                : 'bg-white border-slate-200 text-slate-600'"
+                            x-text="cdpStatus.message || '尚未檢查 CDP 連線。'"></p>
+                    </div>
+
+                    <!-- ── 舊版模式：Playwright 自行啟動 + cookie 重放（已知會被 AI Studio 拒絕）── -->
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                        class="rounded-xl border border-amber-300 bg-amber-50/60 px-3 py-2.5">
+                        <p class="text-[11px] text-amber-900 leading-relaxed">
+                            ⚠️ <b>舊版模式</b>：由 Playwright 啟動無頭瀏覽器並重放 cookie。
+                            經審計確認這會被 AI Studio 判定為「被盜的 session」而回
+                            <code class="font-mono text-[10px]">permission denied</code>，僅保留作對照測試。
+                            建議改用上方的「接入您自己的 Chrome」。
+                        </p>
+                    </div>
+
+                    <!-- Login Flow Steps -->
+                    <div x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                        class="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i data-lucide="key-round" class="w-3.5 h-3.5 text-purple-600"></i>
+                            <span class="text-xs font-bold text-purple-800">一次性登入設定流程</span>
+                        </div>
+
+                        <!-- Step 1 -->
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-purple-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-semibold text-slate-700 mb-1">開啟登入視窗，在瀏覽器中登入 Google 帳號</p>
+                                <p class="text-[11px] text-slate-500 leading-relaxed mb-2">
+                                    系統會用 Playwright 開啟一個可見的 Chrome 視窗（獨立 Profile），請在視窗中完成 Google 帳號登入。
+                                </p>
+                                <button type="button" @click="launchWebLogin()" :disabled="webRpaStatus.launching"
+                                    class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                    <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+                                    <span x-text="webRpaStatus.launching ? '正在開啟...' : '① 開啟登入視窗'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="flex justify-center text-purple-300">
+                            <i data-lucide="arrow-down" class="w-4 h-4"></i>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex items-start gap-3">
+                            <div class="w-6 h-6 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-semibold text-slate-700 mb-1">登入完成後，儲存登入狀態</p>
+                                <p class="text-[11px] text-slate-500 leading-relaxed mb-2">
+                                    在瀏覽器中確認已登入 Google AI Studio 後，點此按鈕提取並儲存 Session Cookies，視窗自動關閉。
+                                </p>
+                                <button type="button" @click="saveWebRpaState()" :disabled="webRpaStatus.saving"
+                                    class="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                    <i data-lucide="save" class="w-3.5 h-3.5" :class="{'animate-spin': webRpaStatus.saving}"></i>
+                                    <span x-text="webRpaStatus.saving ? '儲存中...' : '② 儲存登入狀態'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Verify button -->
+                        <div class="pt-1.5 border-t border-purple-100 flex items-center gap-2">
+                            <button type="button" @click="verifyWebRpa()" :disabled="webRpaStatus.verifying"
+                                class="px-3 py-1.5 rounded-lg border border-teal-300 bg-white hover:bg-teal-50 text-teal-700 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+                                <i data-lucide="shield-check" class="w-3.5 h-3.5" :class="{'animate-spin': webRpaStatus.verifying}"></i>
+                                <span x-text="webRpaStatus.verifying ? '驗證中 (headless)...' : '🔍 驗證 Session 有效性'"></span>
+                            </button>
+                            <span class="text-[11px] text-slate-400">用 headless 瀏覽器實際進入 AI Studio 確認</span>
+                        </div>
+                    </div>
+
+                    <!-- Config Form -->
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div class="flex items-center space-x-2 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
+                            <input type="checkbox" id="web_rpa_enabled" x-model="webRpaConfig.enabled"
+                                @change="saveWebRpaConfig()" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
+                            <label for="web_rpa_enabled" class="text-xs font-semibold text-slate-700 cursor-pointer">啟用 [Web] 模型選單</label>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">目標網頁服務</label>
+                            <select x-model="webRpaConfig.target_service" @change="saveWebRpaConfig()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer">
+                                <option value="gemini">Gemini 官方網頁 (免 GCP 專案·最穩定推薦)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">瀏覽器模式</label>
+                            <select x-model="webRpaConfig.browser_mode" @change="saveWebRpaConfig(); checkCdpStatus()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer">
+                                <option value="cdp">接入您自己的 Chrome（建議）</option>
+                                <option value="launch">Playwright 自行啟動（舊版，會被拒）</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-600 mb-1">單頁超時 (秒)</label>
+                            <input type="number" min="20" max="180" x-model="webRpaConfig.timeout_seconds"
+                                @change="saveWebRpaConfig()"
+                                class="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Bottom: headless toggle + test -->
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-200">
+                        <label x-show="(webRpaConfig.browser_mode || 'cdp') === 'launch'"
+                            class="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer">
+                            <input type="checkbox" x-model="webRpaConfig.headless" @change="saveWebRpaConfig()"
+                                class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer">
+                            <span>背景靜默執行 (Headless 無頭模式)</span>
+                        </label>
+                        <span x-show="(webRpaConfig.browser_mode || 'cdp') === 'cdp'"
+                            class="text-[11px] text-slate-400">
+                            CDP 模式使用您自己開的 Chrome，無需設定無頭模式
+                        </span>
+                        <button type="button" @click="testWebRpa()" :disabled="isTestingWebRpa"
+                            class="px-3 py-1.5 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold transition flex items-center gap-1 cursor-pointer disabled:opacity-60">
+                            <i data-lucide="flask-conical" class="w-3 h-3"></i>
+                            <span x-text="isTestingWebRpa ? '測試中 (最長90秒)...' : '🧪 測試 OCR 運作'"></span>
+                        </button>
+                    </div>
+
+                    <!-- Supported Models -->
+                    <div>
+                        <span class="text-[11px] font-semibold text-slate-500 block mb-1.5">已注入模型選單之 [Web] 模型：</span>
+                        <div class="flex flex-wrap gap-1.5">
+                            <template x-for="m in (webRpaConfig.supported_models || [])" :key="m">
+                                <span class="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-purple-100/80 text-purple-900 border border-purple-300">
+                                    🌐 [Web] <span x-text="m"></span>
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

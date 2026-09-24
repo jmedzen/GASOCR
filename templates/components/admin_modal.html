@@ -1,0 +1,288 @@
+    <!-- Modal: Admin Login -->
+    <div 
+        x-show="showAdminLoginModal" 
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="admin-modal-card rounded-2xl max-w-sm w-full border shadow-2xl p-6" @click.outside="showAdminLoginModal = false">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-200/50 mb-4">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-600 flex items-center justify-center">
+                        <i data-lucide="shield-check" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-800">管理員登入</h3>
+                </div>
+                <button @click="showAdminLoginModal = false" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="submitAdminLogin()" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">管理員密碼</label>
+                    <input 
+                        type="password" 
+                        x-model="adminLogin.password" 
+                        placeholder="請輸入管理員密碼"
+                        class="w-full text-sm rounded-xl border px-3 py-2 focus:outline-none admin-input"
+                        autofocus
+                        required
+                    >
+                </div>
+
+                <div x-show="adminLogin.error" class="p-2.5 rounded-lg border text-xs flex items-center gap-1.5 admin-alert-error">
+                    <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span x-text="adminLogin.error"></span>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button 
+                        type="button" 
+                        @click="showAdminLoginModal = false" 
+                        class="px-3 py-1.5 rounded-lg text-xs cursor-pointer admin-btn-secondary"
+                    >
+                        取消
+                    </button>
+                    <button 
+                        type="submit" 
+                        :disabled="adminLogin.isLoading"
+                        class="px-4 py-1.5 admin-primary-btn rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                        x-text="adminLogin.isLoading ? '驗證中...' : '登入後台'"
+                    ></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Dashboard -->
+    <div 
+        x-show="showAdminModal && authStatus.is_admin" 
+        class="fixed inset-0 z-50 overflow-y-auto admin-modal-overlay flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div class="admin-modal-card rounded-3xl max-w-2xl w-full border shadow-2xl overflow-hidden flex flex-col" @click.outside="showAdminModal = false">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b flex items-center justify-between admin-modal-header">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-white shadow-sm">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-800">GASOCR 系統安全管理後台</h3>
+                        <p class="text-xs text-slate-500">通行權限・存取通關保護與系統概況</p>
+                    </div>
+                </div>
+                <button @click="showAdminModal = false" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <div class="flex border-b px-6 gap-2 pt-2 admin-tab-bar">
+                <button 
+                    type="button"
+                    @click="adminTab = 'access_gate'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'access_gate' ? 'admin-tab-active' : 'admin-tab-inactive'"
+                >
+                    <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                    <span>通關密碼保護控制</span>
+                </button>
+                <button 
+                    type="button"
+                    @click="adminTab = 'change_password'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'change_password' ? 'admin-tab-active' : 'admin-tab-inactive'"
+                >
+                    <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                    <span>修改管理員密碼</span>
+                </button>
+                <button 
+                    type="button"
+                    @click="adminTab = 'stats'"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 flex items-center gap-1.5 cursor-pointer"
+                    :class="adminTab === 'stats' ? 'admin-tab-active' : 'admin-tab-inactive'"
+                >
+                    <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+                    <span>系統健康與操作</span>
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="p-6">
+                <!-- TAB 1: Access Gate Setting -->
+                <div x-show="adminTab === 'access_gate'" class="space-y-5">
+                    <div class="flex items-center justify-between p-4 rounded-2xl border transition" :class="adminSettings.access_gate_enabled ? 'admin-gate-banner-active' : 'admin-gate-banner-inactive'">
+                        <div class="space-y-0.5 pr-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-bold text-slate-800">全站通關密碼保護 (Access Gate)</span>
+                                <span 
+                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold transition"
+                                    :class="adminSettings.access_gate_enabled ? 'admin-badge-gate-on' : 'admin-badge-gate-off'"
+                                    x-text="adminSettings.access_gate_enabled ? '啟用中 (強制需通關密碼)' : '未啟用 (訪客可直接使用)'"
+                                ></span>
+                            </div>
+                            <p class="text-xs text-slate-500 leading-relaxed">
+                                啟用後，訪客進入系統必須先輸入正確通關密碼（或管理員密碼），否則無法查看檔案與調用 OCR 轉譯 API。
+                            </p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" x-model="adminSettings.access_gate_enabled" class="sr-only peer">
+                            <div class="w-11 h-6 admin-toggle-track peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-slate-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:admin-toggle-checked"></div>
+                        </label>
+                    </div>
+
+                    <div class="space-y-3 pt-2 border-t border-slate-200/50">
+                        <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="shield-check" class="w-4 h-4 text-indigo-500 dark:text-indigo-400"></i>
+                            <span x-text="adminSettings.has_access_password ? '變更通關密碼' : '設定新通關密碼 (初次啟用必填)'"></span>
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-medium text-slate-600 mb-1">通關密碼</label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminSettings.access_password" 
+                                    :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '請輸入通關密碼'"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-medium text-slate-600 mb-1">確認通關密碼</label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminSettings.confirm_access_password" 
+                                    :placeholder="adminSettings.has_access_password ? '若不變更請留空' : '再次輸入通關密碼'"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div x-show="adminSettings.error" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-error">
+                        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                        <span x-text="adminSettings.error"></span>
+                    </div>
+                    <div x-show="adminSettings.successMsg" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-success">
+                        <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+                        <span x-text="adminSettings.successMsg"></span>
+                    </div>
+
+                    <div class="flex justify-end pt-2">
+                        <button 
+                            type="button" 
+                            @click="saveAccessGateSetting()" 
+                            :disabled="adminSettings.isLoading"
+                            class="px-4 py-2 admin-primary-btn text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                        >
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span x-text="adminSettings.isLoading ? '儲存中...' : '儲存通關密碼設定'"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Change Admin Password -->
+                <div x-show="adminTab === 'change_password'" class="space-y-4">
+                    <form @submit.prevent="submitChangeAdminPassword()" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">原管理員密碼 <span class="text-rose-500">*</span></label>
+                            <input 
+                                type="password" 
+                                x-model="adminChangePassword.old_password" 
+                                placeholder="請輸入現有管理員密碼"
+                                class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
+                                required
+                            >
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">新管理員密碼 <span class="text-rose-500">*</span></label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminChangePassword.new_password" 
+                                    placeholder="至少 4 個字元"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
+                                    required
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">確認新密碼 <span class="text-rose-500">*</span></label>
+                                <input 
+                                    type="password" 
+                                    x-model="adminChangePassword.confirm_new_password" 
+                                    placeholder="再次輸入新密碼"
+                                    class="w-full text-xs rounded-xl border px-3 py-2.5 focus:outline-none admin-input"
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div x-show="adminChangePassword.error" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-error">
+                            <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                            <span x-text="adminChangePassword.error"></span>
+                        </div>
+                        <div x-show="adminChangePassword.successMsg" class="p-3 rounded-xl border text-xs flex items-center gap-1.5 admin-alert-success">
+                            <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+                            <span x-text="adminChangePassword.successMsg"></span>
+                        </div>
+
+                        <div class="flex justify-end pt-2">
+                            <button 
+                                type="submit" 
+                                :disabled="adminChangePassword.isLoading"
+                                class="px-4 py-2 admin-primary-btn text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                            >
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                                <span x-text="adminChangePassword.isLoading ? '更新中...' : '更新管理員密碼'"></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TAB 3: System Health & Stats -->
+                <div x-show="adminTab === 'stats'" class="space-y-5">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">金鑰池總數</div>
+                            <div class="text-xl font-extrabold admin-stat-val-blue" x-text="adminSettings.stats.total_accounts || 0">0</div>
+                        </div>
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">啟用中金鑰</div>
+                            <div class="text-xl font-extrabold admin-stat-val-green" x-text="adminSettings.stats.active_accounts || 0">0</div>
+                        </div>
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">歷來總任務</div>
+                            <div class="text-xl font-extrabold admin-stat-val-total" x-text="adminSettings.stats.total_tasks || 0">0</div>
+                        </div>
+                        <div class="admin-stat-card rounded-2xl p-4 text-center">
+                            <div class="text-[11px] font-semibold text-slate-500 mb-1">已完成轉譯</div>
+                            <div class="text-xl font-extrabold admin-stat-val-completed" x-text="adminSettings.stats.completed_tasks || 0">0</div>
+                        </div>
+                    </div>
+
+                    <div class="admin-action-box p-4 rounded-2xl space-y-3">
+                        <h4 class="text-xs font-bold text-slate-700">管理員快捷操作</h4>
+                        <div class="flex flex-wrap gap-2">
+                            <button 
+                                type="button" 
+                                @click="adminLogout()" 
+                                class="admin-btn-logout px-3.5 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                                <span>登出管理員身分</span>
+                            </button>
+                            <button 
+                                type="button" 
+                                @click="reLockAccessGate()" 
+                                class="admin-btn-relock px-3.5 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                                x-show="adminSettings.access_gate_enabled"
+                            >
+                                <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                                <span>立即重新鎖定系統</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

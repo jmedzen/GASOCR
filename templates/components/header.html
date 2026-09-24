@@ -1,0 +1,98 @@
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm transition-colors">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-md shrink-0">
+                    <i data-lucide="sparkles" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent tracking-tight">
+                            GASOCR
+                        </h1>
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
+                            {{ build_number | default('Build 017') }}
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
+                </div>
+            </div>
+
+            <!-- Badges, Theme Selector & Account Manager Button -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                
+                <!-- Theme Selector (light / dark / gruvbox) -->
+                <div class="flex items-center p-1 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold shadow-inner">
+                    <button type="button" @click="setTheme('light')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'light' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>☀️</span>
+                        <span class="hidden md:inline">淺色</span>
+                    </button>
+                    <button type="button" @click="setTheme('dark')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'dark' ? 'bg-slate-800 shadow-sm text-amber-300 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>🌙</span>
+                        <span class="hidden md:inline">深色</span>
+                    </button>
+                    <button type="button" @click="setTheme('gruvbox')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'gruvbox' ? 'bg-[#3c3836] shadow-sm text-[#fabd2f] font-bold' : 'text-slate-500 hover:text-slate-800'">
+                        <span>📜</span>
+                        <span class="hidden md:inline">Gruvbox</span>
+                    </button>
+                </div>
+
+                <!-- Zero-cost Safe Badge -->
+                <div class="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                    <span>0 元保護</span>
+                </div>
+
+                <!-- Active Keys Count -->
+                <button @click="openAccountsModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 transition">
+                    <i data-lucide="key" class="w-4 h-4 text-blue-600"></i>
+                    <span>金鑰池: <strong class="text-blue-600" x-text="activeAccountsCount">0</strong></span>
+                </button>
+
+                <!-- NEW: Re-OCR Queue Drawer Button -->
+                <button 
+                    @click="toggleQueueModal()" 
+                    class="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition shadow-xs cursor-pointer reocr-nav-btn"
+                    :title="'開啟重新辨識與升級佇列 (快捷鍵: ' + modKeyLabel + '+Q 或 Q)'"
+                >
+                    <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
+                    <span class="font-semibold hidden sm:inline">重辨佇列</span>
+                    <template x-if="activeReocrCount > 0">
+                        <span class="flex h-2 w-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                    </template>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                          :class="activeReocrCount > 0 ? 'bg-indigo-600 text-white animate-pulse' : 'reocr-count-badge'"
+                          x-text="reocrQueue.length">0</span>
+                    <kbd class="text-[10px] font-mono hidden md:inline ml-0.5"
+                         x-text="modKeyLabel + '+Q'">Alt+Q</kbd>
+                </button>
+
+                <!-- NEW: Admin & Access Gate Button -->
+                <button 
+                    @click="openAdminModal()" 
+                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs admin-nav-btn"
+                    :class="authStatus.is_admin ? 'admin-nav-btn-admin font-semibold' : ''"
+                    :title="authStatus.is_admin ? '管理員後台 (已登入)' : '系統管理與通關安全設定'"
+                >
+                    <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
+                    <span class="font-semibold hidden sm:inline" x-text="authStatus.is_admin ? '管理員' : '系統管理'">系統管理</span>
+                    <span x-show="authStatus.access_gate_enabled" class="text-[11px]" title="全站通關保護中" style="display: none;">🔒</span>
+                </button>
+
+                <!-- Re-Lock Access Gate Button (Quick Lock) -->
+                <button 
+                    x-show="authStatus.access_gate_enabled"
+                    @click="reLockAccessGate()" 
+                    class="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border-rose-200 dark:border-rose-900/60"
+                    title="立即重新上鎖全站 (退出通關狀態)"
+                    style="display: none;"
+                >
+                    <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline font-semibold">上鎖</span>
+                </button>
+            </div>
+        </div>
+    </header>

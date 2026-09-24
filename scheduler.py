@@ -108,8 +108,12 @@ class AccountScheduler:
                 return None
                 
             now = time.time()
+            remains_to_wait = max_wait_seconds - (now - start_time)
             cooldown_remains = [max(0.5, acc.get("cooldown_until", 0.0) - now) for acc in target_accounts]
             min_wait = min(cooldown_remains)
+            # 若最短冷卻剩餘時間已大於剩餘可等待時間，則確定超時，提早結束等待以利備援接手
+            if min_wait > remains_to_wait:
+                return None
             sleep_duration = min(min_wait, 5.0)
             await asyncio.sleep(sleep_duration)
             
