@@ -11,7 +11,7 @@ httpx>=0.27.0
 
 # 網頁自動化（CDP 模式：接入使用者自己開的 Chrome）
 # 先前缺少這個依賴，導致照 README 從零安裝後，執行到 Web RPA 才在執行期爆炸。
-playwright>=1.40.0
+# playwright>=1.40.0  # 僅需 Web RPA 功能時安裝（輕量版映像不含此套件）
 
 # 跨平台時區資料庫 (確保 zoneinfo 精確支援 America/Los_Angeles 美西重置計算)
 tzdata>=2024.1

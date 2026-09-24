@@ -1,6 +1,6 @@
 # ==========================================
 # GASOCR - Google AI Studio Gemini PDF OCR
-# Docker Container Definition (Build 031)
+# Docker Container Definition (Build 032)
 # ==========================================
 
 FROM python:3.11-slim
@@ -14,13 +14,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies, CJK fonts, tzdata, and curl for healthcheck
+# Install system dependencies and lightweight CJK font (方案 A: 文泉驛微米黑 ~15MB)
+# fonts-wqy-microhei 替代 fonts-noto-cjk (~380MB)，切圖與文字回退完全夠用
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-    fonts-noto-cjk \
+    fonts-wqy-microhei \
     tzdata \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 # Copy requirements first to leverage Docker layer caching
 COPY requirements.txt .
@@ -28,9 +29,6 @@ COPY requirements.txt .
 # Install Python packages
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright Chromium & OS dependencies (supports Web RPA & Headless tasks)
-RUN playwright install --with-deps chromium
 
 # Copy application source code
 COPY . .

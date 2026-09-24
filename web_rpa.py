@@ -37,6 +37,16 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 
+# ── 輕量映像相容性 ──────────────────────────────────────────
+# playwright 僅在完整映像或本機開發環境中安裝。
+# 輕量 Docker 映像（方案 A）不含 playwright/Chromium；
+# 這個 flag 讓所有 Web RPA 函式在缺少 playwright 時優雅回退，不 crash 整個 app。
+try:
+    import playwright as _pw_probe  # noqa: F401
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "data" / "web_rpa_config.json"
 RPA_PROFILE_DIR = BASE_DIR / "data" / "chrome_profile_rpa"
@@ -621,6 +631,9 @@ async def launch_login_browser(target_service: Optional[str] = None) -> Dict[str
     """
     global _login_context, _login_playwright
 
+    if not PLAYWRIGHT_AVAILABLE:
+        return {"success": False, "message": "Playwright 未安裝（輕量版映像不支援 Web RPA），請改用 API 金鑰模式"}
+
     cfg = get_web_config()
     service = target_service or cfg.get("target_service", "aistudio")
     url = "https://aistudio.google.com/" if service == "aistudio" else "https://gemini.google.com/app"
@@ -888,6 +901,9 @@ async def run_web_ocr(
     依 browser_mode 決定走 CDP（接入使用者自己的 Chrome）或舊版 launch。
     回傳: (成功, 文字/錯誤訊息, HTTP狀態碼)
     """
+    if not PLAYWRIGHT_AVAILABLE:
+        return False, "Playwright 未安裝（輕量版映像不支援 Web RPA），請改用 API 金鑰模式", 503
+
     cfg = get_web_config()
     if not cfg.get("enabled", True):
         return False, "網頁自動化 (Web RPA) 功能目前已停用", 400
