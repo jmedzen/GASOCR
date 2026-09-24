@@ -248,6 +248,66 @@
                         this.imgZoom.scale = 2.0;
                     }
                 },
+                imgCopied: false,
+                async copyCurrentImage() {
+                    if (!this.currentPage || !this.currentPage.image_url) {
+                        this.showToast('⚠️ 目前沒有可複製的頁面圖片');
+                        return;
+                    }
+                    try {
+                        const res = await fetch(this.currentPage.image_url);
+                        if (!res.ok) throw new Error(`圖片載入失敗 (HTTP ${res.status})`);
+                        let blob = await res.blob();
+
+                        // 確保格式為 image/png 以符合 ClipboardItem 規格
+                        if (blob.type !== 'image/png') {
+                            blob = await new Promise((resolve, reject) => {
+                                const img = new Image();
+                                img.crossOrigin = 'anonymous';
+                                img.onload = () => {
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = img.naturalWidth || img.width;
+                                    canvas.height = img.naturalHeight || img.height;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.drawImage(img, 0, 0);
+                                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('圖片格式轉為 PNG 失敗')), 'image/png');
+                                };
+                                img.onerror = () => reject(new Error('圖片解析失敗'));
+                                img.src = URL.createObjectURL(blob);
+                            });
+                        }
+
+                        if (navigator.clipboard && navigator.clipboard.write) {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ 'image/png': blob })
+                            ]);
+                            this.imgCopied = true;
+                            this.showToast(`📋 已成功複製第 ${this.currentPage.page_num} 頁圖片至剪貼簿！`);
+                            setTimeout(() => { this.imgCopied = false; }, 2000);
+                        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                            const fullUrl = new URL(this.currentPage.image_url, window.location.origin).href;
+                            await navigator.clipboard.writeText(fullUrl);
+                            this.imgCopied = true;
+                            this.showToast(`📋 已複製第 ${this.currentPage.page_num} 頁圖片網址（目前環境不支援二進位寫入剪貼簿）`);
+                            setTimeout(() => { this.imgCopied = false; }, 2000);
+                        } else {
+                            throw new Error('瀏覽器不支援剪貼簿 API');
+                        }
+                    } catch (err) {
+                        console.error('複製圖片失敗:', err);
+                        try {
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                const fullUrl = new URL(this.currentPage.image_url, window.location.origin).href;
+                                await navigator.clipboard.writeText(fullUrl);
+                                this.imgCopied = true;
+                                this.showToast(`📋 複製圖片資料受限，已降級複製第 ${this.currentPage.page_num} 頁圖片網址`);
+                                setTimeout(() => { this.imgCopied = false; }, 2000);
+                                return;
+                            }
+                        } catch (_) {}
+                        this.showToast(`⚠️ 複製圖片失敗: ${err.message || err}`);
+                    }
+                },
 
                 // Task List Filter & Sorting state (任務列表篩選與排序)
                 taskSortBy: 'newest', // 'newest' | 'oldest' | 'filename'
@@ -2098,6 +2158,13 @@
                         } else if (this.currentPage?.status === 'paused') {
                             this.retryCurrentPage();
                         }
+                        return;
+                    }
+
+                    // ⌥/Alt + C：複製當前頁圖片至剪貼簿
+                    if (e.altKey && code === 'KeyC') {
+                        e.preventDefault();
+                        this.copyCurrentImage();
                         return;
                     }
 

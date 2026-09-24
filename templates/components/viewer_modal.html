@@ -195,6 +195,15 @@
                                     <i data-lucide="maximize" class="w-3.5 h-3.5"></i>
                                     <span class="text-[11px] font-medium hidden sm:inline">自適應</span>
                                 </button>
+                                <span class="text-slate-300 dark:text-slate-600">|</span>
+                                <!-- 複製圖片 -->
+                                <button type="button" @click="copyCurrentImage()" 
+                                        class="px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center space-x-1 font-medium cursor-pointer"
+                                        :class="imgCopied ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'text-slate-700 dark:text-slate-200'"
+                                        :title="'複製當前頁圖片至剪貼簿 (快速鍵: ' + modKeyLabel + '+C)'">
+                                    <i data-lucide="copy" class="w-3.5 h-3.5" :class="imgCopied ? 'text-emerald-500' : 'text-indigo-500'"></i>
+                                    <span class="text-[11px] hidden sm:inline" x-text="imgCopied ? '已複製！' : '複製圖片'">複製圖片</span>
+                                </button>
                             </div>
 
                             <!-- Pan & Zoom Image Stage -->
@@ -217,6 +226,8 @@
                                     <span>按住左鍵平移</span>
                                     <span>·</span>
                                     <span>雙擊切換倍率</span>
+                                    <span>·</span>
+                                    <span x-text="modKeyLabel + '+C 複製圖片'">⌥+C 複製圖片</span>
                                 </div>
                             </div>
                         </div>
