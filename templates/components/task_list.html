@@ -77,27 +77,108 @@
                 </div>
             </div>
 
-            <!-- Task List 2-Row Optimized Layout -->
+            <!-- Task List 2-Row Optimized Layout with Filter & Sort Toolbar -->
             <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-                <!-- Header Control Bar -->
-                <div class="px-4 py-2.5 bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    <div class="flex items-center space-x-2.5">
-                        <input type="checkbox" 
-                            :checked="allTasks.length > 0 && selectedTaskIds.length === allTasks.length"
-                            :indeterminate.prop="selectedTaskIds.length > 0 && selectedTaskIds.length < allTasks.length"
-                            @change="toggleSelectAllTasks()"
-                            class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-                            title="全選 / 取消全選">
-                        <span>全選所有任務</span>
+                <!-- Header Filter & Sort Bar (狀態篩選與排序工具列) -->
+                <div class="px-4 py-2 bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                    <!-- Left: 全選 + 狀態篩選 Tabs (用戶指定: 等待中、切圖中、OCR中、已完成) -->
+                    <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+                        <!-- 全選 Checkbox -->
+                        <div class="flex items-center space-x-1.5 pr-2 border-r border-slate-200 dark:border-slate-700">
+                            <input type="checkbox" 
+                                :checked="filteredAndSortedTasks.length > 0 && isAllFilteredTasksSelected"
+                                :indeterminate.prop="selectedTaskIds.length > 0 && !isAllFilteredTasksSelected"
+                                @change="toggleSelectAllFilteredTasks()"
+                                class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                title="選取當前列表中的所有任務">
+                            <span class="font-semibold text-slate-700 dark:text-slate-300 hidden sm:inline">全選</span>
+                        </div>
+
+                        <!-- 狀態篩選 Tabs -->
+                        <div class="flex items-center space-x-1 overflow-x-auto custom-scroll py-0.5">
+                            <!-- 全部 -->
+                            <button type="button" @click="taskFilterStatus = 'all'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'all' 
+                                    ? 'bg-blue-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>全部</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'all' ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="allTasks.length"></span>
+                            </button>
+
+                            <!-- 等待中 -->
+                            <button type="button" @click="taskFilterStatus = 'pending'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'pending' 
+                                    ? 'bg-slate-700 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>⏳ 等待中</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'pending' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.pending"></span>
+                            </button>
+
+                            <!-- 切圖中 -->
+                            <button type="button" @click="taskFilterStatus = 'rendering'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'rendering' 
+                                    ? 'bg-amber-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>🖼️ 切圖中</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'rendering' ? 'bg-amber-700 text-amber-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.rendering"></span>
+                            </button>
+
+                            <!-- OCR中 -->
+                            <button type="button" @click="taskFilterStatus = 'processing'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'processing' 
+                                    ? 'bg-blue-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>⚡ OCR中</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'processing' ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.processing"></span>
+                            </button>
+
+                            <!-- 已完成 -->
+                            <button type="button" @click="taskFilterStatus = 'completed'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'completed' 
+                                    ? 'bg-emerald-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>✅ 已完成</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'completed' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.completed"></span>
+                            </button>
+
+                            <!-- 暫停中 (若有則顯示) -->
+                            <button type="button" x-show="taskStatusCounts.paused > 0" @click="taskFilterStatus = 'paused'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'paused' 
+                                    ? 'bg-purple-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>⏸ 暫停中</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'paused' ? 'bg-purple-700 text-purple-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.paused"></span>
+                            </button>
+                        </div>
                     </div>
-                    <div class="text-slate-400 font-normal text-[11px] hidden sm:block">
-                        點擊任務列即可開啟下方校對視窗
+
+                    <!-- Right: 排序選單 (最新優先、最舊優先、檔名排序) -->
+                    <div class="flex items-center space-x-1.5 shrink-0">
+                        <span class="text-slate-400 font-medium text-[11px] hidden sm:inline">排序：</span>
+                        <div class="relative inline-flex items-center">
+                            <select 
+                                x-model="taskSortBy" 
+                                class="appearance-none bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                                title="切換任務排序方式"
+                            >
+                                <option value="newest">🕒 最新優先</option>
+                                <option value="oldest">⏳ 最舊優先</option>
+                                <option value="filename">🔤 檔名排序 (A-Z)</option>
+                            </select>
+                            <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Task Items 2-Row List -->
                 <div class="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
-                    <template x-for="task in allTasks" :key="task.id">
+                    <template x-for="task in filteredAndSortedTasks" :key="task.id">
                         <div class="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition cursor-pointer flex flex-col justify-between gap-2.5"
                              :class="{
                                  'bg-blue-50/70 dark:bg-blue-950/40 border-l-4 border-l-blue-600': selectedTaskIds.includes(task.id),
@@ -105,9 +186,9 @@
                              }"
                              @click="inspectTask(task)">
                              
-                            <!-- Row 1: 核心識別、狀態與操作 -->
+                            <!-- Row 1: 核心識別、檔名與主要操作按鈕 -->
                             <div class="flex items-center justify-between gap-3">
-                                <!-- Left: Checkbox + File Icon + Filename + Paid Badge + Status Badge -->
+                                <!-- Left: Checkbox + File Icon + Filename + Paid Badge -->
                                 <div class="flex items-center space-x-2.5 min-w-0 flex-1">
                                     <div class="shrink-0 flex items-center" @click.stop>
                                         <input type="checkbox" 
@@ -118,31 +199,10 @@
                                     <div class="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                                         <i data-lucide="file-text" class="w-4 h-4"></i>
                                     </div>
-                                    <span class="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-xs md:max-w-md lg:max-w-xl" :title="task.filename" x-text="task.filename"></span>
+                                    <span class="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-xl" :title="task.filename" x-text="task.filename"></span>
                                     <template x-if="task.is_paid">
                                         <span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shrink-0">💎 付費</span>
                                     </template>
-
-                                    <!-- Status Badge -->
-                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide shrink-0"
-                                        :class="{
-                                            'bg-blue-100/80 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800': task.status === 'processing',
-                                            'bg-amber-100/80 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800': task.status === 'rendering',
-                                            'bg-purple-100/80 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800': task.status === 'paused',
-                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800': task.status === 'completed',
-                                            'bg-red-100/80 text-red-800 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800': task.status === 'failed',
-                                            'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700': task.status === 'pending'
-                                        }">
-                                        <span class="w-1.5 h-1.5 rounded-full" :class="{
-                                            'bg-blue-500 animate-ping': task.status === 'processing',
-                                            'bg-amber-500 animate-pulse': task.status === 'rendering',
-                                            'bg-purple-500': task.status === 'paused',
-                                            'bg-emerald-500': task.status === 'completed',
-                                            'bg-red-500': task.status === 'failed',
-                                            'bg-slate-400 animate-pulse': task.status === 'pending'
-                                        }"></span>
-                                        <span x-text="getTaskStatusText(task.status)"></span>
-                                    </span>
                                 </div>
 
                                 <!-- Right: Actions Buttons -->
@@ -170,7 +230,7 @@
                                 </div>
                             </div>
 
-                            <!-- Row 2: 範圍、模型(或切換選單)、進度條與詳細指標 -->
+                            <!-- Row 2: 範圍、模型(或切換選單)、Status Badge(移至進度條左側) + 進度條與指標 -->
                             <div class="flex items-center justify-between gap-3 text-xs pt-1.5 border-t border-slate-100/80 dark:border-slate-800/60">
                                 <!-- Left: Range + Model & Lang -->
                                 <div class="flex items-center flex-wrap gap-2 text-slate-500 dark:text-slate-400">
@@ -213,9 +273,31 @@
                                     </div>
                                 </div>
 
-                                <!-- Right: Progress Bar & Status Text -->
-                                <div class="flex items-center space-x-3 shrink-0">
-                                    <div class="w-28 sm:w-36 md:w-44 bg-slate-200/80 dark:bg-slate-700 rounded-full h-2 overflow-hidden shadow-inner">
+                                <!-- Right: Status Badge (移動到進度條左邊) + Progress Bar & Indicators -->
+                                <div class="flex items-center space-x-2.5 shrink-0">
+                                    <!-- 1. Status Badge: 移到進度條左側，垂直對齊更加直觀清晰 -->
+                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide shrink-0"
+                                        :class="{
+                                            'bg-blue-100/80 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800': task.status === 'processing',
+                                            'bg-amber-100/80 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800': task.status === 'rendering',
+                                            'bg-purple-100/80 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800': task.status === 'paused',
+                                            'bg-emerald-100/80 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800': task.status === 'completed',
+                                            'bg-red-100/80 text-red-800 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800': task.status === 'failed',
+                                            'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700': task.status === 'pending'
+                                        }">
+                                        <span class="w-1.5 h-1.5 rounded-full" :class="{
+                                            'bg-blue-500 animate-ping': task.status === 'processing',
+                                            'bg-amber-500 animate-pulse': task.status === 'rendering',
+                                            'bg-purple-500': task.status === 'paused',
+                                            'bg-emerald-500': task.status === 'completed',
+                                            'bg-red-500': task.status === 'failed',
+                                            'bg-slate-400 animate-pulse': task.status === 'pending'
+                                        }"></span>
+                                        <span x-text="getTaskStatusText(task.status)"></span>
+                                    </span>
+
+                                    <!-- 2. 進度條 -->
+                                    <div class="w-24 sm:w-32 md:w-40 bg-slate-200/80 dark:bg-slate-700 rounded-full h-2 overflow-hidden shadow-inner">
                                         <div class="h-2 rounded-full transition-all duration-300"
                                             :class="{
                                                 'bg-emerald-500': task.status === 'completed',
@@ -227,6 +309,8 @@
                                             }"
                                             :style="`width: ${task.total_pages ? (task.status === 'rendering' ? Math.min(100, Math.round((task.rendered_pages || 0)/task.total_pages*100)) : Math.min(100, Math.round((task.processed_pages || 0)/task.total_pages*100))) : 0}%`"></div>
                                     </div>
+
+                                    <!-- 3. 進度指標數字 -->
                                     <span class="font-mono text-xs font-semibold whitespace-nowrap min-w-[95px] text-right" 
                                         :class="task.status === 'rendering' ? 'text-amber-700 dark:text-amber-400' : (task.status === 'pending' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-300')"
                                         x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : (task.status === 'pending' ? `等待中 (${task.processed_pages || 0}/${task.total_pages || 0})` : `${task.processed_pages || 0}/${task.total_pages || 0} (${task.total_pages ? Math.round((task.processed_pages || 0)/task.total_pages*100) : 0}%)`)"></span>
@@ -234,10 +318,23 @@
                             </div>
                         </div>
                     </template>
+
+                    <!-- 當列表為空 -->
                     <template x-if="allTasks.length === 0">
                         <div class="p-10 text-center text-slate-400 dark:text-slate-500 flex flex-col items-center justify-center space-y-2">
                             <i data-lucide="inbox" class="w-8 h-8 opacity-40"></i>
                             <p class="text-xs">目前尚無任何轉譯任務，請在上方選取 PDF 檔案開始批次轉譯</p>
+                        </div>
+                    </template>
+
+                    <!-- 當篩選後無符合項目 -->
+                    <template x-if="allTasks.length > 0 && filteredAndSortedTasks.length === 0">
+                        <div class="p-8 text-center text-slate-400 dark:text-slate-500 flex flex-col items-center justify-center space-y-2">
+                            <i data-lucide="filter-x" class="w-7 h-7 opacity-40"></i>
+                            <p class="text-xs">無符合當前狀態篩選的任務</p>
+                            <button type="button" @click="taskFilterStatus = 'all'" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer">
+                                顯示全部任務
+                            </button>
                         </div>
                     </template>
                 </div>

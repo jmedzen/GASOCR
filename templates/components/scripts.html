@@ -248,6 +248,67 @@
                         this.imgZoom.scale = 2.0;
                     }
                 },
+
+                // Task List Filter & Sorting state (任務列表篩選與排序)
+                taskSortBy: 'newest', // 'newest' | 'oldest' | 'filename'
+                taskFilterStatus: 'all', // 'all' | 'pending' | 'rendering' | 'processing' | 'completed' | 'paused'
+
+                get filteredAndSortedTasks() {
+                    let list = [...this.allTasks];
+
+                    // 1. 篩選 (Filter)
+                    if (this.taskFilterStatus !== 'all') {
+                        list = list.filter(t => t.status === this.taskFilterStatus);
+                    }
+
+                    // 2. 排序 (Sort)
+                    if (this.taskSortBy === 'newest') {
+                        list.sort((a, b) => {
+                            const tA = a.created_at || 0;
+                            const tB = b.created_at || 0;
+                            if (tB !== tA) return tB - tA;
+                            return (b.id || '').localeCompare(a.id || '');
+                        });
+                    } else if (this.taskSortBy === 'oldest') {
+                        list.sort((a, b) => {
+                            const tA = a.created_at || 0;
+                            const tB = b.created_at || 0;
+                            if (tA !== tB) return tA - tB;
+                            return (a.id || '').localeCompare(b.id || '');
+                        });
+                    } else if (this.taskSortBy === 'filename') {
+                        list.sort((a, b) => (a.filename || '').localeCompare(b.filename || '', undefined, { numeric: true, sensitivity: 'base' }));
+                    }
+
+                    return list;
+                },
+
+                get taskStatusCounts() {
+                    const counts = { all: this.allTasks.length, pending: 0, rendering: 0, processing: 0, completed: 0, paused: 0, failed: 0 };
+                    for (const t of this.allTasks) {
+                        if (counts[t.status] !== undefined) {
+                            counts[t.status]++;
+                        }
+                    }
+                    return counts;
+                },
+
+                get isAllFilteredTasksSelected() {
+                    const filtered = this.filteredAndSortedTasks;
+                    if (filtered.length === 0) return false;
+                    return filtered.every(t => this.selectedTaskIds.includes(t.id));
+                },
+
+                toggleSelectAllFilteredTasks() {
+                    const currentIds = this.filteredAndSortedTasks.map(t => t.id);
+                    if (currentIds.length === 0) return;
+                    if (this.isAllFilteredTasksSelected) {
+                        this.selectedTaskIds = this.selectedTaskIds.filter(id => !currentIds.includes(id));
+                    } else {
+                        const set = new Set([...this.selectedTaskIds, ...currentIds]);
+                        this.selectedTaskIds = Array.from(set);
+                    }
+                },
                 setTheme(theme) {
                     this.currentTheme = theme;
                     localStorage.setItem('ocr_theme', theme);
