@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ "GASOCR 系統初次安裝" if mode == "setup" else "GASOCR 存取保護" }} ({{ build_number | default('Build 034') }})</title>
+    <title>{{ "GASOCR 系統初次安裝" if mode == "setup" else "GASOCR 存取保護" }} ({{ build_number | default('Build 035') }})</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -134,7 +134,7 @@
                 {{ app_name | default('GASOCR') }}
             </span>
             <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                {{ build_number | default('Build 034') }}
+                {{ build_number | default('Build 035') }}
             </span>
         </div>
 
@@ -271,7 +271,7 @@
 
     <!-- Footer -->
     <footer class="w-full max-w-5xl mx-auto px-4 py-4 text-center text-xs text-slate-400 dark:text-slate-500 relative z-10">
-        <span>GASOCR v{{ app_version | default('1.0.0') }} ({{ build_number | default('Build 034') }}) ・ Google AI Studio Gemini PDF OCR 轉譯系統</span>
+        <span>GASOCR v{{ app_version | default('1.0.0') }} ({{ build_number | default('Build 035') }}) ・ Google AI Studio Gemini PDF OCR 轉譯系統</span>
     </footer>
 
     <script>

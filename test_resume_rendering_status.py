@@ -124,13 +124,20 @@ async def run_tests():
 
     # 5. 測試全局/批次繼續 (resume_all_tasks) 之槽位分配
     print("👉 [5/5] 測試 resume_all_tasks 批次分配槽位與滿載排隊...")
+    main.cancel_task_active_jobs(task_id_1)
+    main.cancel_task_active_jobs(task_id_2)
+    await asyncio.sleep(0.2)
+
     task_id_4 = "test_res_t4"
     task_id_5 = "test_res_t5"
     async with database.get_db() as db:
         await db.execute("DELETE FROM tasks WHERE id IN (?, ?)", (task_id_4, task_id_5))
+        await db.execute("DELETE FROM task_pages WHERE task_id IN (?, ?)", (task_id_4, task_id_5))
         await db.commit()
     await database.create_task(task_id_4, "test4.pdf", "/tmp/test4.pdf", "gemini-3.5-flash-lite", "traditional", "auto", "auto", start_page=1, end_page=5, pdf_total_pages=5)
     await database.create_task(task_id_5, "test5.pdf", "/tmp/test5.pdf", "gemini-3.5-flash-lite", "traditional", "auto", "auto", start_page=1, end_page=5, pdf_total_pages=5)
+    await database.create_task_pages([{"task_id": task_id_4, "page_num": i, "image_path": f"/tmp/p4_{i}.png", "status": "pending"} for i in range(1, 6)])
+    await database.create_task_pages([{"task_id": task_id_5, "page_num": i, "image_path": f"/tmp/p5_{i}.png", "status": "pending"} for i in range(1, 6)])
     await database.update_task_status(task_id_4, status="paused", total_pages=5, rendered_pages=1)
     await database.update_task_status(task_id_5, status="paused", total_pages=5, rendered_pages=1)
 
@@ -139,6 +146,14 @@ async def run_tests():
     while main.RENDER_SEMAPHORE._value > 1:
         await main.RENDER_SEMAPHORE.acquire()
         sem_permits.append(True)
+
+    orig_spawn = main.spawn_background
+    def dummy_spawn(coro):
+        try:
+            coro.close()
+        except Exception:
+            pass
+    main.spawn_background = dummy_spawn
 
     try:
         assert main.RENDER_SEMAPHORE._value == 1
@@ -155,10 +170,12 @@ async def run_tests():
         main.cancel_task_active_jobs(task_id_4)
         main.cancel_task_active_jobs(task_id_5)
     finally:
+        main.spawn_background = orig_spawn
         for _ in sem_permits:
             main.RENDER_SEMAPHORE.release()
         async with database.get_db() as db:
             await db.execute("DELETE FROM tasks WHERE id IN (?, ?)", (task_id_4, task_id_5))
+            await db.execute("DELETE FROM task_pages WHERE task_id IN (?, ?)", (task_id_4, task_id_5))
             await db.commit()
 
     # 清理 DB
