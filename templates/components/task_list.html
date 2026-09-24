@@ -167,7 +167,7 @@
                                         </div>
                                         <span class="font-mono text-xs font-semibold" 
                                             :class="task.status === 'rendering' ? 'text-amber-700' : (task.status === 'pending' ? 'text-slate-500' : 'text-slate-700')"
-                                            x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : (task.status === 'pending' ? `等待中 (0/${task.total_pages || 0})` : `${task.processed_pages || 0}/${task.total_pages || 0}`)"></span>
+                                            x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : (task.status === 'pending' ? `等待中 (${task.processed_pages || 0}/${task.total_pages || 0})` : `${task.processed_pages || 0}/${task.total_pages || 0}`)"></span>
                                     </div>
                                 </td>
                                 <td class="p-3 whitespace-nowrap">

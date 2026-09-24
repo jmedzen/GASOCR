@@ -2,7 +2,8 @@ import asyncio
 import time
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
+from contextlib import asynccontextmanager
 import database
 from config import MIN_REQUEST_INTERVAL_SECONDS, DEFAULT_COOLDOWN_SECONDS
 
@@ -293,3 +294,89 @@ class AccountScheduler:
 
 # 全域單例排程器
 scheduler = AccountScheduler()
+
+
+class FreeOCRTaskManager:
+    """
+    管控免費 API OCR 任務的並發執行數量：
+    - 當啟用中的免費金鑰 (api pool keys) <= 2 時，最多同時執行 1 個 OCR 任務。
+    - 當啟用中的免費金鑰 >= 3 時，最多同時執行 2 個 OCR 任務。
+    - 付費任務 (is_paid == 1) 不受此限制。
+    """
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._condition = asyncio.Condition(self._lock)
+        self._active_tasks: Set[str] = set()
+
+    @property
+    def active_tasks(self) -> Set[str]:
+        return set(self._active_tasks)
+
+    async def get_free_keys_count(self) -> int:
+        accounts = await database.get_accounts()
+        return len([
+            acc for acc in accounts 
+            if acc.get("is_active") == 1 and acc.get("is_paid", 0) == 0
+        ])
+
+    async def get_max_concurrent(self) -> int:
+        """
+        規則：
+        免費金鑰數 <= 2 -> 最多 1 個 OCR 任務並發
+        免費金鑰數 >= 3 -> 最多 2 個 OCR 任務並發
+        """
+        count = await self.get_free_keys_count()
+        return 1 if count <= 2 else 2
+
+    async def acquire(self, task_id: str):
+        async with self._condition:
+            if task_id in self._active_tasks:
+                return
+            while True:
+                max_allowed = await self.get_max_concurrent()
+                if len(self._active_tasks) < max_allowed:
+                    self._active_tasks.add(task_id)
+                    free_keys = await self.get_free_keys_count()
+                    print(f"🚀 [Free OCR Slot] 任務 {task_id} 取得免費 OCR 執行槽位 (金鑰數: {free_keys}, 目前執行中: {len(self._active_tasks)}/{max_allowed})")
+                    return
+                free_keys = await self.get_free_keys_count()
+                print(f"⏳ [Free OCR Slot] 任務 {task_id} 排隊等待免費 OCR 槽位 (金鑰數: {free_keys}, 目前執行中: {len(self._active_tasks)}/{max_allowed})")
+                await self._condition.wait()
+
+    async def release(self, task_id: str):
+        async with self._condition:
+            if task_id in self._active_tasks:
+                self._active_tasks.remove(task_id)
+                print(f"🔓 [Free OCR Slot] 任務 {task_id} 釋放免費 OCR 槽位 (剩餘執行中: {len(self._active_tasks)})")
+                self._condition.notify_all()
+
+    async def notify_account_change(self):
+        """當金鑰啟用/停用/新增/刪除時呼叫，喚醒所有等待中的任務以重新評估並發槽位"""
+        async with self._condition:
+            self._condition.notify_all()
+
+    async def get_status_info(self) -> Dict[str, Any]:
+        count = await self.get_free_keys_count()
+        max_allowed = 1 if count <= 2 else 2
+        return {
+            "free_keys_count": count,
+            "max_concurrent_tasks": max_allowed,
+            "active_tasks_count": len(self._active_tasks),
+            "active_tasks": list(self._active_tasks)
+        }
+
+    @asynccontextmanager
+    async def limit(self, task_id: str, is_paid: bool = False):
+        if is_paid:
+            yield
+            return
+        await self.acquire(task_id)
+        try:
+            yield
+        finally:
+            await self.release(task_id)
+
+
+# 全域單例免費 OCR 任務並發控管器
+free_ocr_task_manager = FreeOCRTaskManager()
+

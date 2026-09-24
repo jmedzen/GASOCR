@@ -20,7 +20,7 @@ import httpx
 
 import database
 import config
-from scheduler import scheduler
+from scheduler import scheduler, free_ocr_task_manager
 from pdf_engine import render_pdf_to_images, render_pdf_to_images_async, render_single_page, get_pdf_page_count, render_remaining_pdf_pages
 import gemini_ocr
 from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
@@ -854,104 +854,123 @@ async def process_task_pipeline(task_id: str):
             if not check_task or check_task.get("status") in ["paused", "failed"]:
                 return
 
-        # 3. 切圖確認全數完成，切換為 processing 狀態準備執行 OCR
-        await database.update_task_status(
-            task_id, "processing", 
-            total_pages=total_target, 
-            rendered_pages=total_target,
-            pdf_total_pages=pdf_total_pages
-        )
-        pages = await database.get_task_pages(task_id)
+        # 3. 準備進入 OCR 階段（若為免費任務，受 free_ocr_task_manager 並發槽位控管）
+        is_paid_task = bool(task.get("is_paid"))
         
-        # 4. 準備 Prompt (重新拉取 task 以取得最新可能被變更之模型與設定)
-        task = await database.get_task(task_id) or task
-        prompt = build_ocr_prompt(
-            lang=task.get("lang_pref", "traditional"),
-            direction=task.get("direction_pref", "auto"),
-            column=task.get("column_pref", "auto"),
-            custom_prompt=task.get("custom_prompt", "")
-        )
-        
-        # 5. 逐頁進行 OCR 辨識（跳過已完成的頁面與非本次目標頁面）
-        for p in pages:
-            if p["page_num"] not in target_page_nums:
-                continue
-            if p["status"] == "completed" and (p.get("ocr_text") or "").strip():
-                continue
-                
-            # 檢查任務是否已被刪除或暫停
-            current_task = await database.get_task(task_id)
-            if not current_task or current_task.get("status") in ["paused", "failed"]:
+        # 若為免費任務，在等待取得免費 OCR 槽位排隊期間，狀態維持/設為 pending (等待中)
+        if not is_paid_task:
+            await database.update_task_status(
+                task_id, 
+                status="pending", 
+                total_pages=total_target, 
+                rendered_pages=total_target,
+                pdf_total_pages=pdf_total_pages
+            )
+
+        async with free_ocr_task_manager.limit(task_id, is_paid=is_paid_task):
+            # 取得執行槽位後，檢查在等待期間任務是否已被使用者暫停或刪除
+            check_task = await database.get_task(task_id)
+            if not check_task or check_task.get("status") in ["paused", "failed"]:
                 return
-                
-            model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
-            await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
+
+            # 正式啟動 OCR 轉譯階段，切換為 processing 狀態準備執行 OCR
+            await database.update_task_status(
+                task_id, "processing", 
+                total_pages=total_target, 
+                rendered_pages=total_target,
+                pdf_total_pages=pdf_total_pages
+            )
+            pages = await database.get_task_pages(task_id)
             
-        # 5.5 全書最後一頁初次 OCR 完畢後，重新檢查一次沒有結果的頁面並補辨 (End-of-Book Sweep)
-        current_task = await database.get_task(task_id)
-        if not current_task or current_task.get("status") in ["paused", "failed"]:
-            return
-
-        latest_pages = await database.get_task_pages(task_id)
-        unresolved_pages = [
-            lp for lp in latest_pages 
-            if lp["page_num"] in target_page_nums 
-            and (lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip())
-        ]
-
-        if unresolved_pages:
-            missing_nums = [p["page_num"] for p in unresolved_pages]
-            print(f"🔄 [Task {task_id}] 全書最後一頁辨識完畢，發現 {len(unresolved_pages)} 頁無結果 (頁碼: {missing_nums})，啟動全書結尾自動補檢複查...")
-            # 給予短暫冷卻緩衝 (2.5s)，讓 429 速率限制或 503 伺服器忙碌解凍
-            await asyncio.sleep(2.5)
-
-            for idx, p in enumerate(unresolved_pages, 1):
+            # 4. 準備 Prompt (重新拉取 task 以取得最新可能被變更之模型與設定)
+            task = await database.get_task(task_id) or task
+            prompt = build_ocr_prompt(
+                lang=task.get("lang_pref", "traditional"),
+                direction=task.get("direction_pref", "auto"),
+                column=task.get("column_pref", "auto"),
+                custom_prompt=task.get("custom_prompt", "")
+            )
+            
+            # 5. 逐頁進行 OCR 辨識（跳過已完成的頁面與非本次目標頁面）
+            for p in pages:
+                if p["page_num"] not in target_page_nums:
+                    continue
+                if p["status"] == "completed" and (p.get("ocr_text") or "").strip():
+                    continue
+                    
+                # 檢查任務是否已被刪除或暫停
                 current_task = await database.get_task(task_id)
                 if not current_task or current_task.get("status") in ["paused", "failed"]:
                     return
-                p_num = p["page_num"]
-                print(f"🔄 [Task {task_id} 補檢複查 {idx}/{len(unresolved_pages)}] 重新辨識第 {p_num} 頁...")
-                await database.update_page_status(
-                    task_id, p_num, "processing", 
-                    error_message=f"正在進行全書結尾自動補檢複查 ({idx}/{len(unresolved_pages)} 頁)..."
-                )
+                    
                 model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
-                await run_page_ocr(
-                    task_id=task_id, 
-                    page_num=p_num, 
-                    image_path=Path(p["image_path"]), 
-                    model=model_to_use, 
-                    prompt=prompt
-                )
+                await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
+                
+            # 5.5 全書最後一頁初次 OCR 完畢後，重新檢查一次沒有結果的頁面並補辨 (End-of-Book Sweep)
+            current_task = await database.get_task(task_id)
+            if not current_task or current_task.get("status") in ["paused", "failed"]:
+                return
 
-        # 6. 全部目標頁面處理完成結算
-        latest_task = await database.get_task(task_id)
-        if latest_task and latest_task["status"] not in ["paused", "failed"]:
             latest_pages = await database.get_task_pages(task_id)
-            target_pages_status = [lp for lp in latest_pages if lp["page_num"] in target_page_nums]
-            all_completed = all(lp["status"] == "completed" and (lp.get("ocr_text") or "").strip() for lp in target_pages_status)
-            if all_completed:
-                await database.update_task_status(task_id, "completed")
-                print(f"🎉 [Task {task_id}] 全書目標頁面全數辨識完成 (100%)！")
-                
-                # 7. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
-                if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
-                    print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
-                    spawn_background(background_render_task_pages(task_id, pdf_path, target_page_nums))
-            else:
-                # 複查後仍有頁面未成功（例如該帳號當日配額已完全耗盡）
-                for lp in target_pages_status:
-                    if lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip():
-                        if lp["status"] != "failed":
-                            err_msg = lp.get("error_message") or "全書自動補檢後仍無結果（API配額耗盡或忙碌）"
-                            await database.update_page_result(task_id, lp["page_num"], "failed", error_message=err_msg)
-                
-                completed_count = sum(1 for lp in target_pages_status if lp["status"] == "completed")
-                print(f"⚠️ [Task {task_id}] 全書轉譯及補檢完畢，部分頁面未完成 (成功: {completed_count}/{total_target})")
-                if completed_count == 0:
-                    await database.update_task_status(task_id, "failed")
+            unresolved_pages = [
+                lp for lp in latest_pages 
+                if lp["page_num"] in target_page_nums 
+                and (lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip())
+            ]
+
+            if unresolved_pages:
+                missing_nums = [p["page_num"] for p in unresolved_pages]
+                print(f"🔄 [Task {task_id}] 全書最後一頁辨識完畢，發現 {len(unresolved_pages)} 頁無結果 (頁碼: {missing_nums})，啟動全書結尾自動補檢複查...")
+                # 給予短暫冷卻緩衝 (2.5s)，讓 429 速率限制或 503 伺服器忙碌解凍
+                await asyncio.sleep(2.5)
+
+                for idx, p in enumerate(unresolved_pages, 1):
+                    current_task = await database.get_task(task_id)
+                    if not current_task or current_task.get("status") in ["paused", "failed"]:
+                        return
+                    p_num = p["page_num"]
+                    print(f"🔄 [Task {task_id} 補檢複查 {idx}/{len(unresolved_pages)}] 重新辨識第 {p_num} 頁...")
+                    await database.update_page_status(
+                        task_id, p_num, "processing", 
+                        error_message=f"正在進行全書結尾自動補檢複查 ({idx}/{len(unresolved_pages)} 頁)..."
+                    )
+                    model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
+                    await run_page_ocr(
+                        task_id=task_id, 
+                        page_num=p_num, 
+                        image_path=Path(p["image_path"]), 
+                        model=model_to_use, 
+                        prompt=prompt
+                    )
+
+            # 6. 全部目標頁面處理完成結算
+            latest_task = await database.get_task(task_id)
+            if latest_task and latest_task["status"] not in ["paused", "failed"]:
+                latest_pages = await database.get_task_pages(task_id)
+                target_pages_status = [lp for lp in latest_pages if lp["page_num"] in target_page_nums]
+                all_completed = all(lp["status"] == "completed" and (lp.get("ocr_text") or "").strip() for lp in target_pages_status)
+                if all_completed:
+                    await database.update_task_status(task_id, "completed")
+                    print(f"🎉 [Task {task_id}] 全書目標頁面全數辨識完成 (100%)！")
+                    
+                    # 7. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
+                    if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
+                        print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
+                        spawn_background(background_render_task_pages(task_id, pdf_path, target_page_nums))
                 else:
-                    await database.update_task_status(task_id, "paused")
+                    # 複查後仍有頁面未成功（例如該帳號當日配額已完全耗盡）
+                    for lp in target_pages_status:
+                        if lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip():
+                            if lp["status"] != "failed":
+                                err_msg = lp.get("error_message") or "全書自動補檢後仍無結果（API配額耗盡或忙碌）"
+                                await database.update_page_result(task_id, lp["page_num"], "failed", error_message=err_msg)
+                    
+                    completed_count = sum(1 for lp in target_pages_status if lp["status"] == "completed")
+                    print(f"⚠️ [Task {task_id}] 全書轉譯及補檢完畢，部分頁面未完成 (成功: {completed_count}/{total_target})")
+                    if completed_count == 0:
+                        await database.update_task_status(task_id, "failed")
+                    else:
+                        await database.update_task_status(task_id, "paused")
         
     except asyncio.CancelledError:
         print(f"⏸️ [Task {task_id}] 切圖/轉譯流水線已即時響應暫停指令")
@@ -1254,15 +1273,17 @@ async def create_api_key_account(payload: ApiKeyAccountCreate):
     acc_id = await database.add_api_key_account(
         payload.name, payload.api_key, payload.rpm_limit, is_paid=1 if payload.is_paid else 0
     )
-    # 新增金鑰後自動觸發更新模型清單
+    # 新增金鑰後自動觸發更新模型清單與並發槽位
     spawn_background(update_cached_models())
+    await free_ocr_task_manager.notify_account_change()
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/oauth", dependencies=[Depends(require_access_or_admin)])
 async def create_oauth_account(payload: OAuthAccountCreate):
     acc_id = await database.add_oauth_account(payload.name, payload.client_id, payload.client_secret, payload.refresh_token)
-    # 新增 OAuth 後自動觸發更新模型清單
+    # 新增 OAuth 後自動觸發更新模型清單與並發槽位
     spawn_background(update_cached_models())
+    await free_ocr_task_manager.notify_account_change()
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/{account_id}/toggle", dependencies=[Depends(require_access_or_admin)])
@@ -1272,11 +1293,13 @@ async def toggle_account(account_id: int):
         raise HTTPException(status_code=404, detail="Account not found")
     new_state = not bool(account["is_active"])
     await database.toggle_account_active(account_id, new_state)
+    await free_ocr_task_manager.notify_account_change()
     return {"status": "ok", "is_active": new_state}
 
 @app.delete("/api/accounts/{account_id}", dependencies=[Depends(require_access_or_admin)])
 async def delete_account(account_id: int):
     await database.delete_account(account_id)
+    await free_ocr_task_manager.notify_account_change()
     return {"status": "ok"}
 
 @app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_access_or_admin)])
@@ -2121,7 +2144,10 @@ async def sse_task_events(task_id: str):
             if task["status"] == "rendering":
                 active_msg = f"🎨 正在 300 DPI 高清切圖第 {min(rendered + 1, total if total > 0 else 1)} 頁 (共 {total} 頁)..."
             elif task["status"] == "pending":
-                active_msg = "⏳ 佇列排隊中，等待切圖..."
+                if rendered >= total and total > 0:
+                    active_msg = "⏳ 切圖完成，排隊等待免費 OCR 槽位..."
+                else:
+                    active_msg = "⏳ 佇列排隊中，等待切圖..."
 
             data_payload = {
                 "task_id": task_id,
