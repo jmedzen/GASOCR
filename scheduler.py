@@ -12,18 +12,23 @@ class AccountScheduler:
         # 記憶體內快取每個 account_id 上次發出請求的精確時間點
         self._last_request_times: Dict[int, float] = {}
         
-    async def get_next_available_account(self, specific_account_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    async def get_next_available_account(
+        self, 
+        specific_account_id: Optional[int] = None,
+        require_paid: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         獲取下一個可用帳號：
         - 若指定 specific_account_id（付費指定金鑰）：
           1. 僅取得該帳號
           2. 若為付費帳號 (is_paid == 1)，解除 4.2s 強制節流限制（僅需極短防併發間隔 0.2s）
           3. 若觸發冷卻則等待或回傳 None
-        - 若未指定（免費輪詢模式）：
+        - 若未指定但 require_paid == True（付費金鑰池輪詢模式）：
+          1. 從 is_paid == 1 的付費金鑰池中依輪詢挑選
+          2. 解除 4.2s 強制節流限制（僅需 0.2s 極短防併發間隔，享有 1000 RPM）
+        - 若未指定且 require_paid == False（免費金鑰池輪詢模式）：
           1. 僅從 is_paid == 0 的免費金鑰池中選取（確保免費批次不消耗付費金鑰）
-          2. 必須是 is_active = 1 且當前時間 >= cooldown_until
-          3. 依上次使用時間最早者優先（負載均衡）
-          4. 強制 4.2s 間隔保護，保證符合 15 RPM
+          2. 強制 4.2s 間隔保護，保證符合 15 RPM
         """
         async with self._lock:
             accounts = await database.get_accounts(include_secrets=True)
@@ -49,13 +54,22 @@ class AccountScheduler:
                 self._last_request_times[chosen["id"]] = time.time()
                 return chosen
 
-            # 免費輪詢模式：過濾出 is_paid == 0 且啟用的免費金鑰
-            available = [
-                acc for acc in accounts 
-                if acc.get("is_active") == 1 
-                and acc.get("is_paid", 0) == 0
-                and (acc.get("cooldown_until") or 0.0) <= now
-            ]
+            if require_paid:
+                # 付費金鑰池輪詢模式：過濾出 is_paid == 1 且啟用的付費金鑰
+                available = [
+                    acc for acc in accounts 
+                    if acc.get("is_active") == 1 
+                    and acc.get("is_paid", 0) == 1
+                    and (acc.get("cooldown_until") or 0.0) <= now
+                ]
+            else:
+                # 免費金鑰池輪詢模式：過濾出 is_paid == 0 且啟用的免費金鑰
+                available = [
+                    acc for acc in accounts 
+                    if acc.get("is_active") == 1 
+                    and acc.get("is_paid", 0) == 0
+                    and (acc.get("cooldown_until") or 0.0) <= now
+                ]
             
             if not available:
                 return None
@@ -64,7 +78,7 @@ class AccountScheduler:
             available.sort(key=lambda acc: self._last_request_times.get(acc["id"], acc.get("last_used_at", 0.0)))
             chosen = available[0]
             
-            # 計算安全呼叫間隔節流（避免單一帳號超過 15 RPM）
+            # 計算安全呼叫間隔節流（付費金鑰 0.2s，免費金鑰 4.2s）
             min_interval = 0.2 if chosen.get("is_paid", 0) == 1 else MIN_REQUEST_INTERVAL_SECONDS
             last_req = self._last_request_times.get(chosen["id"], chosen.get("last_used_at", 0.0))
             elapsed = now - last_req
@@ -88,19 +102,29 @@ class AccountScheduler:
         print(f"⚠️ 帳號 ID {account_id} 觸發速率限制 (429)，自動進入冷卻 {cooldown_seconds} 秒")
         await database.set_account_cooldown(account_id, cooldown_seconds)
 
-    async def wait_for_any_account(self, max_wait_seconds: float = 120.0, specific_account_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    async def wait_for_any_account(
+        self, 
+        max_wait_seconds: float = 120.0, 
+        specific_account_id: Optional[int] = None,
+        require_paid: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         若當前帳號皆處於冷卻中，等待直到解凍恢復
         """
         start_time = time.time()
         while time.time() - start_time < max_wait_seconds:
-            account = await self.get_next_available_account(specific_account_id=specific_account_id)
+            account = await self.get_next_available_account(
+                specific_account_id=specific_account_id,
+                require_paid=require_paid
+            )
             if account:
                 return account
                 
             accounts = await database.get_accounts()
             if specific_account_id is not None:
                 target_accounts = [acc for acc in accounts if acc["id"] == specific_account_id and acc.get("is_active") == 1]
+            elif require_paid:
+                target_accounts = [acc for acc in accounts if acc.get("is_active") == 1 and acc.get("is_paid", 0) == 1]
             else:
                 target_accounts = [acc for acc in accounts if acc.get("is_active") == 1 and acc.get("is_paid", 0) == 0]
             

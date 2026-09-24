@@ -322,6 +322,18 @@ async def require_admin(request: Request):
         raise HTTPException(status_code=401, detail="需要管理員權限")
 
 
+async def require_access_or_admin(request: Request):
+    """FastAPI Dependency: 要求當前請求必須具備通關密碼授權或管理員權限"""
+    is_admin, is_access = await extract_auth_info(request)
+    gate_enabled = await database.is_access_gate_enabled()
+    if is_admin or is_access:
+        return True
+    if gate_enabled:
+        raise HTTPException(status_code=401, detail="已啟用通關密碼保護，請先輸入通關密碼解鎖")
+    raise HTTPException(status_code=401, detail="需要通關密碼或管理員權限")
+
+
+
 def set_auth_cookie(
     response: Response,
     key: str,
@@ -508,6 +520,7 @@ async def run_page_ocr(
 
         task_info = await database.get_task(task_id) or {}
         target_account_id = specific_account_id
+        is_paid_task = bool(is_paid_call or task_info.get("is_paid"))
         if target_account_id is None and task_info.get("is_paid"):
             target_account_id = task_info.get("paid_account_id")
 
@@ -516,15 +529,22 @@ async def run_page_ocr(
         max_retries_503 = 5
 
         while retries < max_retries:
-            # 2. 向智慧排程器索取可用帳號（若為付費任務，鎖定指定付費金鑰）
-            account = await scheduler.get_next_available_account(specific_account_id=target_account_id)
+            # 2. 向智慧排程器索取可用帳號（若為付費任務，鎖定指定付費金鑰或從付費池輪詢）
+            account = await scheduler.get_next_available_account(
+                specific_account_id=target_account_id,
+                require_paid=is_paid_task
+            )
             if not account:
                 # 等待冷卻中的帳號解除
-                account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=target_account_id)
+                account = await scheduler.wait_for_any_account(
+                    max_wait_seconds=60.0,
+                    specific_account_id=target_account_id,
+                    require_paid=is_paid_task
+                )
                 
             if not account:
                 # 智慧降級備援：若指定付費通道但無可用金鑰（冷卻或已耗盡），自動降級至免費池預設模型
-                if target_account_id is not None or is_paid_call:
+                if is_paid_task or target_account_id is not None:
                     fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
                     prev_label = clean_model + (" 💎" if is_paid_call else "")
                     print(f"⚠️ [Page OCR Fallback] 任務 {task_id} 第 {page_num} 頁：{prev_label} 無可用金鑰或冷卻超時，智慧降級至免費 API ({fallback_model}) 接續執行")
@@ -534,13 +554,14 @@ async def run_page_ocr(
                     )
                     target_account_id = None
                     is_paid_call = False
+                    is_paid_task = False
                     clean_model = fallback_model
                     used_model_display = f"{clean_model} [降級備援]"
                     
                     # 重新向免費金鑰池索取可用帳號
-                    account = await scheduler.get_next_available_account(specific_account_id=None)
+                    account = await scheduler.get_next_available_account(specific_account_id=None, require_paid=False)
                     if not account:
-                        account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=None)
+                        account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=None, require_paid=False)
 
             if not account:
                 await database.update_page_result(
@@ -593,9 +614,16 @@ async def run_page_ocr(
                 should_fallback = False
                 fallback_reason = ""
                 
-                if is_paid_call or target_account_id is not None:
-                    should_fallback = True
-                    fallback_reason = f"付費 API ({account['name']}) 配額耗盡 (429)"
+                if is_paid_call or target_account_id is not None or is_paid_task:
+                    # 若為輪詢付費池 (未鎖定單一金鑰)，先看付費池是否還有其他可用金鑰
+                    other_paid = None
+                    if target_account_id is None and is_paid_task:
+                        other_paid = await scheduler.get_next_available_account(specific_account_id=None, require_paid=True)
+                    if not other_paid:
+                        should_fallback = True
+                        fallback_reason = f"付費 API ({account['name']}) 配額耗盡 (429)"
+                    else:
+                        print(f"🔄 [Page OCR] 付費金鑰 {account['name']} 觸發 429，切換至金鑰池另一組可用付費金鑰: {other_paid['name']}")
                 elif clean_model != fallback_model and retries >= 1:
                     should_fallback = True
                     fallback_reason = f"高級模型 ({clean_model}) 頻繁觸發 429 限額"
@@ -608,12 +636,12 @@ async def run_page_ocr(
                     )
                     target_account_id = None
                     is_paid_call = False
+                    is_paid_task = False
                     clean_model = fallback_model
                     used_model_display = f"{clean_model} [降級備援]"
                     retries += 1
                     await asyncio.sleep(1.0)
                     continue
-
                 retries += 1
                 await asyncio.sleep(2.0)
             else:
@@ -1074,7 +1102,7 @@ async def list_accounts():
     accounts = await database.get_accounts(include_secrets=False)
     return {"accounts": accounts}
 
-@app.post("/api/accounts/api-key", dependencies=[Depends(require_admin)])
+@app.post("/api/accounts/api-key", dependencies=[Depends(require_access_or_admin)])
 async def create_api_key_account(payload: ApiKeyAccountCreate):
     acc_id = await database.add_api_key_account(
         payload.name, payload.api_key, payload.rpm_limit, is_paid=1 if payload.is_paid else 0
@@ -1083,14 +1111,14 @@ async def create_api_key_account(payload: ApiKeyAccountCreate):
     spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
-@app.post("/api/accounts/oauth", dependencies=[Depends(require_admin)])
+@app.post("/api/accounts/oauth", dependencies=[Depends(require_access_or_admin)])
 async def create_oauth_account(payload: OAuthAccountCreate):
     acc_id = await database.add_oauth_account(payload.name, payload.client_id, payload.client_secret, payload.refresh_token)
     # 新增 OAuth 後自動觸發更新模型清單
     spawn_background(update_cached_models())
     return {"status": "ok", "account_id": acc_id}
 
-@app.post("/api/accounts/{account_id}/toggle", dependencies=[Depends(require_admin)])
+@app.post("/api/accounts/{account_id}/toggle", dependencies=[Depends(require_access_or_admin)])
 async def toggle_account(account_id: int):
     account = await database.get_account_by_id(account_id)
     if not account:
@@ -1099,12 +1127,12 @@ async def toggle_account(account_id: int):
     await database.toggle_account_active(account_id, new_state)
     return {"status": "ok", "is_active": new_state}
 
-@app.delete("/api/accounts/{account_id}", dependencies=[Depends(require_admin)])
+@app.delete("/api/accounts/{account_id}", dependencies=[Depends(require_access_or_admin)])
 async def delete_account(account_id: int):
     await database.delete_account(account_id)
     return {"status": "ok"}
 
-@app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_admin)])
+@app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_access_or_admin)])
 async def test_account(account_id: int, model: Optional[str] = None):
     account = await database.get_account_by_id(account_id)
     if not account:
@@ -1313,6 +1341,108 @@ async def get_all_tasks():
     tasks = await database.list_tasks()
     return {"tasks": tasks}
 
+@app.post("/api/upload/chunk")
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    filename: str = Form(...),
+    chunk: UploadFile = File(...)
+):
+    """
+    大檔案分塊切片上傳端點 (Chunked Upload)：
+    - 徹底突破 Cloudflare 100MB 限制與 Nginx Body Size 限制
+    - 逐塊以 append 模式寫入暫存檔 .incoming_chunk_{upload_id}.part
+    - 最後一塊上傳完成時：
+      1. 驗證完整 PDF 與磁碟剩餘空間
+      2. 計算 SHA-256 特徵碼
+      3. 若資料庫已有相同快取，直接重用快取路徑
+      4. 否則移至正式 uploads 目錄並建立快取索引
+      5. 回傳 file_hash、filepath 與 filename，供前端直接建立任務
+    """
+    clean_upload_id = "".join(c for c in upload_id if c.isalnum() or c in "_-")
+    if not clean_upload_id:
+        raise HTTPException(status_code=400, detail="無效的 upload_id")
+        
+    safe_name = _safe_filename(filename)
+    if not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="只接受 .pdf 檔案")
+
+    part_path = config.UPLOADS_DIR / f".incoming_chunk_{clean_upload_id}.part"
+    
+    # 檢查磁碟剩餘空間
+    reserve = config.MIN_FREE_DISK_MB * 1024 * 1024
+    free = _free_disk_bytes(config.DATA_DIR)
+    if free >= 0 and free < reserve:
+        part_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=507,
+            detail=f"伺服器磁碟空間不足（剩餘 {free / 1048576:.0f} MB，需保留至少 {config.MIN_FREE_DISK_MB} MB）"
+        )
+
+    # 第一塊上傳時若已有殘留舊檔則清空重來
+    mode = "wb" if chunk_index == 0 else "ab"
+    try:
+        with open(part_path, mode) as f:
+            while True:
+                data = await chunk.read(1024 * 1024)
+                if not data:
+                    break
+                f.write(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"寫入分塊失敗: {e}")
+
+    # 若尚未到達最後一塊，回傳接收成功
+    if chunk_index < total_chunks - 1:
+        return {
+            "status": "chunk_received",
+            "upload_id": clean_upload_id,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks
+        }
+
+    # 最後一塊已寫入完畢，計算全檔特徵碼與大小
+    try:
+        total_size = part_path.stat().st_size
+        f_hash = database.compute_file_sha256(part_path)
+    except Exception as e:
+        part_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"計算檔案特徵碼失敗: {e}")
+
+    # 檢查是否已存在相同內容的快取檔案
+    cached = await database.get_file_by_hash(f_hash)
+    if cached and Path(cached["filepath"]).exists():
+        part_path.unlink(missing_ok=True)
+        return {
+            "status": "completed",
+            "upload_id": clean_upload_id,
+            "file_hash": f_hash,
+            "cached": True,
+            "filepath": cached["filepath"],
+            "filename": safe_name,
+            "total_size": total_size
+        }
+
+    # 移至正式 uploads 目錄
+    final_task_id = f"task_{uuid.uuid4().hex[:10]}"
+    final_path = config.UPLOADS_DIR / f"{final_task_id}_{safe_name}"
+    try:
+        part_path.replace(final_path)
+        await database.save_file_hash(f_hash, safe_name, str(final_path), total_size)
+    except Exception as e:
+        part_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"儲存完整檔案失敗: {e}")
+
+    return {
+        "status": "completed",
+        "upload_id": clean_upload_id,
+        "file_hash": f_hash,
+        "cached": False,
+        "filepath": str(final_path),
+        "filename": safe_name,
+        "total_size": total_size
+    }
+
 @app.post("/api/tasks")
 async def create_ocr_task(
     background_tasks: BackgroundTasks,
@@ -1382,7 +1512,7 @@ async def create_ocr_task(
                 start_page=start_page,
                 end_page=end_page,
                 is_paid=1 if use_paid_model else 0,
-                paid_account_id=paid_account_id if use_paid_model else None,
+                paid_account_id=paid_account_id if (use_paid_model and paid_account_id and paid_account_id > 0) else None,
                 pdf_total_pages=pdf_total_pages,
                 file_hash=f_hash
             )
@@ -1453,7 +1583,7 @@ async def create_ocr_task(
                 start_page=start_page,
                 end_page=end_page,
                 is_paid=1 if use_paid_model else 0,
-                paid_account_id=paid_account_id if use_paid_model else None,
+                paid_account_id=paid_account_id if (use_paid_model and paid_account_id and paid_account_id > 0) else None,
                 pdf_total_pages=pdf_total_pages,
                 file_hash=f_hash
             )

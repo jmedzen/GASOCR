@@ -45,8 +45,8 @@ def run_security_tests():
     print(f"   ✅ GET /api/accounts 檢驗通過，共 {len(data['accounts'])} 組帳號均無明文機密洩漏")
 
     # 3. 驗證未授權/垂直越權操作防護 (Unauthorized Mutations)
-    print("👉 [3/6] 驗證未授權/訪客垂直越權操作防護...")
-    # 嘗試無憑證新增金鑰
+    print("👉 [3/6] 驗證未授權/訪客垂直越權操作防護與通關使用者權限...")
+    # 嘗試無憑證新增金鑰 (訪客/黑客)
     resp = client.post("/api/accounts/api-key", json={"name": "Hacker", "api_key": "AIzaFake"})
     assert resp.status_code == 401, f"未授權新增金鑰應返回 401，實際: {resp.status_code}"
 
@@ -57,7 +57,33 @@ def run_security_tests():
     # 嘗試無憑證觸發 launch-login
     resp = client.post("/api/web-rpa/launch-login")
     assert resp.status_code == 401, f"未授權 launch-login 應返回 401，實際: {resp.status_code}"
-    print("   ✅ 敏感管理端點垂直越權攔截有效 (401 Unauthorized)")
+    
+    # 驗證具備通關密碼授權的使用者：
+    # a. 可以新增付費金鑰
+    from main import create_session_token
+    secret = asyncio.run(database.get_session_secret())
+    access_token = create_session_token("access", secret)
+    access_headers = {"X-Access-Token": access_token}
+    
+    resp_paid = client.post(
+        "/api/accounts/api-key", 
+        headers=access_headers,
+        json={"name": "通關使用者付費金鑰測試", "api_key": "AIzaSyPaidUserTestKey", "is_paid": True}
+    )
+    assert resp_paid.status_code == 200, f"通關使用者應可新增付費金鑰，實際: {resp_paid.status_code}, {resp_paid.text}"
+    created_acc_id = resp_paid.json()["account_id"]
+    
+    # b. 可以切換/刪除自己新增的金鑰
+    resp_toggle = client.post(f"/api/accounts/{created_acc_id}/toggle", headers=access_headers)
+    assert resp_toggle.status_code == 200, "通關使用者應可切換金鑰狀態"
+    resp_del = client.delete(f"/api/accounts/{created_acc_id}", headers=access_headers)
+    assert resp_del.status_code == 200, "通關使用者應可刪除金鑰"
+    
+    # c. 但嚴格禁止操作管理員專屬端點 (如 Web RPA 配置)
+    resp_rpa = client.post("/api/web-rpa/config", headers=access_headers, json={"chrome_path": "/bin/sh"})
+    assert resp_rpa.status_code == 401, f"通關使用者不得存取 RPA 管理端點，實際: {resp_rpa.status_code}"
+    
+    print("   ✅ 敏感管理端點垂直越權攔截有效，且通關使用者已獲付費金鑰存取權限")
 
     # 4. 驗證 Cookie HttpOnly 標記
     print("👉 [4/6] 驗證登入 Cookie 之 HttpOnly 安全標記...")

@@ -24,6 +24,10 @@
                     usePaidModel: false,
                     paidAccountId: null
                 },
+                showQuickPaidInput: false,
+                quickPaidKeyName: '',
+                quickPaidKey: '',
+                isSubmittingQuickKey: false,
                 modelsList: {{ models | tojson }},
                 isLoadingModels: false,
                 accounts: [],
@@ -739,6 +743,46 @@
                     this.$nextTick(() => { lucide.createIcons(); });
                 },
 
+                async submitQuickPaidKey() {
+                    if (!this.quickPaidKey || !this.quickPaidKey.trim()) {
+                        alert('請輸入 Google Gemini API Key');
+                        return;
+                    }
+                    this.isSubmittingQuickKey = true;
+                    try {
+                        const keyName = (this.quickPaidKeyName || '').trim() || ('付費金鑰-' + new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+                        const res = await fetch('/api/accounts/api-key', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: keyName,
+                                api_key: this.quickPaidKey.trim(),
+                                rpm_limit: 1000,
+                                is_paid: true
+                            })
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok) {
+                            this.quickPaidKey = '';
+                            this.quickPaidKeyName = '';
+                            this.showQuickPaidInput = false;
+                            await this.loadAccounts();
+                            if (data.account_id) {
+                                this.formConfig.paidAccountId = data.account_id;
+                            }
+                            alert('💎 付費 API 金鑰新增成功，已自動選取！');
+                            this.refreshModels(false);
+                        } else {
+                            alert('新增失敗: ' + (data.detail || '請確認是否具備通關密碼授權或管理員權限'));
+                        }
+                    } catch (err) {
+                        alert('新增失敗: ' + err);
+                    } finally {
+                        this.isSubmittingQuickKey = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
                 async submitApiKeyAccount() {
                     if (!this.newKey.name || !this.newKey.api_key) return;
                     try {
@@ -755,7 +799,7 @@
                             this.refreshModels(false);
                         } else {
                             const errData = await res.json().catch(() => ({}));
-                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備通關密碼授權或管理員權限'));
                         }
                     } catch (err) {
                         alert('新增失敗: ' + err);
@@ -776,7 +820,7 @@
                             this.refreshModels(false);
                         } else {
                             const errData = await res.json().catch(() => ({}));
-                            alert('新增失敗: ' + (errData.detail || '請確認是否具備管理員權限'));
+                            alert('新增失敗: ' + (errData.detail || '請確認是否具備通關密碼授權或管理員權限'));
                         }
                     } catch (err) {
                         alert('新增失敗: ' + err);
@@ -787,7 +831,7 @@
                     const res = await fetch(`/api/accounts/${accId}/toggle`, { method: 'POST' });
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        alert('操作失敗: ' + (errData.detail || '需要管理員權限'));
+                        alert('操作失敗: ' + (errData.detail || '請確認是否具備通關密碼授權或管理員權限'));
                     }
                     await this.loadAccounts();
                 },
@@ -801,7 +845,7 @@
                         const res = await fetch(`/api/accounts/${accId}/test`, { method: 'POST' });
                         const data = await res.json().catch(() => ({}));
                         if (!res.ok) {
-                            alert('測試失敗: ' + (data.detail || '需要管理員權限'));
+                            alert('測試失敗: ' + (data.detail || '請確認是否具備通關密碼授權或管理員權限'));
                         } else {
                             alert(data.message);
                         }
@@ -818,7 +862,7 @@
                     const res = await fetch(`/api/accounts/${accId}`, { method: 'DELETE' });
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        alert('刪除失敗: ' + (errData.detail || '需要管理員權限'));
+                        alert('刪除失敗: ' + (errData.detail || '請確認是否具備通關密碼授權或管理員權限'));
                     }
                     await this.loadAccounts();
                 },
@@ -1028,45 +1072,58 @@
 
                 async startBatchOcrTask() {
                     if (this.pendingFiles.length === 0) return;
+                    if (this.formConfig.usePaidModel && this.paidAccounts.length === 0) {
+                        alert('您已勾選「💎 使用付費 API」，但目前尚未設定任何付費金鑰。\n請先於下方快速輸入您的付費 API Key，或取消勾選以使用免費 API 金鑰池。');
+                        this.showQuickPaidInput = true;
+                        return;
+                    }
                     this.isSubmitting = true;
                     this.uploadProgress = 0;
 
-                    // ── 分批上傳設定 ─────────────────────────────────────
-                    // 為什麼要分批：先前把所有檔案塞進「同一個」FormData 一次送出。
-                    // 5 個 200MB+ 的 PDF 等於一個 1GB+ 的單一請求，結果是
-                    //   1. 兩端記憶體都被吃爆（Python 被 OOM 殺掉）
-                    //   2. 任何一個檔案出錯，整批一起失敗
-                    //   3. 無法顯示個別檔案的進度與錯誤
-                    // 因此改成依「檔案數」與「總位元組」切成多個請求，序列送出。
-                    const MAX_FILES_PER_REQUEST = 2;
-                    const MAX_BYTES_PER_REQUEST = 200 * 1024 * 1024;
+                    // ── 大檔切片分塊上傳 (Chunked Upload) 與小檔分批防爆設定 ─────────
+                    // Cloudflare Free/Pro 嚴格限制單一 POST 請求 Body 上限為 100MB，
+                    // 若直接上傳 200MB+ 的 PDF，Cloudflare 會在到達後端前直接拒收並回傳 413 Payload Too Large。
+                    // 解決方案：
+                    // 1. > 30MB 的大型檔案一律使用 /api/upload/chunk 依 20MB 切片串流上傳，徹底避開 100MB 限制
+                    // 2. 切片傳輸支援失敗重試 (3次)，完成後自動聚合並取得特徵碼，以 existing_files 形式建立任務
+                    // 3. <= 30MB 的小型檔案維持標準快速上傳，每批次嚴格控制在 30MB 以內
+                    const CHUNK_THRESHOLD = 30 * 1024 * 1024; // 30 MB
+                    const CHUNK_SIZE = 20 * 1024 * 1024;      // 20 MB
 
                     const cachedItems = this.pendingFiles.filter(i => i.isCached && i.hash);
                     const newItems = this.pendingFiles.filter(i => !(i.isCached && i.hash));
 
-                    const batches = [];
+                    // 分離大檔 (需切片) 與小檔 (可直接快速上傳)
+                    const largeNewItems = newItems.filter(i => ((i.file && i.file.size) || 0) > CHUNK_THRESHOLD);
+                    const smallNewItems = newItems.filter(i => ((i.file && i.file.size) || 0) <= CHUNK_THRESHOLD);
+
+                    const smallBatches = [];
                     let cur = [];
                     let curBytes = 0;
-                    for (const it of newItems) {
+                    for (const it of smallNewItems) {
                         const sz = (it.file && it.file.size) || 0;
                         const wouldExceed = cur.length > 0 &&
-                            (cur.length >= MAX_FILES_PER_REQUEST ||
-                             curBytes + sz > MAX_BYTES_PER_REQUEST);
+                            (cur.length >= 2 || curBytes + sz > CHUNK_THRESHOLD);
                         if (wouldExceed) {
-                            batches.push(cur);
+                            smallBatches.push(cur);
                             cur = [];
                             curBytes = 0;
                         }
                         cur.push(it);
                         curBytes += sz;
                     }
-                    if (cur.length > 0) batches.push(cur);
+                    if (cur.length > 0) smallBatches.push(cur);
 
                     const totalBytes = newItems.reduce((s, i) => s + ((i.file && i.file.size) || 0), 0);
                     let uploadedBytes = 0;
                     let totalCreated = 0;
                     let firstTaskId = null;
                     const failures = [];
+                    const allReadyExistingFiles = cachedItems.map(i => ({
+                        hash: i.hash,
+                        filename: i.name,
+                        filepath: i.cachedPath
+                    }));
 
                     const buildFormData = (files, cached) => {
                         const fd = new FormData();
@@ -1074,11 +1131,7 @@
                             fd.append('files', it.file || it);
                         }
                         if (cached && cached.length > 0) {
-                            fd.append('existing_files', JSON.stringify(cached.map(i => ({
-                                hash: i.hash,
-                                filename: i.name,
-                                filepath: i.cachedPath
-                            }))));
+                            fd.append('existing_files', JSON.stringify(cached));
                         }
                         fd.append('model', this.formConfig.model);
                         fd.append('lang', this.formConfig.lang);
@@ -1094,11 +1147,9 @@
                         return fd;
                     };
 
-                    const postBatch = (formData) => new Promise((resolve, reject) => {
+                    const postBatch = (formData, batchBytes = 0) => new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
                         xhr.open('POST', '/api/tasks');
-                        // 先前沒有設定 timeout，導致 ontimeout 永遠是死碼。
-                        // 設太短會誤殺慢速上傳，因此給 15 分鐘上限。
                         xhr.timeout = 15 * 60 * 1000;
                         xhr.upload.onprogress = (e) => {
                             if (e.lengthComputable && e.total > 0) {
@@ -1112,13 +1163,48 @@
                                 const data = JSON.parse(xhr.responseText);
                                 resolve({ status: xhr.status, data });
                             } catch (err) {
-                                reject(new Error('伺服器回應格式錯誤: ' +
-                                    (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
+                                if (xhr.status === 413) {
+                                    reject(new Error('檔案過大，伺服器或反向代理 (Nginx/Cloudflare) 拒絕接收 (413 Payload Too Large)'));
+                                } else {
+                                    reject(new Error('伺服器回應格式錯誤: ' +
+                                        (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
+                                }
                             }
                         };
                         xhr.onerror = () => reject(new Error('網路傳輸失敗，請檢查連線狀態'));
                         xhr.ontimeout = () => reject(new Error('請求超時（15 分鐘），檔案過大或伺服器處理時間過長'));
                         xhr.send(formData);
+                    });
+
+                    const postChunk = (chunkFd, onProgress) => new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', '/api/upload/chunk');
+                        xhr.timeout = 5 * 60 * 1000;
+                        xhr.upload.onprogress = (e) => {
+                            if (e.lengthComputable && onProgress) {
+                                onProgress(e.loaded);
+                            }
+                        };
+                        xhr.onload = () => {
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                if (xhr.status === 200) {
+                                    resolve({ status: xhr.status, data });
+                                } else {
+                                    reject(new Error(data.detail || `HTTP ${xhr.status}`));
+                                }
+                            } catch (err) {
+                                if (xhr.status === 413) {
+                                    reject(new Error('分片超過邊界伺服器上限 (413 Payload Too Large)'));
+                                } else {
+                                    reject(new Error('伺服器回應格式錯誤: ' +
+                                        (xhr.responseText ? xhr.responseText.slice(0, 100) : xhr.statusText)));
+                                }
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error('分片網路傳輸失敗，請檢查連線狀態'));
+                        xhr.ontimeout = () => reject(new Error('分片請求超時'));
+                        xhr.send(chunkFd);
                     });
 
                     const absorb = (res, items) => {
@@ -1128,28 +1214,89 @@
                             (res.data.failed || []).forEach(f => failures.push(f));
                         } else {
                             const m = (res.data && (res.data.detail || res.data.message)) || '未知原因';
-                            items.forEach(it => failures.push({ name: it.name, error: m }));
+                            items.forEach(it => failures.push({ name: it.name || it.filename, error: m }));
                         }
                     };
 
                     try {
-                        // 1) 已快取（免上傳）的檔案：單獨送一次請求建立任務
-                        if (cachedItems.length > 0) {
+                        // 1) 處理大檔案：以 20MB 分塊切片序列上傳，避開 Cloudflare 100MB 限制
+                        for (const it of largeNewItems) {
+                            const file = it.file;
+                            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                            const uploadId = 'chunk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+                            let fileSuccess = true;
+                            let completedInfo = null;
+
+                            for (let cIdx = 0; cIdx < totalChunks; cIdx++) {
+                                const start = cIdx * CHUNK_SIZE;
+                                const end = Math.min(file.size, start + CHUNK_SIZE);
+                                const chunkBlob = file.slice(start, end);
+                                const currentChunkBytes = end - start;
+
+                                const cFd = new FormData();
+                                cFd.append('upload_id', uploadId);
+                                cFd.append('chunk_index', cIdx);
+                                cFd.append('total_chunks', totalChunks);
+                                cFd.append('filename', it.name);
+                                cFd.append('chunk', chunkBlob, it.name);
+
+                                let chunkDone = false;
+                                let lastErr = null;
+                                for (let attempt = 0; attempt < 3; attempt++) {
+                                    try {
+                                        const res = await postChunk(cFd, (loaded) => {
+                                            const denom = totalBytes > 0 ? totalBytes : 1;
+                                            const done = uploadedBytes + loaded;
+                                            this.uploadProgress = Math.min(99, Math.round((done / denom) * 100));
+                                        });
+                                        chunkDone = true;
+                                        if (cIdx === totalChunks - 1) {
+                                            completedInfo = res.data;
+                                        }
+                                        break;
+                                    } catch (err) {
+                                        lastErr = err;
+                                        await new Promise(r => setTimeout(r, 1000));
+                                    }
+                                }
+
+                                if (!chunkDone) {
+                                    failures.push({
+                                        name: it.name,
+                                        error: `分片 ${cIdx + 1}/${totalChunks} 上傳失敗: ` + (lastErr?.message || lastErr)
+                                    });
+                                    fileSuccess = false;
+                                    break;
+                                }
+                                uploadedBytes += currentChunkBytes;
+                            }
+
+                            if (fileSuccess && completedInfo) {
+                                allReadyExistingFiles.push({
+                                    hash: completedInfo.file_hash,
+                                    filename: it.name,
+                                    filepath: completedInfo.filepath
+                                });
+                            }
+                        }
+
+                        // 2) 提交所有已就緒檔案（包含伺服器原快取與剛剛完成切片上傳的大檔）
+                        if (allReadyExistingFiles.length > 0) {
                             try {
-                                absorb(await postBatch(buildFormData([], cachedItems)), cachedItems);
+                                absorb(await postBatch(buildFormData([], allReadyExistingFiles)), allReadyExistingFiles);
                             } catch (err) {
-                                cachedItems.forEach(it => failures.push({
-                                    name: it.name, error: err.message || String(err)
+                                allReadyExistingFiles.forEach(it => failures.push({
+                                    name: it.name || it.filename, error: err.message || String(err)
                                 }));
                             }
                         }
 
-                        // 2) 新上傳的檔案：逐批序列送出，避免同時佔用大量記憶體
-                        for (const batch of batches) {
+                        // 3) 處理 <= 30MB 的小型新檔案（以每批 <= 30MB 序列上傳）
+                        for (const batch of smallBatches) {
                             const bytesInBatch = batch.reduce(
                                 (s, it) => s + ((it.file && it.file.size) || 0), 0);
                             try {
-                                absorb(await postBatch(buildFormData(batch, [])), batch);
+                                absorb(await postBatch(buildFormData(batch, []), bytesInBatch), batch);
                             } catch (err) {
                                 batch.forEach(it => failures.push({
                                     name: it.name, error: err.message || String(err)

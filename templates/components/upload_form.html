@@ -129,23 +129,57 @@
                             </div>
                             
                             <div x-show="formConfig.usePaidModel" x-transition class="pt-1 border-t border-amber-200/60">
-                                <label class="block text-[11px] font-semibold text-amber-900 mb-1 flex items-center justify-between">
-                                    <span>選擇專屬付費 API Key：</span>
-                                    <span class="text-[10px] text-amber-700" x-text="`可選 ${paidAccounts.length} 組`"></span>
-                                </label>
+                                <div class="flex items-center justify-between mb-1">
+                                    <label class="block text-[11px] font-semibold text-amber-900">選擇專屬付費 API Key：</label>
+                                    <div class="flex items-center space-x-2 text-[11px]">
+                                        <span class="text-amber-700" x-text="`可選 ${paidAccounts.length} 組`"></span>
+                                        <button type="button" @click="showQuickPaidInput = !showQuickPaidInput" class="text-amber-900 underline font-bold hover:text-amber-700 cursor-pointer flex items-center gap-0.5">
+                                            <i data-lucide="plus" class="w-3 h-3"></i>
+                                            <span x-text="showQuickPaidInput ? '收合新增' : '+ 新增付費金鑰'"></span>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <template x-if="paidAccounts.length > 0">
                                     <select x-model.number="formConfig.paidAccountId" class="w-full text-xs font-medium rounded-lg border border-amber-300 bg-white p-2 text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer">
+                                        <option :value="0">⚡ 自動輪詢所有可用付費金鑰 (共用負載平衡)</option>
                                         <template x-for="acc in paidAccounts" :key="acc.id">
                                             <option :value="acc.id" x-text="`${acc.name} (${acc.masked_key || 'API Key'})`" :selected="formConfig.paidAccountId === acc.id"></option>
                                         </template>
                                     </select>
                                 </template>
-                                <template x-if="paidAccounts.length === 0">
+
+                                <template x-if="paidAccounts.length === 0 && !showQuickPaidInput">
                                     <div class="text-xs text-amber-800 bg-white/80 p-2.5 rounded-lg border border-amber-200 flex items-center justify-between">
-                                        <span>⚠️ 目前尚未設定任何「付費金鑰」。</span>
-                                        <button type="button" @click="openAccountsModal(); authTab = 'api_key'; newKey.is_paid = true;" class="text-amber-900 underline font-bold hover:text-amber-700 cursor-pointer">立即前往新增</button>
+                                        <span>⚠️ 目前金鑰池尚未設定任何「付費金鑰」。</span>
+                                        <button type="button" @click="showQuickPaidInput = true" class="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer transition">
+                                            輸入我的付費金鑰
+                                        </button>
                                     </div>
                                 </template>
+
+                                <!-- Quick Add Paid Key Inline Box (通關密碼使用者可在此直接加入個人金鑰) -->
+                                <div x-show="showQuickPaidInput || paidAccounts.length === 0" x-transition class="mt-2 p-3 bg-white rounded-lg border border-amber-300 space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-bold text-amber-900 flex items-center gap-1">
+                                            <i data-lucide="key" class="w-3.5 h-3.5 text-amber-600"></i>
+                                            <span>快速加入個人 Gemini 付費 API Key</span>
+                                        </span>
+                                        <button type="button" @click="openAccountsModal(); authTab = 'api_key'; newKey.is_paid = true;" class="text-[11px] text-slate-500 hover:text-amber-800 underline">開啟完整管理池</button>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        <div>
+                                            <input type="text" x-model="quickPaidKeyName" placeholder="備註 (例: 我的付費Key)" class="w-full text-xs rounded border border-slate-300 p-1.5 focus:ring-1 focus:ring-amber-500">
+                                        </div>
+                                        <div class="sm:col-span-2 flex gap-1.5">
+                                            <input type="password" x-model="quickPaidKey" placeholder="貼上 AIzaSy... 金鑰" class="flex-1 text-xs rounded border border-slate-300 p-1.5 font-mono focus:ring-1 focus:ring-amber-500">
+                                            <button type="button" @click="submitQuickPaidKey()" :disabled="isSubmittingQuickKey" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50">
+                                                <span x-text="isSubmittingQuickKey ? '儲存中...' : '加入並選用'"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-[10px] text-amber-700/80">金鑰將儲存於伺服器金鑰池供此工作階段調用，免去 15 RPM 限制。隨時可至「金鑰池」進行連線測試、暫停或刪除。</p>
+                                </div>
                             </div>
                         </div>
 
