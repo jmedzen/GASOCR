@@ -471,6 +471,32 @@ async def update_task_status(
         await db.execute(query, tuple(params))
         await db.commit()
 
+async def pause_task_in_progress_pages(task_id: str):
+    """將任務中處於 processing 或 rendering 狀態的頁面轉換為 paused"""
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("""
+            UPDATE task_pages 
+            SET status = 'paused', 
+                error_message = '任務已手動暫停', 
+                updated_at = ?
+            WHERE task_id = ? AND status IN ('processing', 'rendering')
+        """, (now, task_id))
+        await db.commit()
+
+async def resume_task_paused_pages(task_id: str):
+    """將任務中處於 paused 狀態的頁面重置為 pending 以便接續轉譯"""
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("""
+            UPDATE task_pages 
+            SET status = 'pending', 
+                error_message = '', 
+                updated_at = ?
+            WHERE task_id = ? AND status = 'paused'
+        """, (now, task_id))
+        await db.commit()
+
 async def get_task(task_id: str) -> Optional[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))

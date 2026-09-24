@@ -415,9 +415,26 @@ async def auth_middleware(request: Request, call_next):
 # --- Background OCR Worker ---
 
 active_page_tasks: Dict[str, asyncio.Task] = {}
+active_pipeline_tasks: Dict[str, asyncio.Task] = {}
+active_bg_render_tasks: Dict[str, asyncio.Task] = {}
+
+def cancel_task_active_jobs(tid: str):
+    """即時取消指定任務所有在途的背景任務（包含流水線、切圖與單頁 OCR 請求）"""
+    pipe = active_pipeline_tasks.pop(tid, None)
+    if pipe and not pipe.done():
+        pipe.cancel()
+    bg = active_bg_render_tasks.pop(tid, None)
+    if bg and not bg.done():
+        bg.cancel()
+    for key in list(active_page_tasks.keys()):
+        if key.startswith(f"{tid}_"):
+            pt = active_page_tasks.pop(key, None)
+            if pt and not pt.done():
+                pt.cancel()
 
 async def background_render_task_pages(task_id: str, pdf_path: Path, target_pages: set):
     """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，受 RENDER_SEMAPHORE 控管總 CPU 並發"""
+    active_bg_render_tasks[task_id] = asyncio.current_task()
     try:
         async with RENDER_SEMAPHORE:
             if SHUTTING_DOWN:
@@ -445,9 +462,15 @@ async def background_render_task_pages(task_id: str, pdf_path: Path, target_page
                 
             await database.update_task_status(task_id, bg_render_status="completed")
             print(f"✅ [Background Render] 任務 {task_id} 其餘 {len(remaining_rendered)} 頁高清渲染全部完成！")
+    except asyncio.CancelledError:
+        print(f"⏸️ [Background Render] 任務 {task_id} 背景高清切圖已及時響應暫停/取消")
+        await database.update_task_status(task_id, bg_render_status="paused")
+        return
     except Exception as e:
         print(f"❌ [Background Render] 任務 {task_id} 背景渲染異常: {e}")
         await database.update_task_status(task_id, bg_render_status="failed")
+    finally:
+        active_bg_render_tasks.pop(task_id, None)
 
 async def run_page_ocr(
     task_id: str, 
@@ -673,13 +696,15 @@ async def run_page_ocr(
         active_page_tasks.pop(task_key, None)
 
 async def process_task_pipeline(task_id: str):
-    """整個任務的流水線處理（支援初次執行與暫停後接續）"""
-    task = await database.get_task(task_id)
-    if not task:
-        return
-        
+    """整個任務的流水線處理（支援初次執行與切圖/OCR階段隨時暫停與接續）"""
+    current_coro_task = asyncio.current_task()
+    active_pipeline_tasks[task_id] = current_coro_task
+    
     try:
-        pages = await database.get_task_pages(task_id)
+        task = await database.get_task(task_id)
+        if not task:
+            return
+            
         pdf_path = Path(task["original_filepath"])
         # 同步 PDF 解析丟到執行緒，避免大檔解析時卡住整個事件迴圈
         pdf_total_pages = (
@@ -691,29 +716,25 @@ async def process_task_pipeline(task_id: str):
         if e_page <= 0 or e_page > pdf_total_pages:
             e_page = pdf_total_pages
         target_page_nums = set(range(s_page, e_page + 1))
+        target_list = list(range(s_page, e_page + 1))
+        total_target = len(target_list)
+        task_render_dir = config.RENDERS_DIR / task_id
 
-        # 開工前先確認磁碟空間。300 DPI 的頁面 PNG 很大（實測單一任務可累積 1.3GB），
-        # 磁碟寫爆會讓渲染中途以 OSError 崩潰、任務卡在 rendering。
-        # 這裡改成事前檢查並給出明確訊息。
+        # 開工前先確認磁碟空間
         _free = _free_disk_bytes(config.DATA_DIR)
         if _free >= 0 and _free < config.MIN_FREE_DISK_MB * 1024 * 1024:
             print(f"❌ [Task {task_id}] 磁碟空間不足（剩餘 {_free/1048576:.0f} MB），中止切圖")
             await database.update_task_status(task_id, "failed")
             return
 
-        # 關閉中就不再啟動新的 PDFium 渲染（避免收尾階段 SIGSEGV）
+        # 關閉中就不再啟動新的 PDFium 渲染
         if SHUTTING_DOWN:
             print(f"⏹️ [Task {task_id}] 應用程式正在關閉，不啟動新的切圖")
             return
 
+        pages = await database.get_task_pages(task_id)
         if not pages:
-            # 1. 初次啟動：僅渲染指定範圍的頁面為圖片（大幅節省時間）
-            target_list = list(range(s_page, e_page + 1))
-            total_target = len(target_list)
-            task_render_dir = config.RENDERS_DIR / task_id
-
-            # 先建立 task_pages 預備記錄，讓前端進度條與頁面狀態燈號立即得知目標範圍！
-            # 排隊等待切圖期間頁面狀態皆為 pending
+            # 初次建立 task_pages 預備記錄，排隊等待切圖期間頁面狀態皆為 pending
             init_pages = [
                 {
                     "task_id": task_id,
@@ -724,8 +745,6 @@ async def process_task_pipeline(task_id: str):
                 for p_num in target_list
             ]
             await database.create_task_pages(init_pages)
-
-            # 更新任務狀態為 pending（佇列排隊中），設定總目標頁數並將已切圖頁數初始化為 0
             await database.update_task_status(
                 task_id, 
                 status="pending", 
@@ -734,54 +753,64 @@ async def process_task_pipeline(task_id: str):
                 rendered_pages=0,
                 pdf_total_pages=pdf_total_pages
             )
+            pages = await database.get_task_pages(task_id)
 
-            # 進入 RENDER_SEMAPHORE，受限於 MAX_RENDER_WORKERS (CPU Core - 2)
+        # 1. 檢查哪些目標頁面尚未切圖（圖片檔案不存在或尚未完成切圖）
+        pages_to_slice = [
+            p_num for p_num in target_list 
+            if not (task_render_dir / f"page_{p_num:04d}.png").exists()
+        ]
+        
+        # 2. 若有未切圖的頁面，進入受控並發進行切圖渲染
+        if pages_to_slice:
             async with RENDER_SEMAPHORE:
                 # 取得執行槽位後，檢查在佇列等待期間任務是否已被使用者暫停或刪除
                 check_task = await database.get_task(task_id)
                 if not check_task or check_task.get("status") in ["paused", "failed"]:
                     return
 
-                # 正式啟動切圖，狀態更新為 rendering，並將首頁標記為 rendering
-                await database.update_task_status(task_id, status="rendering")
-                if target_list:
-                    await database.update_page_status(task_id, target_list[0], "rendering")
+                # 正式啟動切圖，狀態更新為 rendering
+                await database.update_task_status(task_id, status="rendering", bg_render_status="rendering")
+                if pages_to_slice:
+                    await database.update_page_status(task_id, pages_to_slice[0], "rendering")
 
-                # 定義非同步切圖回呼：每完成一頁即刻更新資料庫與切圖計數
-                current_rendered = 0
+                current_rendered = total_target - len(pages_to_slice)
                 async def on_single_page_done(p_num: int, total_count: int, img_path: Path):
                     nonlocal current_rendered
                     current_rendered += 1
                     await database.update_page_image_and_status(task_id, p_num, str(img_path), "pending")
                     await database.update_task_status(task_id, rendered_pages=current_rendered)
 
-                rendered_pages = await render_pdf_to_images_async(
+                    # 檢查任務是否已被暫停或取消
+                    t_check = await database.get_task(task_id)
+                    if not t_check or t_check.get("status") in ["paused", "failed"]:
+                        raise asyncio.CancelledError()
+
+                await render_pdf_to_images_async(
                     pdf_path, 
                     task_id, 
                     start_page=s_page, 
                     end_page=e_page,
+                    pages_to_render=pages_to_slice,
                     on_page_rendered=on_single_page_done,
                     executor=PDF_RENDER_EXECUTOR
                 )
             
-            # 檢查在切圖渲染期間，使用者是否已按了暫停或刪除
+            # 切圖完成後，檢查在切圖渲染期間，使用者是否已按了暫停或刪除
             check_task = await database.get_task(task_id)
             if not check_task or check_task.get("status") in ["paused", "failed"]:
                 return
 
-            await database.update_task_status(
-                task_id, "processing", 
-                total_pages=total_target, 
-                processed_pages=0,
-                rendered_pages=total_target,
-                pdf_total_pages=pdf_total_pages
-            )
-            pages = await database.get_task_pages(task_id)
-        else:
-            # 2. 暫停接續：直接切換為 processing
-            await database.update_task_status(task_id, "processing", pdf_total_pages=pdf_total_pages)
+        # 3. 切圖確認全數完成，切換為 processing 狀態準備執行 OCR
+        await database.update_task_status(
+            task_id, "processing", 
+            total_pages=total_target, 
+            rendered_pages=total_target,
+            pdf_total_pages=pdf_total_pages
+        )
+        pages = await database.get_task_pages(task_id)
         
-        # 3. 準備 Prompt (重新拉取 task 以取得最新可能被變更之模型與設定)
+        # 4. 準備 Prompt (重新拉取 task 以取得最新可能被變更之模型與設定)
         task = await database.get_task(task_id) or task
         prompt = build_ocr_prompt(
             lang=task.get("lang_pref", "traditional"),
@@ -790,7 +819,7 @@ async def process_task_pipeline(task_id: str):
             custom_prompt=task.get("custom_prompt", "")
         )
         
-        # 4. 逐頁進行 OCR 辨識（跳過已完成的頁面與非本次目標頁面）
+        # 5. 逐頁進行 OCR 辨識（跳過已完成的頁面與非本次目標頁面）
         for p in pages:
             if p["page_num"] not in target_page_nums:
                 continue
@@ -805,7 +834,7 @@ async def process_task_pipeline(task_id: str):
             model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
             await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
             
-        # 5. 全部目標頁面處理完成檢查
+        # 6. 全部目標頁面處理完成檢查
         latest_task = await database.get_task(task_id)
         if latest_task and latest_task["status"] not in ["paused", "failed"]:
             latest_pages = await database.get_task_pages(task_id)
@@ -813,15 +842,22 @@ async def process_task_pipeline(task_id: str):
             if all(lp["status"] == "completed" for lp in target_pages_status):
                 await database.update_task_status(task_id, "completed")
                 
-                # 6. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
+                # 7. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
                 if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
                     print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
                     spawn_background(background_render_task_pages(task_id, pdf_path, target_page_nums))
         
+    except asyncio.CancelledError:
+        print(f"⏸️ [Task {task_id}] 切圖/轉譯流水線已即時響應暫停指令")
+        await database.update_task_status(task_id, status="paused", bg_render_status="paused")
+        await database.pause_task_in_progress_pages(task_id)
+        return
     except Exception as e:
         if await database.get_task(task_id):
             print(f"Task {task_id} pipeline error: {e}")
             await database.update_task_status(task_id, "failed")
+    finally:
+        active_pipeline_tasks.pop(task_id, None)
 
 # --- Web UI Routes ---
 
@@ -1623,6 +1659,10 @@ async def delete_ocr_task(task_id: str):
     task = await database.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # 即時取消任何正在執行的背景任務 (切圖/OCR)
+    cancel_task_active_jobs(task_id)
+    
     await database.delete_task(task_id)
     try:
         orig_fp = task.get("original_filepath")
@@ -1658,6 +1698,10 @@ async def batch_delete_ocr_tasks(payload: BatchDeleteTasksRequest):
         task = await database.get_task(tid)
         if not task:
             continue
+        
+        # 即時取消任何正在執行的背景任務 (切圖/OCR)
+        cancel_task_active_jobs(tid)
+        
         deleted_ids.append(tid)
         orig_fp = task.get("original_filepath")
         
@@ -1697,12 +1741,21 @@ async def batch_delete_ocr_tasks(payload: BatchDeleteTasksRequest):
 
 @app.post("/api/tasks/{task_id}/pause")
 async def pause_task(task_id: str):
-    """暫停指定 OCR 任務"""
+    """暫停指定 OCR 任務（涵蓋切圖階段與 OCR 辨識階段）"""
     task = await database.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task["status"] in ["rendering", "processing", "pending"]:
-        await database.update_task_status(task_id, "paused")
+        
+    # 1. 即時中斷該任務所有正在運行的背景任務（切圖流水線、背景高清渲染、在途單頁 OCR）
+    cancel_task_active_jobs(task_id)
+
+    # 2. 更新任務狀態與背景渲染狀態為 paused
+    await database.update_task_status(task_id, status="paused", bg_render_status="paused")
+    
+    # 3. 將當前處於 rendering 或 processing 狀態的頁面改為 paused
+    await database.pause_task_in_progress_pages(task_id)
+    
+    print(f"⏸️ [Task {task_id}] 使用者手動暫停任務成功（已即時中斷切圖與 OCR 流程）")
     return {"status": "ok", "task_status": "paused"}
 
 class ResumeTaskPayload(BaseModel):
@@ -1722,7 +1775,7 @@ async def update_task_model_endpoint(task_id: str, payload: TaskModelUpdate):
 
 @app.post("/api/tasks/{task_id}/resume")
 async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None):
-    """接續執行已暫停或失敗的 OCR 任務，支援即時更換模型"""
+    """接續執行已暫停或失敗的 OCR 任務，支援即時更換模型（支援切圖續切與 OCR 續傳）"""
     task = await database.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -1730,6 +1783,9 @@ async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None)
     if new_model:
         await database.update_task_model(task_id, new_model)
     if task["status"] in ["paused", "failed", "pending"]:
+        # 將被手動暫停的頁面重置回 pending 以利接續
+        await database.resume_task_paused_pages(task_id)
+        # 標記狀態為 processing 並重啟流水線（流水線會自動偵測是否需要續切圖或直接續 OCR）
         await database.update_task_status(task_id, "processing", model=new_model)
         spawn_background(process_task_pipeline(task_id))
     return {

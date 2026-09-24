@@ -124,11 +124,12 @@ async def render_pdf_to_images_async(
     end_page: int = 0, 
     dpi: int = DEFAULT_RENDER_DPI,
     on_page_rendered: Optional[Callable[[int, int, Path], Any]] = None,
-    executor: Optional[concurrent.futures.Executor] = None
+    executor: Optional[concurrent.futures.Executor] = None,
+    pages_to_render: Optional[List[int]] = None
 ) -> List[Tuple[int, Path]]:
     """
-    非阻塞逐頁渲染 PDF 為高品質 PNG 圖片，每切完一頁即時呼叫非同步回呼以即時更新進度條
-    支援傳入自訂 ThreadPoolExecutor，確保單檔單執行緒循序切圖
+    非阻塞逐頁渲染 PDF 為高品質 PNG 圖片，每切完一頁即時呼叫非同步回呼以即時更新進度條。
+    支援 pages_to_render 參數（用於暫停後接續切圖剩餘頁面），並具備協程取消與暫停感知。
     """
     scale = dpi / 72.0
     task_render_dir = RENDERS_DIR / task_id
@@ -138,16 +139,26 @@ async def render_pdf_to_images_async(
     pdf = await loop.run_in_executor(executor, _open_document, pdf_path)
     total_pages = await loop.run_in_executor(executor, _page_count, pdf)
     
-    s_page = max(1, start_page)
-    e_page = min(total_pages, end_page) if (end_page and end_page > 0) else total_pages
-    if s_page > e_page:
-        s_page = 1
-        e_page = total_pages
+    if pages_to_render is not None:
+        target_list = [p for p in pages_to_render if 1 <= p <= total_pages]
+        total_target = max(1, end_page - start_page + 1) if (end_page and end_page >= start_page) else len(target_list)
+    else:
+        s_page = max(1, start_page)
+        e_page = min(total_pages, end_page) if (end_page and end_page > 0) else total_pages
+        if s_page > e_page:
+            s_page = 1
+            e_page = total_pages
+        target_list = list(range(s_page, e_page + 1))
+        total_target = max(1, e_page - s_page + 1)
 
-    total_target = max(1, e_page - s_page + 1)
     results = []
     try:
-        for p_num in range(s_page, e_page + 1):
+        for p_num in target_list:
+            # 檢查當前協程是否已收到暫停或取消訊號
+            current_task = asyncio.current_task()
+            if current_task and current_task.cancelled():
+                raise asyncio.CancelledError()
+
             idx = p_num - 1
             out_path = task_render_dir / f"page_{p_num:04d}.png"
 
@@ -167,6 +178,8 @@ async def render_pdf_to_images_async(
                         await on_page_rendered(p_num, total_target, output_path)
                     else:
                         on_page_rendered(p_num, total_target, output_path)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as cb_err:
                     print(f"on_page_rendered async error: {cb_err}")
     finally:

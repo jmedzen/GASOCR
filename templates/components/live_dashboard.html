@@ -55,12 +55,12 @@
                 <div class="flex flex-wrap items-center gap-2">
                     <template x-if="['processing', 'rendering', 'pending'].includes(currentTask?.status)">
                         <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-amber-300 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 text-xs font-medium text-amber-800 transition flex items-center space-x-1.5 shadow-sm">
-                            <span>⏸ 暫停轉譯</span>
+                            <span>⏸ 暫停任務</span>
                         </button>
                     </template>
                     <template x-if="['paused', 'failed'].includes(currentTask?.status)">
                         <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-800 transition flex items-center space-x-1.5 shadow-sm">
-                            <span>▶ 繼續轉譯</span>
+                            <span>▶ 繼續任務</span>
                         </button>
                     </template>
                     <button @click="downloadExport('md')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">

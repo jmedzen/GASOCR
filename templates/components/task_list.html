@@ -158,10 +158,10 @@
                                 </td>
                                 <td class="p-3 pr-4 text-right space-x-1.5 whitespace-nowrap" @click.stop>
                                     <template x-if="['processing', 'rendering', 'pending'].includes(task.status)">
-                                        <button @click="toggleTaskPause(task)" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-semibold transition" title="暫停轉譯">⏸ 暫停</button>
+                                        <button @click="toggleTaskPause(task)" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-semibold transition" title="暫停任務 (停止切圖/辨識)">⏸ 暫停</button>
                                     </template>
                                     <template x-if="['paused', 'failed'].includes(task.status)">
-                                        <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition shadow-xs" title="繼續轉譯">▶ 繼續</button>
+                                        <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition shadow-xs" title="繼續任務 (接續切圖/辨識)">▶ 繼續</button>
                                     </template>
                                     <button @click="inspectTask(task)" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">校對</button>
                                     <button @click="downloadTaskExport(task.id, 'docx')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Word">Word</button>

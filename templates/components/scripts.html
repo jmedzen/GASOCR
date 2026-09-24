@@ -1407,12 +1407,13 @@
                                 }
                             }
                             await this.loadTasks();
+                            this.showToast(action === 'pause' ? '⏸️ 任務已暫停（已即時停止切圖與 OCR）' : '▶️ 任務已接續執行');
                         } else {
                             const errData = await res.json().catch(() => ({}));
-                            alert(`操作失敗: ${errData.detail || res.statusText}`);
+                            this.showToast(`⚠️ 操作失敗: ${errData.detail || res.statusText}`);
                         }
                     } catch (err) {
-                        alert(`操作失敗: ${err}`);
+                        this.showToast(`⚠️ 操作失敗: ${err.message || err}`);
                     }
                 },
 
