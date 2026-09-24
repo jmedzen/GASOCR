@@ -10,17 +10,23 @@
                 isPausingAll: false,
                 isResumingAll: false,
                 get hasActiveTasks() {
-                    return this.allTasks && this.allTasks.some(t => ['processing', 'rendering', 'pending'].includes(t.status));
+                    return this.allTasks && this.allTasks.some(t => ['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(t.status));
                 },
                 get hasPausedTasks() {
                     return this.allTasks && this.allTasks.some(t => ['paused', 'failed'].includes(t.status));
                 },
-                getTaskStatusText(status) {
+                getTaskStatusText(status, task = null) {
+                    if (status === 'pending' && task) {
+                        const isRendered = (task.rendered_pages >= task.total_pages && task.total_pages > 0) || task.bg_render_status === 'completed';
+                        return isRendered ? '等待OCR' : '等待切圖';
+                    }
                     const map = {
                         'paused': '已暫停',
                         'processing': '轉譯中',
                         'completed': '已完成',
                         'rendering': '切圖中',
+                        'pending_render': '等待切圖',
+                        'pending_ocr': '等待OCR',
                         'pending': '等待中',
                         'failed': '失敗'
                     };
@@ -311,14 +317,22 @@
 
                 // Task List Filter & Sorting state (任務列表篩選與排序)
                 taskSortBy: 'newest', // 'newest' | 'oldest' | 'filename'
-                taskFilterStatus: 'all', // 'all' | 'pending' | 'rendering' | 'processing' | 'completed' | 'paused'
+                taskFilterStatus: 'all', // 'all' | 'pending_render' | 'rendering' | 'pending_ocr' | 'processing' | 'completed' | 'paused'
 
                 get filteredAndSortedTasks() {
                     let list = [...this.allTasks];
 
                     // 1. 篩選 (Filter)
                     if (this.taskFilterStatus !== 'all') {
-                        list = list.filter(t => t.status === this.taskFilterStatus);
+                        list = list.filter(t => {
+                            if (this.taskFilterStatus === 'pending_render') {
+                                return t.status === 'pending_render' || (t.status === 'pending' && !((t.rendered_pages >= t.total_pages && t.total_pages > 0) || t.bg_render_status === 'completed'));
+                            }
+                            if (this.taskFilterStatus === 'pending_ocr') {
+                                return t.status === 'pending_ocr' || (t.status === 'pending' && ((t.rendered_pages >= t.total_pages && t.total_pages > 0) || t.bg_render_status === 'completed'));
+                            }
+                            return t.status === this.taskFilterStatus;
+                        });
                     }
 
                     // 2. 排序 (Sort)
@@ -344,9 +358,31 @@
                 },
 
                 get taskStatusCounts() {
-                    const counts = { all: this.allTasks.length, pending: 0, rendering: 0, processing: 0, completed: 0, paused: 0, failed: 0 };
+                    const counts = { 
+                        all: this.allTasks.length, 
+                        pending_render: 0, 
+                        rendering: 0, 
+                        pending_ocr: 0, 
+                        processing: 0, 
+                        completed: 0, 
+                        paused: 0, 
+                        failed: 0,
+                        pending: 0
+                    };
                     for (const t of this.allTasks) {
-                        if (counts[t.status] !== undefined) {
+                        if (t.status === 'pending_render') {
+                            counts.pending_render++;
+                        } else if (t.status === 'pending_ocr') {
+                            counts.pending_ocr++;
+                        } else if (t.status === 'pending') {
+                            const isRendered = (t.rendered_pages >= t.total_pages && t.total_pages > 0) || t.bg_render_status === 'completed';
+                            if (isRendered) {
+                                counts.pending_ocr++;
+                            } else {
+                                counts.pending_render++;
+                            }
+                            counts.pending++;
+                        } else if (counts[t.status] !== undefined) {
                             counts[t.status]++;
                         }
                     }
@@ -491,7 +527,7 @@
                     }
                     // 週期性檢查任務狀態 (2秒輪詢一次，讓批次多任務進行時進度條絲滑更新)
                     setInterval(() => {
-                        if (this.authStatus.is_authenticated_user && this.allTasks.some(t => ['rendering', 'processing', 'pending'].includes(t.status))) {
+                        if (this.authStatus.is_authenticated_user && this.allTasks.some(t => ['rendering', 'processing', 'pending', 'pending_render', 'pending_ocr'].includes(t.status))) {
                             this.loadTasks();
                         }
                     }, 2000);
@@ -1588,7 +1624,7 @@
                     this.liveActivePage = null;
                     this.liveActiveMsg = '';
                     this.pollTaskDetail();
-                    if (['processing', 'rendering', 'pending'].includes(task.status)) {
+                    if (['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(task.status)) {
                         this.listenTaskEvents(task.id);
                     }
                     this.$nextTick(() => { lucide.createIcons(); });
@@ -1700,7 +1736,7 @@
                     const count = this.selectedTaskIds.length;
                     if (count === 0) return;
                     
-                    const runningCount = this.allTasks.filter(t => this.selectedTaskIds.includes(t.id) && ['processing', 'rendering', 'pending'].includes(t.status)).length;
+                    const runningCount = this.allTasks.filter(t => this.selectedTaskIds.includes(t.id) && ['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(t.status)).length;
                     let confirmMsg = `確定要批次刪除選取的 ${count} 個轉譯任務嗎？\n此動作將一併刪除相關切圖快取與成果且無法復原。`;
                     if (runningCount > 0) {
                         confirmMsg += `\n⚠️ 提醒：其中包含 ${runningCount} 個正在轉譯中的任務，刪除將會強制中止執行。`;

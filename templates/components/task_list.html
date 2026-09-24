@@ -106,14 +106,14 @@
                                 <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'all' ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="allTasks.length"></span>
                             </button>
 
-                            <!-- 等待中 -->
-                            <button type="button" @click="taskFilterStatus = 'pending'" 
+                            <!-- 等待切圖 -->
+                            <button type="button" @click="taskFilterStatus = 'pending_render'" 
                                 class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
-                                :class="taskFilterStatus === 'pending' 
-                                    ? 'bg-slate-700 text-white shadow-2xs' 
+                                :class="taskFilterStatus === 'pending_render' 
+                                    ? 'bg-amber-600 text-white shadow-2xs' 
                                     : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
-                                <span>⏳ 等待中</span>
-                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'pending' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.pending"></span>
+                                <span>⏳ 等待切圖</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'pending_render' ? 'bg-amber-700 text-amber-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.pending_render"></span>
                             </button>
 
                             <!-- 切圖中 -->
@@ -124,6 +124,16 @@
                                     : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
                                 <span>🖼️ 切圖中</span>
                                 <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'rendering' ? 'bg-amber-700 text-amber-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.rendering"></span>
+                            </button>
+
+                            <!-- 等待OCR -->
+                            <button type="button" @click="taskFilterStatus = 'pending_ocr'" 
+                                class="px-2.5 py-1 rounded-lg font-semibold transition flex items-center space-x-1 text-xs cursor-pointer"
+                                :class="taskFilterStatus === 'pending_ocr' 
+                                    ? 'bg-sky-600 text-white shadow-2xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'">
+                                <span>⏳ 等待OCR</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="taskFilterStatus === 'pending_ocr' ? 'bg-sky-700 text-sky-100' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'" x-text="taskStatusCounts.pending_ocr"></span>
                             </button>
 
                             <!-- OCR中 -->
@@ -207,7 +217,7 @@
 
                                 <!-- Right: Actions Buttons -->
                                 <div class="flex items-center space-x-1.5 shrink-0" @click.stop>
-                                    <template x-if="['processing', 'rendering', 'pending'].includes(task.status)">
+                                    <template x-if="['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(task.status)">
                                         <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-2xs" title="暫停任務 (停止切圖/辨識)">
                                             <i data-lucide="pause" class="w-3.5 h-3.5"></i>
                                             <span>暫停</span>
@@ -283,6 +293,8 @@
                                             'bg-purple-100/80 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800': task.status === 'paused',
                                             'bg-emerald-100/80 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800': task.status === 'completed',
                                             'bg-red-100/80 text-red-800 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800': task.status === 'failed',
+                                            'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800': task.status === 'pending_render',
+                                            'bg-sky-50 text-sky-800 border border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800': task.status === 'pending_ocr',
                                             'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700': task.status === 'pending'
                                         }">
                                         <span class="w-1.5 h-1.5 rounded-full" :class="{
@@ -291,9 +303,11 @@
                                             'bg-purple-500': task.status === 'paused',
                                             'bg-emerald-500': task.status === 'completed',
                                             'bg-red-500': task.status === 'failed',
+                                            'bg-amber-400 animate-pulse': task.status === 'pending_render',
+                                            'bg-sky-400 animate-pulse': task.status === 'pending_ocr',
                                             'bg-slate-400 animate-pulse': task.status === 'pending'
                                         }"></span>
-                                        <span x-text="getTaskStatusText(task.status)"></span>
+                                        <span x-text="getTaskStatusText(task.status, task)"></span>
                                     </span>
 
                                     <!-- 2. 進度條 -->
@@ -305,6 +319,8 @@
                                                 'bg-amber-500 animate-pulse': task.status === 'rendering',
                                                 'bg-purple-500': task.status === 'paused',
                                                 'bg-red-500': task.status === 'failed',
+                                                'bg-amber-400/80 animate-pulse': task.status === 'pending_render',
+                                                'bg-sky-400/80 animate-pulse': task.status === 'pending_ocr',
                                                 'bg-slate-300 dark:bg-slate-500': task.status === 'pending'
                                             }"
                                             :style="`width: ${task.total_pages ? (task.status === 'rendering' ? Math.min(100, Math.round((task.rendered_pages || 0)/task.total_pages*100)) : Math.min(100, Math.round((task.processed_pages || 0)/task.total_pages*100))) : 0}%`"></div>
@@ -312,8 +328,8 @@
 
                                     <!-- 3. 進度指標數字 -->
                                     <span class="font-mono text-xs font-semibold whitespace-nowrap min-w-[95px] text-right" 
-                                        :class="task.status === 'rendering' ? 'text-amber-700 dark:text-amber-400' : (task.status === 'pending' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-300')"
-                                        x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : (task.status === 'pending' ? `等待中 (${task.processed_pages || 0}/${task.total_pages || 0})` : `${task.processed_pages || 0}/${task.total_pages || 0} (${task.total_pages ? Math.round((task.processed_pages || 0)/task.total_pages*100) : 0}%)`)"></span>
+                                        :class="task.status === 'rendering' || task.status === 'pending_render' ? 'text-amber-700 dark:text-amber-400' : (task.status === 'pending_ocr' ? 'text-sky-700 dark:text-sky-400' : (task.status === 'pending' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-300'))"
+                                        x-text="task.status === 'rendering' ? `切圖 ${task.rendered_pages || 0}/${task.total_pages || 0}` : (task.status === 'pending_render' ? `等待切圖 (${task.rendered_pages || 0}/${task.total_pages || 0})` : (task.status === 'pending_ocr' ? `等待OCR (${task.processed_pages || 0}/${task.total_pages || 0})` : (task.status === 'pending' ? `等待中 (${task.processed_pages || 0}/${task.total_pages || 0})` : `${task.processed_pages || 0}/${task.total_pages || 0} (${task.total_pages ? Math.round((task.processed_pages || 0)/task.total_pages*100) : 0}%)`)))"></span>
                                 </div>
                             </div>
                         </div>

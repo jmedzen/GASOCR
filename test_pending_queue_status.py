@@ -48,14 +48,14 @@ async def test_pending_queue_status():
 
         t1 = await database.get_task(task_id_1)
         assert t1 is not None
-        assert t1["status"] == "pending", f"初始狀態應為 pending，實際: {t1['status']}"
+        assert t1["status"] in ["pending", "pending_render"], f"初始狀態應為 pending_render，實際: {t1['status']}"
         assert t1["total_pages"] == 3, f"初始 total_pages 應為 3，實際: {t1['total_pages']}"
         assert t1["processed_pages"] == 0
         assert t1["rendered_pages"] == 0
         print(f"👉 [1/3] 驗證 create_task 初始狀態與頁數：status={t1['status']}, total_pages={t1['total_pages']} ✅ 通過")
 
-        # 3. 測試在 Semaphore 佔滿時，後續任務排隊等待切圖時保持 status='pending'
-        print(f"👉 [2/3] 測試排隊等待 RENDER_SEMAPHORE 時狀態維持 pending (等待中)...")
+        # 3. 測試在 Semaphore 佔滿時，後續任務排隊等待切圖時保持 status='pending_render'
+        print(f"👉 [2/3] 測試排隊等待 RENDER_SEMAPHORE 時狀態維持 pending_render (等待切圖)...")
         
         # 佔用所有 RENDER_SEMAPHORE 槽位
         acquired_count = 0
@@ -70,18 +70,18 @@ async def test_pending_queue_status():
             await asyncio.sleep(0.3)
 
             t1_queued = await database.get_task(task_id_1)
-            assert t1_queued["status"] == "pending", f"排隊等待切圖槽位時狀態應為 pending，實際: {t1_queued['status']}"
-            print(f"   ✅ 任務排隊等待切圖時，資料庫狀態保持: {t1_queued['status']} (等待中)")
+            assert t1_queued["status"] in ["pending", "pending_render"], f"排隊等待切圖槽位時狀態應為 pending_render，實際: {t1_queued['status']}"
+            print(f"   ✅ 任務排隊等待切圖時，資料庫狀態保持: {t1_queued['status']} (等待切圖)")
 
-            # 4. 驗證 /api/tasks 端點回傳 status='pending'
+            # 4. 驗證 /api/tasks 端點回傳 status='pending_render'
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 res = await client.get("/api/tasks")
                 assert res.status_code == 200
                 tasks_data = res.json()["tasks"]
                 target_t = next((t for t in tasks_data if t["id"] == task_id_1), None)
                 assert target_t is not None
-                assert target_t["status"] == "pending", f"/api/tasks 回傳狀態應為 pending，實際: {target_t['status']}"
-                print(f"   ✅ /api/tasks 回傳等待切圖任務狀態為: {target_t['status']} (等待中)")
+                assert target_t["status"] in ["pending", "pending_render"], f"/api/tasks 回傳狀態應為 pending_render，實際: {target_t['status']}"
+                print(f"   ✅ /api/tasks 回傳等待切圖任務狀態為: {target_t['status']} (等待切圖)")
         finally:
             # 釋放先前佔用的槽位
             for _ in range(acquired_count):

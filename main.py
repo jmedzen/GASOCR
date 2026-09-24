@@ -831,7 +831,7 @@ async def process_task_pipeline(task_id: str):
             await database.create_task_pages(init_pages)
             await database.update_task_status(
                 task_id, 
-                status="pending", 
+                status="pending_render", 
                 total_pages=total_target, 
                 processed_pages=0,
                 rendered_pages=0,
@@ -847,8 +847,8 @@ async def process_task_pipeline(task_id: str):
         
         # 2. 若有未切圖的頁面，進入受控並發進行切圖渲染
         if pages_to_slice:
-            # 佇列排隊階段：確保狀態為 pending (等待中)
-            await database.update_task_status(task_id, status="pending", bg_render_status="pending")
+            # 佇列排隊階段：確保狀態為 pending_render (等待切圖)
+            await database.update_task_status(task_id, status="pending_render", bg_render_status="pending")
             async with RENDER_SEMAPHORE:
                 # 取得執行槽位後，檢查在佇列等待期間任務是否已被使用者暫停或刪除
                 check_task = await database.get_task(task_id)
@@ -890,11 +890,11 @@ async def process_task_pipeline(task_id: str):
         # 3. 準備進入 OCR 階段（若為免費任務，受 free_ocr_task_manager 並發槽位控管）
         is_paid_task = bool(task.get("is_paid"))
         
-        # 若為免費任務，在等待取得免費 OCR 槽位排隊期間，狀態維持/設為 pending (等待中)
+        # 若為免費任務，在等待取得免費 OCR 槽位排隊期間，狀態設為 pending_ocr (等待OCR)
         if not is_paid_task:
             await database.update_task_status(
                 task_id, 
-                status="pending", 
+                status="pending_ocr", 
                 total_pages=total_target, 
                 rendered_pages=total_target,
                 pdf_total_pages=pdf_total_pages
@@ -1917,11 +1917,11 @@ async def pause_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
         if clean_ids:
             placeholders = ",".join("?" for _ in clean_ids)
             cursor = await db.execute(
-                f"SELECT id, status FROM tasks WHERE id IN ({placeholders}) AND status IN ('processing', 'rendering', 'pending')",
+                f"SELECT id, status FROM tasks WHERE id IN ({placeholders}) AND status IN ('processing', 'rendering', 'pending', 'pending_render', 'pending_ocr')",
                 clean_ids
             )
         else:
-            cursor = await db.execute("SELECT id, status FROM tasks WHERE status IN ('processing', 'rendering', 'pending')")
+            cursor = await db.execute("SELECT id, status FROM tasks WHERE status IN ('processing', 'rendering', 'pending', 'pending_render', 'pending_ocr')")
         rows = await cursor.fetchall()
         
     target_tasks = [dict(r) for r in rows]
@@ -1944,8 +1944,8 @@ async def pause_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
 async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
     """
     全局/批次接續 OCR 任務（自動重置未完成頁面並重啟流水線）：
-    - 若指定 task_ids，僅接續指定任務中處於 paused, failed, pending 的任務
-    - 若未指定，接續全系統所有處於 paused, failed, pending 的任務
+    - 若指定 task_ids，僅接續指定任務中處於 paused, failed, pending, pending_render, pending_ocr 的任務
+    - 若未指定，接續全系統所有處於 paused, failed, pending, pending_render, pending_ocr 的任務
     """
     clean_ids = [tid.strip() for tid in payload.task_ids if tid and tid.strip()] if (payload and payload.task_ids) else None
     
@@ -1953,11 +1953,11 @@ async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
         if clean_ids:
             placeholders = ",".join("?" for _ in clean_ids)
             cursor = await db.execute(
-                f"SELECT id, status, model FROM tasks WHERE id IN ({placeholders}) AND status IN ('paused', 'failed', 'pending')",
+                f"SELECT id, status, model FROM tasks WHERE id IN ({placeholders}) AND status IN ('paused', 'failed', 'pending', 'pending_render', 'pending_ocr')",
                 clean_ids
             )
         else:
-            cursor = await db.execute("SELECT id, status, model FROM tasks WHERE status IN ('paused', 'failed', 'pending')")
+            cursor = await db.execute("SELECT id, status, model FROM tasks WHERE status IN ('paused', 'failed', 'pending', 'pending_render', 'pending_ocr')")
         rows = await cursor.fetchall()
         
     target_tasks = [dict(r) for r in rows]
@@ -1976,12 +1976,12 @@ async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
                 target_bg_status = "rendering"
                 available_render_slots -= 1
             else:
-                target_status = "pending"
+                target_status = "pending_render"
                 target_bg_status = "pending"
         else:
             is_paid_task = bool(task_data.get("is_paid"))
             free_slots_full = (not is_paid_task) and (len(free_ocr_task_manager.active_tasks) >= await free_ocr_task_manager.get_max_concurrent())
-            target_status = "pending" if free_slots_full else "processing"
+            target_status = "pending_ocr" if free_slots_full else "processing"
             target_bg_status = "completed"
 
         await database.update_task_status(tid, status=target_status, bg_render_status=target_bg_status)
@@ -2038,22 +2038,22 @@ async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None)
     new_model = payload.model if (payload and payload.model) else None
     if new_model:
         await database.update_task_model(task_id, new_model)
-    if task["status"] in ["paused", "failed", "pending"]:
+    if task["status"] in ["paused", "failed", "pending", "pending_render", "pending_ocr"]:
         # 將被手動暫停的頁面重置回 pending 以利接續
         await database.resume_task_paused_pages(task_id)
         
-        # 務必先檢查切圖完成了嗎？若切圖未完成，threads又滿了的話，要顯示"等待中"
+        # 務必先檢查切圖完成了嗎？若切圖未完成，threads又滿了的話，顯示等待切圖 (pending_render)
         rendering_done = is_task_rendering_completed(task)
         threads_full = (RENDER_SEMAPHORE._value <= 0)
         
         if not rendering_done:
-            target_status = "pending" if threads_full else "rendering"
+            target_status = "pending_render" if threads_full else "rendering"
             target_bg_status = "pending" if threads_full else "rendering"
             print(f"▶️ [Resume Task] 任務 {task_id} 切圖未完成，threads_full={threads_full} -> 設定狀態為 {target_status}")
         else:
             is_paid_task = bool(task.get("is_paid"))
             free_slots_full = (not is_paid_task) and (len(free_ocr_task_manager.active_tasks) >= await free_ocr_task_manager.get_max_concurrent())
-            target_status = "pending" if free_slots_full else "processing"
+            target_status = "pending_ocr" if free_slots_full else "processing"
             target_bg_status = "completed"
             print(f"▶️ [Resume Task] 任務 {task_id} 切圖已完成，free_slots_full={free_slots_full} -> 設定狀態為 {target_status}")
 
@@ -2215,6 +2215,10 @@ async def sse_task_events(task_id: str):
             active_msg = active_p["error_message"] if active_p else ""
             if task["status"] == "rendering":
                 active_msg = f"🎨 正在 300 DPI 高清切圖第 {min(rendered + 1, total if total > 0 else 1)} 頁 (共 {total} 頁)..."
+            elif task["status"] == "pending_ocr":
+                active_msg = "⏳ 切圖完成，排隊等待免費 OCR 槽位..."
+            elif task["status"] == "pending_render":
+                active_msg = "⏳ 佇列排隊中，等待切圖..."
             elif task["status"] == "pending":
                 if rendered >= total and total > 0:
                     active_msg = "⏳ 切圖完成，排隊等待免費 OCR 槽位..."

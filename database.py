@@ -55,7 +55,7 @@ async def init_db():
                 original_filepath TEXT NOT NULL,
                 total_pages INTEGER DEFAULT 0,
                 processed_pages INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'pending', -- pending, rendering, processing, completed, paused, failed
+                status TEXT DEFAULT 'pending_render', -- pending_render, rendering, pending_ocr, processing, completed, paused, failed
                 model TEXT DEFAULT 'gemini-3.5-flash-lite',
                 lang_pref TEXT DEFAULT 'traditional',
                 direction_pref TEXT DEFAULT 'auto',
@@ -125,6 +125,16 @@ async def init_db():
         page_cols = [row["name"] for row in await cursor.fetchall()]
         if "used_model" not in page_cols:
             await db.execute("ALTER TABLE task_pages ADD COLUMN used_model TEXT DEFAULT ''")
+
+        # 自動遷移舊版 'pending' 狀態為 'pending_ocr' 或 'pending_render'
+        await db.execute("""
+            UPDATE tasks 
+            SET status = CASE 
+                WHEN (rendered_pages >= total_pages AND total_pages > 0) OR bg_render_status = 'completed' THEN 'pending_ocr' 
+                ELSE 'pending_render' 
+            END 
+            WHERE status = 'pending'
+        """)
 
         await db.commit()
 
@@ -398,7 +408,8 @@ async def create_task(
     is_paid: int = 0,
     paid_account_id: Optional[int] = None,
     pdf_total_pages: int = 0,
-    file_hash: str = ""
+    file_hash: str = "",
+    status: str = "pending_render"
 ):
     now = time.time()
     s_p = max(1, start_page)
@@ -408,8 +419,8 @@ async def create_task(
     async with get_db() as db:
         await db.execute("""
             INSERT INTO tasks (id, filename, original_filepath, total_pages, processed_pages, rendered_pages, status, model, lang_pref, direction_pref, column_pref, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, 0, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, filename, filepath, total_pages, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, now, now))
+            VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, filename, filepath, total_pages, status, model, lang, direction, column, custom_prompt, start_page, end_page, is_paid, paid_account_id, pdf_total_pages, file_hash, now, now))
         await db.commit()
 
 async def delete_task(task_id: str):
@@ -501,17 +512,27 @@ async def resume_task_paused_pages(task_id: str):
         """, (now, task_id))
         await db.commit()
 
+def _normalize_task_status(d: Dict[str, Any]) -> Dict[str, Any]:
+    if d and d.get("status") == "pending":
+        total = d.get("total_pages", 0) or 0
+        rendered = d.get("rendered_pages", 0) or 0
+        if (total > 0 and rendered >= total) or d.get("bg_render_status") == "completed":
+            d["status"] = "pending_ocr"
+        else:
+            d["status"] = "pending_render"
+    return d
+
 async def get_task(task_id: str) -> Optional[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        return _normalize_task_status(dict(row)) if row else None
 
 async def list_tasks() -> List[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM tasks ORDER BY created_at DESC")
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [_normalize_task_status(dict(row)) for row in rows]
 
 # --- Task Pages CRUD ---
 

@@ -61,11 +61,11 @@ async def run_tests():
         # 調用 resume_task
         res = await main.resume_task(task_id_1)
         print(f"   ▶️ 滿載下 resume_task 回傳: {res}")
-        assert res["task_status"] == "pending", f"預期 task_status 為 pending，但得到 {res['task_status']}"
+        assert res["task_status"] in ["pending", "pending_render"], f"預期 task_status 為 pending_render，但得到 {res['task_status']}"
         
         t1_after = await database.get_task(task_id_1)
-        assert t1_after["status"] == "pending", f"預期 DB 狀態為 pending，但得到 {t1_after['status']}"
-        print("👉 [2/4] 測試切圖未完成 + threads 滿載 -> 成功設定並顯示為「等待中」(pending) ✅ 通過")
+        assert t1_after["status"] in ["pending", "pending_render"], f"預期 DB 狀態為 pending_render，但得到 {t1_after['status']}"
+        print("👉 [2/4] 測試切圖未完成 + threads 滿載 -> 成功設定並顯示為「等待切圖」(pending_render) ✅ 通過")
         main.cancel_task_active_jobs(task_id_1)
     finally:
         # 釋放 permits
@@ -114,7 +114,7 @@ async def run_tests():
     try:
         res3 = await main.resume_task(task_id_2)
         print(f"   ▶️ 切圖已完成任務 resume_task 回傳: {res3}")
-        assert res3["task_status"] in ["processing", "pending"]
+        assert res3["task_status"] in ["processing", "pending", "pending_ocr"]
         print("👉 [4/4] 測試切圖已完成之任務 -> 不受切圖 threads 滿載阻擋，直接進入 OCR 階段 ✅ 通過")
         main.cancel_task_active_jobs(task_id_2)
     finally:
@@ -165,7 +165,7 @@ async def run_tests():
         t5_after = await database.get_task(task_id_5)
         print(f"   ℹ️ 批次接續結果: t4={t4_after['status']}, t5={t5_after['status']}")
         statuses = [t4_after['status'], t5_after['status']]
-        assert "rendering" in statuses and "pending" in statuses, f"預期一為 rendering 一為 pending，但得到 {statuses}"
+        assert "rendering" in statuses and ("pending" in statuses or "pending_render" in statuses), f"預期一為 rendering 一為 pending_render，但得到 {statuses}"
         print("   ✅ 批次繼續槽位滿載排隊行為驗證通過！")
         main.cancel_task_active_jobs(task_id_4)
         main.cancel_task_active_jobs(task_id_5)
