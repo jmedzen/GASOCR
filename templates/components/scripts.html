@@ -43,6 +43,18 @@
                 accounts: [],
                 showAccountsModal: false,
                 showQueueModal: false,
+                // Quota Exhaustion & Countdown State
+                quotaStatus: {
+                    all_free_exhausted: false,
+                    free_accounts_count: 0,
+                    consecutive_counts: {},
+                    reset_info: null
+                },
+                showQuotaModal: false,
+                quotaCountdownText: '--:--:--',
+                quotaRemainingFormatted: '--',
+                quotaRemainingSeconds: 0,
+                quotaTickerId: null,
                 // Auth & Admin State
                 authStatus: {
                     admin_initialized: true,
@@ -297,6 +309,12 @@
                             this.checkActiveReocrJobs();
                         }
                     }, 2000);
+                    // 週期性檢查免費配額耗盡與重置狀態
+                    setInterval(() => {
+                        if (this.authStatus.is_authenticated_user) {
+                            this.checkQuotaStatus();
+                        }
+                    }, 5000);
                     // 全域快速鍵監聽（佇列開關、校對翻頁、儲存、重辨）
                     window.addEventListener('keydown', (e) => {
                         this.handleKeyDown(e);
@@ -309,6 +327,8 @@
                     this.loadWebRpaConfig();
                     this.loadTasks();
                     this.refreshModels(false);
+                    this.checkQuotaStatus();
+                    this.startQuotaTicker();
                     this.$nextTick(() => { lucide.createIcons(); });
                 },
 
@@ -1615,6 +1635,92 @@
                     await this.resumeAllTasks(this.selectedTaskIds);
                 },
 
+                // --- Google AI Studio Free Quota Tracking & Alert Methods ---
+
+                async checkQuotaStatus() {
+                    try {
+                        const res = await fetch('/api/quota/status');
+                        if (res.ok) {
+                            const data = await res.json();
+                            const prevExhausted = this.quotaStatus.all_free_exhausted;
+                            this.quotaStatus = data;
+                            this.updateQuotaCountdown();
+
+                            // 若首度轉為耗盡狀態，自動彈窗提示
+                            if (data.all_free_exhausted && !prevExhausted) {
+                                this.openQuotaModal();
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch quota status:', e);
+                    }
+                },
+
+                updateQuotaCountdown() {
+                    if (!this.quotaStatus || !this.quotaStatus.reset_info) return;
+                    const info = this.quotaStatus.reset_info;
+                    let remaining = 0;
+                    if (info.reset_timestamp) {
+                        // 使用瀏覽器本機時鐘與伺服器換算的時間戳對齊
+                        const nowTs = Date.now() / 1000;
+                        remaining = Math.max(0, Math.floor(info.reset_timestamp - nowTs));
+                    } else if (info.remaining_seconds) {
+                        remaining = Math.max(0, info.remaining_seconds);
+                    }
+                    this.quotaRemainingSeconds = remaining;
+
+                    const hours = Math.floor(remaining / 3600);
+                    const minutes = Math.floor((remaining % 3600) / 60);
+                    const seconds = Math.floor(remaining % 60);
+
+                    const pad = (n) => String(n).padStart(2, '0');
+                    this.quotaCountdownText = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+                    this.quotaRemainingFormatted = `${hours} 小時 ${minutes} 分鐘 ${seconds} 秒`;
+                },
+
+                startQuotaTicker() {
+                    if (this.quotaTickerId) return;
+                    this.quotaTickerId = setInterval(() => {
+                        if (this.quotaStatus && this.quotaStatus.all_free_exhausted && this.quotaStatus.reset_info) {
+                            this.updateQuotaCountdown();
+                            if (this.quotaRemainingSeconds <= 0) {
+                                // 倒數結束，再次拉取 API 確認伺服器狀態
+                                this.checkQuotaStatus();
+                            }
+                        }
+                    }, 1000);
+                },
+
+                openQuotaModal() {
+                    this.showQuotaModal = true;
+                    this.updateQuotaCountdown();
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                closeQuotaModal() {
+                    this.showQuotaModal = false;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async resetQuotaAndResume() {
+                    try {
+                        const res = await fetch('/api/quota/reset-tracking', { method: 'POST' });
+                        if (res.ok) {
+                            this.showToast('✅ 免費配額狀態已重置！正在接續未完任務...');
+                            this.closeQuotaModal();
+                            await this.checkQuotaStatus();
+                            await this.loadAccounts();
+                            // 接續全站暫停中或失敗的任務
+                            await this.resumeAllTasks();
+                        } else {
+                            this.showToast('⚠️ 重置配額失敗，請檢查網路連線');
+                        }
+                    } catch (e) {
+                        console.error('Error resetting quota tracking:', e);
+                        this.showToast('❌ 重置發生例外: ' + (e.message || e));
+                    }
+                },
+
                 downloadTaskExport(taskId, fmt) {
                     window.open(`/api/tasks/${taskId}/download/${fmt}`, '_blank');
                 },
@@ -1654,6 +1760,19 @@
                     this.eventSource.onmessage = async (event) => {
                         try {
                             const payload = JSON.parse(event.data);
+
+                            // 檢查是否包含免費配額耗盡通知
+                            if (payload.quota_exhausted) {
+                                if (!this.quotaStatus.all_free_exhausted) {
+                                    this.openQuotaModal();
+                                }
+                                this.quotaStatus.all_free_exhausted = true;
+                                if (payload.quota_reset_info) {
+                                    this.quotaStatus.reset_info = payload.quota_reset_info;
+                                    this.updateQuotaCountdown();
+                                }
+                            }
+
                             // 1. 精準更新任務清單中對應的 task 項目
                             const targetTask = this.allTasks.find(t => t.id === payload.task_id);
                             if (targetTask) {

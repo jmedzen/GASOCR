@@ -1,6 +1,6 @@
 # ==========================================
 # GASOCR - Google AI Studio Gemini PDF OCR
-# Docker Container Definition (Build 025)
+# Docker Container Definition (Build 026)
 # ==========================================
 
 FROM python:3.11-slim
@@ -14,11 +14,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies, CJK fonts, and curl for healthcheck
+# Install system dependencies, CJK fonts, tzdata, and curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     fonts-noto-cjk \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker layer caching

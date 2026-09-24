@@ -200,8 +200,6 @@
                                         <button @click="toggleTaskPause(task)" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition shadow-xs" title="繼續任務 (接續切圖/辨識)">▶ 繼續</button>
                                     </template>
                                     <button @click="inspectTask(task)" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">校對</button>
-                                    <button @click="downloadTaskExport(task.id, 'docx')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Word">Word</button>
-                                    <button @click="downloadTaskExport(task.id, 'md')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium transition" title="下載 Markdown">MD</button>
                                     <button @click="deleteTask(task.id)" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-medium transition" title="刪除任務">刪除</button>
                                 </td>
                             </tr>

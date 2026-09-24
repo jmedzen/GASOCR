@@ -11,7 +11,7 @@
                             GASOCR
                         </h1>
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
-                            {{ build_number | default('Build 025') }}
+                            {{ build_number | default('Build 026') }}
                         </span>
                     </div>
                     <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
@@ -47,6 +47,19 @@
                 <button @click="openAccountsModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 transition">
                     <i data-lucide="key" class="w-4 h-4 text-blue-600"></i>
                     <span>金鑰池: <strong class="text-blue-600" x-text="activeAccountsCount">0</strong></span>
+                </button>
+
+                <!-- Free Quota Exhausted Notification Badge -->
+                <button 
+                    x-show="quotaStatus.all_free_exhausted" 
+                    x-cloak 
+                    @click="openQuotaModal()" 
+                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer shadow-xs animate-pulse"
+                    title="今日免費 API 配額已耗盡，點擊查看重置倒數與解決方案"
+                >
+                    <i data-lucide="clock" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                    <span class="hidden sm:inline">額度倒數:</span>
+                    <span class="font-mono font-bold" x-text="quotaCountdownText">--:--:--</span>
                 </button>
 
                 <!-- NEW: Re-OCR Queue Drawer Button -->

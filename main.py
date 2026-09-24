@@ -592,6 +592,18 @@ async def run_page_ocr(
                         account = await scheduler.wait_for_any_account(max_wait_seconds=60.0, specific_account_id=None, require_paid=False)
 
             if not account:
+                if (not is_paid_task) and await scheduler.is_all_free_quota_exhausted():
+                    reset_info = scheduler.get_free_quota_reset_info()
+                    prompt_msg = (
+                        f"[免費配額耗盡] 所有免費金鑰池皆已連續 3 次回傳額度上限 (429 Quota Exhausted)。"
+                        f"預計於 {reset_info['reset_time_display']} (美西 00:00 PT) 重置 (尚餘約 {reset_info['remaining_formatted']})。"
+                        f"任務已自動安全暫停，配額重置或新增可用金鑰後即可無縫接續！"
+                    )
+                    await database.update_page_status(task_id, page_num, "paused", error_message=prompt_msg)
+                    await database.update_task_status(task_id, status="paused", bg_render_status="paused")
+                    await database.pause_task_in_progress_pages(task_id)
+                    return
+
                 await database.update_page_result(
                     task_id, page_num, "failed",
                     error_message="無可用的 Google 帳號或 API Key。請至「帳號管理」新增或檢查帳號狀態。"
@@ -636,6 +648,26 @@ async def run_page_ocr(
             elif status_code == 429:
                 # 觸發 429 限額，登記該帳號冷卻
                 await scheduler.report_rate_limited(account["id"])
+
+                # 追蹤免費金鑰連續配額耗盡次數
+                is_free_account = (account.get("is_paid", 0) == 0)
+                all_free_exhausted = False
+                if is_free_account:
+                    all_free_exhausted = await scheduler.report_quota_exhausted(account["id"])
+
+                # 若所有免費金鑰池皆已連續 3 次額度耗盡，且任務為免費通道，自動暫停任務並提示重置時間
+                if all_free_exhausted and not is_paid_task:
+                    reset_info = scheduler.get_free_quota_reset_info()
+                    prompt_msg = (
+                        f"[免費配額耗盡] 所有免費金鑰池皆已連續 3 次回傳額度上限 (429 Quota Exhausted)。"
+                        f"預計於 {reset_info['reset_time_display']} (美西 00:00 PT) 重置 (尚餘約 {reset_info['remaining_formatted']})。"
+                        f"任務已自動安全暫停，配額重置或新增可用金鑰後即可無縫接續！"
+                    )
+                    print(f"🚨 [全域免費配額耗盡] 任務 {task_id} 第 {page_num} 頁觸發免費池全數耗盡，自動優雅暫停任務")
+                    await database.update_page_status(task_id, page_num, "paused", error_message=prompt_msg)
+                    await database.update_task_status(task_id, status="paused", bg_render_status="paused")
+                    await database.pause_task_in_progress_pages(task_id)
+                    return
                 
                 # 智慧降級備援：若為付費 API 帳號或指定付費通道觸發 429，或高級模型（非預設模型）重試多次遭遇 429
                 fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
@@ -2115,6 +2147,11 @@ async def sse_task_events(task_id: str):
                     for p in pages
                 ]
             }
+
+            quota_status = await scheduler.get_quota_status()
+            data_payload["quota_exhausted"] = quota_status.get("all_free_exhausted", False)
+            data_payload["quota_reset_info"] = quota_status.get("reset_info", {})
+
             yield f"data: {json.dumps(data_payload)}\n\n"
             
             # 若任務已完成或失敗，且目前沒有任何頁面仍在 processing，才結束串流
@@ -2124,6 +2161,19 @@ async def sse_task_events(task_id: str):
             await asyncio.sleep(1.2)
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# --- Google AI Studio Free Quota Tracking & Status ---
+
+@app.get("/api/quota/status")
+async def get_quota_status():
+    """取得 Google AI Studio 免費金鑰池額度狀態、連續錯誤次數與每日美西重置倒數資訊"""
+    return await scheduler.get_quota_status()
+
+@app.post("/api/quota/reset-tracking")
+async def reset_quota_tracking():
+    """手動重置金鑰連續錯誤次數（如使用者新增新金鑰或手動接續任務）"""
+    await scheduler.reset_quota_tracking()
+    return {"status": "ok", "message": "免費金鑰連續錯誤計數已重置"}
 
 # --- Export & Download ---
 

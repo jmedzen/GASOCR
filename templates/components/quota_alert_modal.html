@@ -1,0 +1,192 @@
+<!-- ========================================== -->
+<!-- Google AI Studio 免費配額耗盡提示 Modal 與浮動倒數看板 -->
+<!-- ========================================== -->
+
+<!-- 1. 全螢幕高質感彈窗 Prompt -->
+<div 
+    x-show="showQuotaModal" 
+    x-cloak 
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md transition-all duration-300"
+    @keydown.escape.window="closeQuotaModal()"
+>
+    <div 
+        class="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden transition-all duration-300 transform"
+        x-show="showQuotaModal"
+        x-transition:enter="ease-out duration-300"
+        x-transition:enter-start="opacity-0 scale-95 translate-y-2"
+        x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+        x-transition:leave="ease-in duration-200"
+        x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+        x-transition:leave-end="opacity-0 scale-95 translate-y-2"
+        @click.outside="closeQuotaModal()"
+    >
+        <!-- 背景流光漸層裝飾條 -->
+        <div class="h-2 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500"></div>
+
+        <!-- 關閉按鈕 (右上角) -->
+        <button 
+            type="button" 
+            @click="closeQuotaModal()" 
+            class="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            title="最小化提示 (仍保留懸浮倒數)"
+        >
+            <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <div class="p-6 sm:p-7 space-y-5">
+            <!-- Header: 標題與警示徽章 -->
+            <div class="flex items-start space-x-3.5">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/25 shrink-0 animate-pulse">
+                    <i data-lucide="clock" class="w-6 h-6"></i>
+                </div>
+                <div class="flex-1 pr-6">
+                    <div class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/50 mb-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                        <span>Google AI Studio 每日限額通知</span>
+                    </div>
+                    <h3 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+                        今日免費 API 配額已耗盡
+                    </h3>
+                </div>
+            </div>
+
+            <!-- 狀況說明 -->
+            <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                系統偵測到免費金鑰池所有啟用中的 API Key 皆已連續 3 次回傳額度耗盡 
+                <span class="font-mono text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800">(429 RESOURCE_EXHAUSTED)</span>。
+                為確保進度零遺失，進行中的轉譯任務已為您<strong>自動安全暫停</strong>。
+            </p>
+
+            <!-- 倒數計時與重置時間核心看板 -->
+            <div class="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white p-5 border border-amber-500/30 shadow-inner relative overflow-hidden">
+                <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="text-center space-y-1">
+                    <div class="text-[11px] font-semibold tracking-wider uppercase text-amber-400 flex items-center justify-center space-x-1">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        <span>預計配額重置時間 (美西午夜 12:00 AM PT)</span>
+                    </div>
+
+                    <!-- 本地時間顯示 -->
+                    <div class="text-base sm:text-lg font-bold text-white tracking-tight">
+                        <span x-text="quotaStatus.reset_info?.reset_time_display || '計算中...'">--</span>
+                    </div>
+
+                    <!-- Monospace 倒數時鐘 -->
+                    <div class="py-2">
+                        <div class="font-mono text-3xl sm:text-4xl font-extrabold tracking-widest text-amber-400 drop-shadow-sm font-variant-numeric" x-text="quotaCountdownText">
+                            --:--:--
+                        </div>
+                        <div class="text-xs text-slate-400 mt-1 flex items-center justify-center space-x-1">
+                            <span>距離配額重算尚餘：</span>
+                            <span class="text-slate-200 font-medium" x-text="quotaRemainingFormatted">計算中...</span>
+                        </div>
+                    </div>
+
+                    <!-- 即時狀態指示燈 -->
+                    <div class="pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-center space-x-2">
+                        <span class="inline-block w-2 h-2 rounded-full" :class="quotaRemainingSeconds <= 0 ? 'bg-emerald-400 animate-ping' : 'bg-amber-400 animate-pulse'"></span>
+                        <span x-text="quotaRemainingSeconds <= 0 ? '配額已重置！可以立即接續任務' : '倒數結束後 Google 伺服器將自動解除 1,500 RPD 額度限制'"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 解決方案引導 -->
+            <div class="space-y-2 text-xs">
+                <div class="text-slate-500 dark:text-slate-400 font-medium px-1">您可以選擇以下任一方案接續：</div>
+                
+                <div class="grid grid-cols-1 gap-2">
+                    <!-- 方案 1: 等待重置 (推薦) -->
+                    <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-start space-x-2.5">
+                        <span class="text-base">⏳</span>
+                        <div class="flex-1">
+                            <div class="font-semibold text-slate-800 dark:text-slate-200">方案 A：靜候倒數重置 (推薦・零成本)</div>
+                            <div class="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">時間一到配額自動歸零，直接點擊下方「立即重試接續任務」，進度 100% 銜接無損。</div>
+                        </div>
+                    </div>
+
+                    <!-- 方案 2: 新增 Key -->
+                    <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-start space-x-2.5">
+                        <span class="text-base">🔑</span>
+                        <div class="flex-1">
+                            <div class="font-semibold text-slate-800 dark:text-slate-200">方案 B：新增免費 API Key (免等待)</div>
+                            <div class="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">至「帳號管理」再加入 1 組其他 Google 帳號的免費 Key，金鑰池即可立即恢復輪詢轉譯。</div>
+                        </div>
+                    </div>
+
+                    <!-- 方案 3: 付費模式 -->
+                    <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-start space-x-2.5">
+                        <span class="text-base">💎</span>
+                        <div class="flex-1">
+                            <div class="font-semibold text-slate-800 dark:text-slate-200">方案 C：改用付費 API 通道</div>
+                            <div class="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">無每日 1,500 請求限制，享有 1,000 RPM 疾速併發轉譯。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部動作按鈕群 -->
+            <div class="pt-2 flex flex-col sm:flex-row items-center gap-2">
+                <!-- 重置歸零或手動重試按鈕 -->
+                <button 
+                    type="button" 
+                    @click="resetQuotaAndResume()" 
+                    class="w-full sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-white shadow-md transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                    :class="quotaRemainingSeconds <= 0 ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/20'"
+                >
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                    <span x-text="quotaRemainingSeconds <= 0 ? '▶ 額度已重置！立即接續任務' : '🔄 我已新增金鑰 / 立即重試接續'"></span>
+                </button>
+
+                <!-- 前往帳號管理 -->
+                <button 
+                    type="button" 
+                    @click="openAccountsModal(); closeQuotaModal()" 
+                    class="w-full sm:w-auto py-2.5 px-4 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                >
+                    <i data-lucide="key" class="w-4 h-4 text-blue-500"></i>
+                    <span>帳號管理</span>
+                </button>
+
+                <!-- 關閉 / 最小化 -->
+                <button 
+                    type="button" 
+                    @click="closeQuotaModal()" 
+                    class="w-full sm:w-auto py-2.5 px-3 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition"
+                >
+                    稍後再續
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 懸浮倒數膠囊 (當 Modal 最小化但免費配額仍耗盡時，常駐右下角) -->
+<div 
+    x-show="quotaStatus.all_free_exhausted && !showQuotaModal" 
+    x-cloak 
+    class="fixed bottom-6 right-6 z-40 transition-all duration-300 transform"
+    x-transition:enter="ease-out duration-300"
+    x-transition:enter-start="opacity-0 translate-y-4 scale-95"
+    x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+    x-transition:leave="ease-in duration-200"
+    x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+    x-transition:leave-end="opacity-0 translate-y-4 scale-95"
+>
+    <button 
+        type="button" 
+        @click="openQuotaModal()" 
+        class="flex items-center space-x-2.5 px-4 py-2.5 rounded-full bg-slate-900/90 dark:bg-slate-900/95 text-white border border-amber-500/40 shadow-xl backdrop-blur-md hover:bg-slate-800 transition cursor-pointer group"
+        title="免費配額耗盡中，點擊開啟重置倒數與解決方案"
+    >
+        <span class="relative flex h-2.5 w-2.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+        </span>
+        <div class="text-xs">
+            <span class="text-amber-400 font-semibold">免費配額重置倒數：</span>
+            <span class="font-mono font-bold tracking-wider text-white" x-text="quotaCountdownText">--:--:--</span>
+        </div>
+        <i data-lucide="chevron-up" class="w-4 h-4 text-slate-400 group-hover:text-white transition"></i>
+    </button>
+</div>

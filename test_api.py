@@ -1,12 +1,16 @@
 import asyncio
 import httpx
 import config
-from main import app
+import database
+from main import app, create_session_token
 
 async def test_fastapi_endpoints():
     print("👉 [5/5] 測試 FastAPI API 與 Web 端點 (ASGI)...")
+    secret = await database.get_session_secret()
+    admin_token = create_session_token("admin", secret)
+    headers = {"X-Admin-Token": admin_token, "Authorization": f"Bearer {admin_token}"}
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as client:
         # 1. 測試首頁 HTML
         resp = await client.get("/")
         assert resp.status_code == 200, f"首頁應回傳 200，但回傳 {resp.status_code}"

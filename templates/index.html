@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GASOCR ({{ build_number | default('Build 025') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
+    <title>GASOCR ({{ build_number | default('Build 026') }}) - Google AI Studio Gemini PDF OCR 轉譯系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -62,6 +62,8 @@
     {% include 'components/accounts_modal.html' %}
 
     {% include 'components/admin_modal.html' %}
+
+    {% include 'components/quota_alert_modal.html' %}
 
     {% include 'components/scripts.html' %}
 
