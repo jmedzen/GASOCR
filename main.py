@@ -671,6 +671,15 @@ async def run_page_ocr(
                     await asyncio.sleep(1.0)
                     continue
                 retries += 1
+                if retries >= max_retries:
+                    await database.update_page_result(
+                        task_id, page_num, "failed",
+                        error_message=f"[{account['name']}] 配額耗盡或速率受限 (429 Too Many Requests)，已重試 {retries} 次仍受限",
+                        account_id=account["id"],
+                        duration=duration,
+                        used_model=used_model_display
+                    )
+                    return
                 await asyncio.sleep(2.0)
             else:
                 # 其他錯誤
@@ -685,6 +694,16 @@ async def run_page_ocr(
                     )
                     return
                 await asyncio.sleep(2.0)
+
+        # 保底防呆：若 while 迴圈正常結束但仍未 return，檢查該頁面狀態，若仍為 processing 則標記為 failed
+        cur_pages = await database.get_task_pages(task_id)
+        this_page = next((x for x in cur_pages if x["page_num"] == page_num), None)
+        if this_page and this_page["status"] == "processing":
+            await database.update_page_result(
+                task_id, page_num, "failed",
+                error_message=this_page.get("error_message") or "多次重試後未能取得辨識結果",
+                used_model=used_model_display
+            )
     except asyncio.CancelledError:
         print(f"⏸️ [Page OCR] 任務 {task_id} 第 {page_num} 頁辨識已被使用者暫停")
         await database.update_page_status(task_id, page_num, "paused", error_message="已手動暫停")
@@ -823,7 +842,7 @@ async def process_task_pipeline(task_id: str):
         for p in pages:
             if p["page_num"] not in target_page_nums:
                 continue
-            if p["status"] == "completed":
+            if p["status"] == "completed" and (p.get("ocr_text") or "").strip():
                 continue
                 
             # 檢查任務是否已被刪除或暫停
@@ -834,18 +853,71 @@ async def process_task_pipeline(task_id: str):
             model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
             await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
             
-        # 6. 全部目標頁面處理完成檢查
+        # 5.5 全書最後一頁初次 OCR 完畢後，重新檢查一次沒有結果的頁面並補辨 (End-of-Book Sweep)
+        current_task = await database.get_task(task_id)
+        if not current_task or current_task.get("status") in ["paused", "failed"]:
+            return
+
+        latest_pages = await database.get_task_pages(task_id)
+        unresolved_pages = [
+            lp for lp in latest_pages 
+            if lp["page_num"] in target_page_nums 
+            and (lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip())
+        ]
+
+        if unresolved_pages:
+            missing_nums = [p["page_num"] for p in unresolved_pages]
+            print(f"🔄 [Task {task_id}] 全書最後一頁辨識完畢，發現 {len(unresolved_pages)} 頁無結果 (頁碼: {missing_nums})，啟動全書結尾自動補檢複查...")
+            # 給予短暫冷卻緩衝 (2.5s)，讓 429 速率限制或 503 伺服器忙碌解凍
+            await asyncio.sleep(2.5)
+
+            for idx, p in enumerate(unresolved_pages, 1):
+                current_task = await database.get_task(task_id)
+                if not current_task or current_task.get("status") in ["paused", "failed"]:
+                    return
+                p_num = p["page_num"]
+                print(f"🔄 [Task {task_id} 補檢複查 {idx}/{len(unresolved_pages)}] 重新辨識第 {p_num} 頁...")
+                await database.update_page_status(
+                    task_id, p_num, "processing", 
+                    error_message=f"正在進行全書結尾自動補檢複查 ({idx}/{len(unresolved_pages)} 頁)..."
+                )
+                model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
+                await run_page_ocr(
+                    task_id=task_id, 
+                    page_num=p_num, 
+                    image_path=Path(p["image_path"]), 
+                    model=model_to_use, 
+                    prompt=prompt
+                )
+
+        # 6. 全部目標頁面處理完成結算
         latest_task = await database.get_task(task_id)
         if latest_task and latest_task["status"] not in ["paused", "failed"]:
             latest_pages = await database.get_task_pages(task_id)
             target_pages_status = [lp for lp in latest_pages if lp["page_num"] in target_page_nums]
-            if all(lp["status"] == "completed" for lp in target_pages_status):
+            all_completed = all(lp["status"] == "completed" and (lp.get("ocr_text") or "").strip() for lp in target_pages_status)
+            if all_completed:
                 await database.update_task_status(task_id, "completed")
+                print(f"🎉 [Task {task_id}] 全書目標頁面全數辨識完成 (100%)！")
                 
                 # 7. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
                 if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
                     print(f"🚀 [Background Render] 觸發其餘未渲染頁面之背景高清處理 (總頁數: {pdf_total_pages}, 本次辨識: {len(target_page_nums)})")
                     spawn_background(background_render_task_pages(task_id, pdf_path, target_page_nums))
+            else:
+                # 複查後仍有頁面未成功（例如該帳號當日配額已完全耗盡）
+                for lp in target_pages_status:
+                    if lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip():
+                        if lp["status"] != "failed":
+                            err_msg = lp.get("error_message") or "全書自動補檢後仍無結果（API配額耗盡或忙碌）"
+                            await database.update_page_result(task_id, lp["page_num"], "failed", error_message=err_msg)
+                
+                completed_count = sum(1 for lp in target_pages_status if lp["status"] == "completed")
+                print(f"⚠️ [Task {task_id}] 全書轉譯及補檢完畢，部分頁面未完成 (成功: {completed_count}/{total_target})")
+                if completed_count == 0:
+                    await database.update_task_status(task_id, "failed")
+                else:
+                    await database.update_task_status(task_id, "paused")
         
     except asyncio.CancelledError:
         print(f"⏸️ [Task {task_id}] 切圖/轉譯流水線已即時響應暫停指令")

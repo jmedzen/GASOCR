@@ -485,7 +485,7 @@ async def pause_task_in_progress_pages(task_id: str):
         await db.commit()
 
 async def resume_task_paused_pages(task_id: str):
-    """將任務中處於 paused 狀態的頁面重置為 pending 以便接續轉譯"""
+    """將任務中處於 paused、failed 或殘留 processing 狀態的未完成頁面重置為 pending 以便接續轉譯"""
     now = time.time()
     async with get_db() as db:
         await db.execute("""
@@ -493,7 +493,7 @@ async def resume_task_paused_pages(task_id: str):
             SET status = 'pending', 
                 error_message = '', 
                 updated_at = ?
-            WHERE task_id = ? AND status = 'paused'
+            WHERE task_id = ? AND (status IN ('paused', 'failed', 'processing') OR ocr_text IS NULL OR ocr_text = '')
         """, (now, task_id))
         await db.commit()
 
@@ -558,11 +558,17 @@ async def update_page_result(task_id: str, page_num: int, status: str, ocr_text:
         """, (status, ocr_text, error_message, account_id, duration, used_model, now, task_id, page_num))
         
         # Calculate processed pages
-        cursor = await db.execute("SELECT COUNT(*) as count FROM task_pages WHERE task_id = ? AND status = 'completed'", (task_id,))
+        cursor = await db.execute("SELECT COUNT(*) as count FROM task_pages WHERE task_id = ? AND status = 'completed' AND ocr_text IS NOT NULL AND ocr_text != ''", (task_id,))
         row = await cursor.fetchone()
         completed_count = row["count"] if row else 0
         
-        await db.execute("UPDATE tasks SET processed_pages = ?, updated_at = ? WHERE id = ?", (completed_count, now, task_id))
+        # 檢查任務是否已全數完成
+        t_cursor = await db.execute("SELECT total_pages, status FROM tasks WHERE id = ?", (task_id,))
+        t_row = await t_cursor.fetchone()
+        if t_row and t_row["total_pages"] and completed_count >= t_row["total_pages"]:
+            await db.execute("UPDATE tasks SET processed_pages = ?, status = 'completed', updated_at = ? WHERE id = ?", (completed_count, now, task_id))
+        else:
+            await db.execute("UPDATE tasks SET processed_pages = ?, updated_at = ? WHERE id = ?", (completed_count, now, task_id))
         await db.commit()
 
 async def save_page_ocr_text(task_id: str, page_num: int, new_text: str):
