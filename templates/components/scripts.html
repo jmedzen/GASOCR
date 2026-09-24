@@ -1609,7 +1609,8 @@
                         if (res.ok) {
                             await this.loadTasks();
                             if (this.currentTaskId && data.task_ids && data.task_ids.includes(this.currentTaskId)) {
-                                if (this.currentTask) this.currentTask.status = 'processing';
+                                const found = this.allTasks.find(t => t.id === this.currentTaskId);
+                                if (this.currentTask && found) this.currentTask.status = found.status;
                                 this.listenTaskEvents(this.currentTaskId);
                             }
                             const count = data.resumed_count || 0;

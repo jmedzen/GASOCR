@@ -746,6 +746,39 @@ async def run_page_ocr(
     finally:
         active_page_tasks.pop(task_key, None)
 
+def is_task_rendering_completed(task: dict) -> bool:
+    """
+    檢查任務之切圖渲染是否已全數完成：
+    1. total_pages 必須大於 0
+    2. rendered_pages 必須 >= total_pages
+    3. 目標頁面之 PNG 圖片實體檔案必須全數存在
+    """
+    if not task:
+        return False
+    total = task.get("total_pages", 0) or 0
+    rendered = task.get("rendered_pages", 0) or 0
+    if total <= 0 or rendered < total:
+        return False
+        
+    task_id = task.get("id")
+    if not task_id:
+        return False
+        
+    task_render_dir = config.RENDERS_DIR / task_id
+    if not task_render_dir.exists():
+        return False
+        
+    s_page = task.get("start_page", 1) or 1
+    e_page = task.get("end_page", 0) or 0
+    if e_page <= 0:
+        e_page = task.get("pdf_total_pages", 0) or total
+        
+    for p_num in range(s_page, e_page + 1):
+        if not (task_render_dir / f"page_{p_num:04d}.png").exists():
+            return False
+            
+    return True
+
 async def process_task_pipeline(task_id: str):
     """整個任務的流水線處理（支援初次執行與切圖/OCR階段隨時暫停與接續）"""
     current_coro_task = asyncio.current_task()
@@ -1929,13 +1962,32 @@ async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
         
     target_tasks = [dict(r) for r in rows]
     resumed_ids = []
+    available_render_slots = max(0, RENDER_SEMAPHORE._value)
+
     for t in target_tasks:
         tid = t["id"]
+        task_data = await database.get_task(tid) or t
         await database.resume_task_paused_pages(tid)
-        await database.update_task_status(tid, "processing")
+
+        rendering_done = is_task_rendering_completed(task_data)
+        if not rendering_done:
+            if available_render_slots > 0:
+                target_status = "rendering"
+                target_bg_status = "rendering"
+                available_render_slots -= 1
+            else:
+                target_status = "pending"
+                target_bg_status = "pending"
+        else:
+            is_paid_task = bool(task_data.get("is_paid"))
+            free_slots_full = (not is_paid_task) and (len(free_ocr_task_manager.active_tasks) >= await free_ocr_task_manager.get_max_concurrent())
+            target_status = "pending" if free_slots_full else "processing"
+            target_bg_status = "completed"
+
+        await database.update_task_status(tid, status=target_status, bg_render_status=target_bg_status)
         spawn_background(process_task_pipeline(tid))
         resumed_ids.append(tid)
-        print(f"▶️ [Resume All] 任務 {tid} 已重啟轉譯流水線")
+        print(f"▶️ [Resume All] 任務 {tid} 已重啟轉譯流水線 (狀態: {target_status})")
         
     return {
         "status": "ok",
@@ -1989,12 +2041,32 @@ async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None)
     if task["status"] in ["paused", "failed", "pending"]:
         # 將被手動暫停的頁面重置回 pending 以利接續
         await database.resume_task_paused_pages(task_id)
-        # 標記狀態為 processing 並重啟流水線（流水線會自動偵測是否需要續切圖或直接續 OCR）
-        await database.update_task_status(task_id, "processing", model=new_model)
+        
+        # 務必先檢查切圖完成了嗎？若切圖未完成，threads又滿了的話，要顯示"等待中"
+        rendering_done = is_task_rendering_completed(task)
+        threads_full = (RENDER_SEMAPHORE._value <= 0)
+        
+        if not rendering_done:
+            target_status = "pending" if threads_full else "rendering"
+            target_bg_status = "pending" if threads_full else "rendering"
+            print(f"▶️ [Resume Task] 任務 {task_id} 切圖未完成，threads_full={threads_full} -> 設定狀態為 {target_status}")
+        else:
+            is_paid_task = bool(task.get("is_paid"))
+            free_slots_full = (not is_paid_task) and (len(free_ocr_task_manager.active_tasks) >= await free_ocr_task_manager.get_max_concurrent())
+            target_status = "pending" if free_slots_full else "processing"
+            target_bg_status = "completed"
+            print(f"▶️ [Resume Task] 任務 {task_id} 切圖已完成，free_slots_full={free_slots_full} -> 設定狀態為 {target_status}")
+
+        await database.update_task_status(task_id, status=target_status, bg_render_status=target_bg_status, model=new_model)
         spawn_background(process_task_pipeline(task_id))
+        return {
+            "status": "ok", 
+            "task_status": target_status, 
+            "model": new_model or task.get("model")
+        }
     return {
         "status": "ok", 
-        "task_status": "processing", 
+        "task_status": task.get("status"), 
         "model": new_model or task.get("model")
     }
 
