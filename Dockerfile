@@ -1,6 +1,6 @@
 # ==========================================
 # GASOCR - Google AI Studio Gemini PDF OCR
-# Docker Container Definition (Build 023)
+# Docker Container Definition (Build 024)
 # ==========================================
 
 FROM python:3.11-slim

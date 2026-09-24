@@ -7,6 +7,14 @@
                 allTasks: [],
                 selectedTaskIds: [],
                 isBatchDeleting: false,
+                isPausingAll: false,
+                isResumingAll: false,
+                get hasActiveTasks() {
+                    return this.allTasks && this.allTasks.some(t => ['processing', 'rendering', 'pending'].includes(t.status));
+                },
+                get hasPausedTasks() {
+                    return this.allTasks && this.allTasks.some(t => ['paused', 'failed'].includes(t.status));
+                },
                 isSubmitting: false,
                 uploadProgress: 0,
                 get isCheckingAnyHash() {
@@ -1514,6 +1522,79 @@
                         this.isBatchDeleting = false;
                         this.$nextTick(() => { lucide.createIcons(); });
                     }
+                },
+
+                async pauseAllTasks(taskIds = null) {
+                    const isSelective = Array.isArray(taskIds) && taskIds.length > 0;
+                    this.isPausingAll = true;
+                    try {
+                        const payload = isSelective ? { task_ids: taskIds } : {};
+                        const res = await fetch('/api/tasks/pause-all', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok) {
+                            await this.loadTasks();
+                            if (this.currentTaskId && data.task_ids && data.task_ids.includes(this.currentTaskId)) {
+                                if (this.currentTask) this.currentTask.status = 'paused';
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                            }
+                            const count = data.paused_count || 0;
+                            this.showToast(`⏸️ 已成功暫停 ${count} 個任務（已停止切圖與 OCR）`);
+                        } else {
+                            this.showToast(`⚠️ 全部暫停失敗: ${data.detail || res.statusText}`);
+                        }
+                    } catch (err) {
+                        this.showToast(`⚠️ 全部暫停異常: ${err.message || err}`);
+                    } finally {
+                        this.isPausingAll = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async resumeAllTasks(taskIds = null) {
+                    const isSelective = Array.isArray(taskIds) && taskIds.length > 0;
+                    this.isResumingAll = true;
+                    try {
+                        const payload = isSelective ? { task_ids: taskIds } : {};
+                        const res = await fetch('/api/tasks/resume-all', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok) {
+                            await this.loadTasks();
+                            if (this.currentTaskId && data.task_ids && data.task_ids.includes(this.currentTaskId)) {
+                                if (this.currentTask) this.currentTask.status = 'processing';
+                                this.listenTaskEvents(this.currentTaskId);
+                            }
+                            const count = data.resumed_count || 0;
+                            this.showToast(`▶️ 已成功接續執行 ${count} 個任務`);
+                        } else {
+                            this.showToast(`⚠️ 全部繼續失敗: ${data.detail || res.statusText}`);
+                        }
+                    } catch (err) {
+                        this.showToast(`⚠️ 全部繼續異常: ${err.message || err}`);
+                    } finally {
+                        this.isResumingAll = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                async pauseSelectedTasks() {
+                    if (this.selectedTaskIds.length === 0) return;
+                    await this.pauseAllTasks(this.selectedTaskIds);
+                },
+
+                async resumeSelectedTasks() {
+                    if (this.selectedTaskIds.length === 0) return;
+                    await this.resumeAllTasks(this.selectedTaskIds);
                 },
 
                 downloadTaskExport(taskId, fmt) {

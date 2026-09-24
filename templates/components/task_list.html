@@ -10,7 +10,35 @@
                         <p class="text-xs text-slate-400">已上傳之所有 PDF 檔案與其轉譯狀態，點擊項目可於下方進行校對與成果下載</p>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center flex-wrap gap-2">
+                    <!-- 全局全部暫停按鈕 -->
+                    <button 
+                        type="button"
+                        @click="pauseAllTasks()" 
+                        :disabled="isPausingAll || !hasActiveTasks"
+                        class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1.5"
+                        :class="hasActiveTasks 
+                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 shadow-xs cursor-pointer' 
+                            : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'"
+                        title="全局暫停所有轉譯中、切圖中或排隊中的任務">
+                        <i data-lucide="pause-circle" class="w-3.5 h-3.5" :class="{'animate-pulse': isPausingAll}"></i>
+                        <span x-text="isPausingAll ? '暫停中...' : '全部暫停'"></span>
+                    </button>
+
+                    <!-- 全局全部繼續按鈕 -->
+                    <button 
+                        type="button"
+                        @click="resumeAllTasks()" 
+                        :disabled="isResumingAll || !hasPausedTasks"
+                        class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1.5"
+                        :class="hasPausedTasks 
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 shadow-xs cursor-pointer' 
+                            : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'"
+                        title="全局接續所有已暫停或失敗的任務">
+                        <i data-lucide="play-circle" class="w-3.5 h-3.5" :class="{'animate-spin': isResumingAll}"></i>
+                        <span x-text="isResumingAll ? '接續中...' : '全部繼續'"></span>
+                    </button>
+
                     <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700" x-text="`共 ${allTasks.length} 個任務`"></span>
                     <button @click="loadTasks()" class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition" title="重新整理任務列表">
                         <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
@@ -34,9 +62,17 @@
                     </button>
                 </div>
                 <div class="flex items-center space-x-2">
+                    <button type="button" @click="pauseSelectedTasks()" :disabled="isPausingAll" class="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer disabled:opacity-50" title="暫停已選取的任務">
+                        <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                        <span>暫停選取 (<span x-text="selectedTaskIds.length"></span>)</span>
+                    </button>
+                    <button type="button" @click="resumeSelectedTasks()" :disabled="isResumingAll" class="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer disabled:opacity-50" title="接續已選取的任務">
+                        <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                        <span>接續選取 (<span x-text="selectedTaskIds.length"></span>)</span>
+                    </button>
                     <button type="button" @click="deleteSelectedTasks()" :disabled="isBatchDeleting" class="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50">
                         <i data-lucide="trash-2" class="w-3.5 h-3.5" :class="{'animate-spin': isBatchDeleting}"></i>
-                        <span x-text="isBatchDeleting ? '刪除中...' : `批次刪除選取任務 (${selectedTaskIds.length})`"></span>
+                        <span x-text="isBatchDeleting ? '刪除中...' : `批次刪除選取 (${selectedTaskIds.length})`"></span>
                     </button>
                 </div>
             </div>

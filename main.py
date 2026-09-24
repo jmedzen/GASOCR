@@ -1811,6 +1811,81 @@ async def batch_delete_ocr_tasks(payload: BatchDeleteTasksRequest):
         "deleted_ids": deleted_ids
     }
 
+class BatchTaskActionRequest(BaseModel):
+    task_ids: Optional[List[str]] = None
+
+@app.post("/api/tasks/pause-all")
+async def pause_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
+    """
+    全局/批次暫停 OCR 任務（切圖與辨識雙階段即時中止）：
+    - 若指定 task_ids，僅暫停指定任務中處於 processing, rendering, pending 的任務
+    - 若未指定，暫停全系統所有處於 processing, rendering, pending 的任務
+    """
+    clean_ids = [tid.strip() for tid in payload.task_ids if tid and tid.strip()] if (payload and payload.task_ids) else None
+    
+    async with database.get_db() as db:
+        if clean_ids:
+            placeholders = ",".join("?" for _ in clean_ids)
+            cursor = await db.execute(
+                f"SELECT id, status FROM tasks WHERE id IN ({placeholders}) AND status IN ('processing', 'rendering', 'pending')",
+                clean_ids
+            )
+        else:
+            cursor = await db.execute("SELECT id, status FROM tasks WHERE status IN ('processing', 'rendering', 'pending')")
+        rows = await cursor.fetchall()
+        
+    target_tasks = [dict(r) for r in rows]
+    paused_ids = []
+    for t in target_tasks:
+        tid = t["id"]
+        cancel_task_active_jobs(tid)
+        await database.update_task_status(tid, status="paused", bg_render_status="paused")
+        await database.pause_task_in_progress_pages(tid)
+        paused_ids.append(tid)
+        print(f"⏸️ [Pause All] 任務 {tid} 已即時暫停切圖與 OCR")
+        
+    return {
+        "status": "ok",
+        "paused_count": len(paused_ids),
+        "task_ids": paused_ids
+    }
+
+@app.post("/api/tasks/resume-all")
+async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
+    """
+    全局/批次接續 OCR 任務（自動重置未完成頁面並重啟流水線）：
+    - 若指定 task_ids，僅接續指定任務中處於 paused, failed, pending 的任務
+    - 若未指定，接續全系統所有處於 paused, failed, pending 的任務
+    """
+    clean_ids = [tid.strip() for tid in payload.task_ids if tid and tid.strip()] if (payload and payload.task_ids) else None
+    
+    async with database.get_db() as db:
+        if clean_ids:
+            placeholders = ",".join("?" for _ in clean_ids)
+            cursor = await db.execute(
+                f"SELECT id, status, model FROM tasks WHERE id IN ({placeholders}) AND status IN ('paused', 'failed', 'pending')",
+                clean_ids
+            )
+        else:
+            cursor = await db.execute("SELECT id, status, model FROM tasks WHERE status IN ('paused', 'failed', 'pending')")
+        rows = await cursor.fetchall()
+        
+    target_tasks = [dict(r) for r in rows]
+    resumed_ids = []
+    for t in target_tasks:
+        tid = t["id"]
+        await database.resume_task_paused_pages(tid)
+        await database.update_task_status(tid, "processing")
+        spawn_background(process_task_pipeline(tid))
+        resumed_ids.append(tid)
+        print(f"▶️ [Resume All] 任務 {tid} 已重啟轉譯流水線")
+        
+    return {
+        "status": "ok",
+        "resumed_count": len(resumed_ids),
+        "task_ids": resumed_ids
+    }
+
 @app.post("/api/tasks/{task_id}/pause")
 async def pause_task(task_id: str):
     """暫停指定 OCR 任務（涵蓋切圖階段與 OCR 辨識階段）"""
