@@ -414,6 +414,16 @@ async def delete_task(task_id: str):
         await db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await db.commit()
 
+async def delete_tasks(task_ids: List[str]):
+    """批次從資料庫中刪除多筆任務與對應的頁面記錄"""
+    if not task_ids:
+        return
+    async with get_db() as db:
+        placeholders = ",".join("?" for _ in task_ids)
+        await db.execute(f"DELETE FROM task_pages WHERE task_id IN ({placeholders})", task_ids)
+        await db.execute(f"DELETE FROM tasks WHERE id IN ({placeholders})", task_ids)
+        await db.commit()
+
 async def update_task_model(task_id: str, model: str):
     now = time.time()
     async with get_db() as db:

@@ -1637,6 +1637,59 @@ async def delete_ocr_task(task_id: str):
         print(f"Error cleaning task files {task_id}: {e}")
     return {"status": "ok"}
 
+class BatchDeleteTasksRequest(BaseModel):
+    task_ids: List[str]
+
+@app.post("/api/tasks/batch-delete")
+async def batch_delete_ocr_tasks(payload: BatchDeleteTasksRequest):
+    """批次刪除指定的一組 OCR 任務並清理相關切圖與殘留快取"""
+    clean_ids = [tid.strip() for tid in payload.task_ids if tid and tid.strip()]
+    if not clean_ids:
+        return {"status": "ok", "deleted_count": 0, "deleted_ids": []}
+
+    deleted_ids = []
+    # 逐一檢查任務與其 original_filepath
+    for tid in clean_ids:
+        task = await database.get_task(tid)
+        if not task:
+            continue
+        deleted_ids.append(tid)
+        orig_fp = task.get("original_filepath")
+        
+        # 清理切圖目錄
+        try:
+            render_dir = config.RENDERS_DIR / tid
+            if render_dir.exists():
+                shutil.rmtree(render_dir)
+        except Exception as e:
+            print(f"Error cleaning render dir {tid}: {e}")
+            
+        # 檢查 original_filepath 是否尚被其他任務引用（需排除這批要刪除的所有任務）
+        if orig_fp:
+            try:
+                placeholders = ",".join("?" for _ in clean_ids)
+                async with database.get_db() as db:
+                    c = await db.execute(
+                        f"SELECT COUNT(*) FROM tasks WHERE original_filepath = ? AND id NOT IN ({placeholders})",
+                        [orig_fp] + clean_ids
+                    )
+                    other_count = (await c.fetchone())[0]
+                if other_count == 0:
+                    await database.delete_file_hash_by_path(orig_fp)
+                    if os.path.exists(orig_fp):
+                        os.remove(orig_fp)
+            except Exception as e:
+                print(f"Error checking/cleaning original file {orig_fp}: {e}")
+
+    if deleted_ids:
+        await database.delete_tasks(deleted_ids)
+
+    return {
+        "status": "ok", 
+        "deleted_count": len(deleted_ids), 
+        "deleted_ids": deleted_ids
+    }
+
 @app.post("/api/tasks/{task_id}/pause")
 async def pause_task(task_id: str):
     """暫停指定 OCR 任務"""

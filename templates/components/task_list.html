@@ -18,11 +18,42 @@
                 </div>
             </div>
 
+            <!-- Batch Selection Action Bar (多選批次操作列) -->
+            <div x-show="selectedTaskIds.length > 0" x-transition class="mb-3 px-4 py-2.5 bg-rose-50/90 border border-rose-200 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs shadow-xs">
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-1.5 font-bold text-rose-950">
+                        <i data-lucide="check-square" class="w-4 h-4 text-rose-600"></i>
+                        <span>已選取 <span class="font-mono text-sm text-rose-700" x-text="selectedTaskIds.length"></span> 個任務</span>
+                    </div>
+                    <span class="text-rose-300">|</span>
+                    <button type="button" @click="selectedTaskIds = []" class="text-rose-700 hover:text-rose-900 font-semibold cursor-pointer underline">
+                        取消選取
+                    </button>
+                    <button type="button" @click="toggleSelectAllTasks()" class="text-rose-700 hover:text-rose-900 font-semibold cursor-pointer underline">
+                        <span x-text="selectedTaskIds.length === allTasks.length ? '全部取消' : '選取全部 ' + allTasks.length + ' 個'"></span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button type="button" @click="deleteSelectedTasks()" :disabled="isBatchDeleting" class="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5" :class="{'animate-spin': isBatchDeleting}"></i>
+                        <span x-text="isBatchDeleting ? '刪除中...' : `批次刪除選取任務 (${selectedTaskIds.length})`"></span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Task List Table -->
             <div class="border border-slate-200 rounded-xl overflow-x-auto custom-scroll">
                 <table class="w-full min-w-[880px] text-left text-xs">
                     <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
                         <tr>
+                            <th class="p-3 w-10 text-center">
+                                <input type="checkbox" 
+                                    :checked="allTasks.length > 0 && selectedTaskIds.length === allTasks.length"
+                                    :indeterminate.prop="selectedTaskIds.length > 0 && selectedTaskIds.length < allTasks.length"
+                                    @change="toggleSelectAllTasks()"
+                                    class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                    title="全選 / 取消全選">
+                            </th>
                             <th class="p-3 w-3/12 min-w-[180px]">檔案名稱</th>
                             <th class="p-3 whitespace-nowrap min-w-[110px]">轉譯範圍</th>
                             <th class="p-3 whitespace-nowrap min-w-[180px]">模型與語言</th>
@@ -33,7 +64,18 @@
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         <template x-for="task in allTasks" :key="task.id">
-                            <tr class="hover:bg-slate-50/70 transition cursor-pointer" :class="{'bg-blue-50/50': currentTaskId === task.id}" @click="inspectTask(task)">
+                            <tr class="hover:bg-slate-50/70 transition cursor-pointer" 
+                                :class="{
+                                    'bg-blue-50/70 border-l-4 border-l-blue-600': selectedTaskIds.includes(task.id),
+                                    'bg-blue-50/30': currentTaskId === task.id && !selectedTaskIds.includes(task.id)
+                                }" 
+                                @click="inspectTask(task)">
+                                <td class="p-3 text-center" @click.stop>
+                                    <input type="checkbox" 
+                                        :value="task.id" 
+                                        x-model="selectedTaskIds" 
+                                        class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer">
+                                </td>
                                 <td class="p-3 font-medium text-slate-800">
                                     <div class="flex items-center space-x-2">
                                         <i data-lucide="file-text" class="w-4 h-4 text-blue-600 shrink-0"></i>
@@ -130,7 +172,7 @@
                         </template>
                         <template x-if="allTasks.length === 0">
                             <tr>
-                                <td colspan="6" class="p-8 text-center text-slate-400">目前尚無任何轉譯任務，請在上方選取 PDF 檔案開始批次轉譯</td>
+                                <td colspan="7" class="p-8 text-center text-slate-400">目前尚無任何轉譯任務，請在上方選取 PDF 檔案開始批次轉譯</td>
                             </tr>
                         </template>
                     </tbody>

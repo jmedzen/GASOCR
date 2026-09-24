@@ -5,6 +5,8 @@
                 currentTheme: localStorage.getItem('ocr_theme') || 'light',
                 pendingFiles: [],
                 allTasks: [],
+                selectedTaskIds: [],
+                isBatchDeleting: false,
                 isSubmitting: false,
                 uploadProgress: 0,
                 get isCheckingAnyHash() {
@@ -721,6 +723,9 @@
                         const res = await fetch('/api/tasks');
                         const data = await res.json();
                         this.allTasks = data.tasks || [];
+                        if (this.selectedTaskIds.length > 0) {
+                            this.selectedTaskIds = this.selectedTaskIds.filter(id => this.allTasks.some(t => t.id === id));
+                        }
                         if (this.currentTaskId) {
                             const match = this.allTasks.find(t => t.id === this.currentTaskId);
                             if (match && this.currentTask) {
@@ -1428,6 +1433,14 @@
                     }
                 },
 
+                toggleSelectAllTasks() {
+                    if (this.allTasks.length > 0 && this.selectedTaskIds.length === this.allTasks.length) {
+                        this.selectedTaskIds = [];
+                    } else {
+                        this.selectedTaskIds = this.allTasks.map(t => t.id);
+                    }
+                },
+
                 async deleteTask(taskId) {
                     if (!confirm('確定要刪除此轉譯任務與相關檔案嗎？')) return;
                     try {
@@ -1443,10 +1456,56 @@
                                 this.pages = [];
                                 this.selectedPageNum = null;
                             }
+                            this.selectedTaskIds = this.selectedTaskIds.filter(id => id !== taskId);
                             await this.loadTasks();
                         }
                     } catch (err) {
                         alert('刪除失敗: ' + err);
+                    }
+                },
+
+                async deleteSelectedTasks() {
+                    const count = this.selectedTaskIds.length;
+                    if (count === 0) return;
+                    
+                    const runningCount = this.allTasks.filter(t => this.selectedTaskIds.includes(t.id) && ['processing', 'rendering', 'pending'].includes(t.status)).length;
+                    let confirmMsg = `確定要批次刪除選取的 ${count} 個轉譯任務嗎？\n此動作將一併刪除相關切圖快取與成果且無法復原。`;
+                    if (runningCount > 0) {
+                        confirmMsg += `\n⚠️ 提醒：其中包含 ${runningCount} 個正在轉譯中的任務，刪除將會強制中止執行。`;
+                    }
+                    
+                    if (!confirm(confirmMsg)) return;
+                    
+                    this.isBatchDeleting = true;
+                    try {
+                        const res = await fetch('/api/tasks/batch-delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ task_ids: this.selectedTaskIds })
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok) {
+                            if (this.currentTaskId && this.selectedTaskIds.includes(this.currentTaskId)) {
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                                this.currentTaskId = null;
+                                this.currentTask = null;
+                                this.pages = [];
+                                this.selectedPageNum = null;
+                            }
+                            this.selectedTaskIds = [];
+                            await this.loadTasks();
+                            alert(`🎉 已成功刪除 ${data.deleted_count || count} 個任務！`);
+                        } else {
+                            alert('批次刪除失敗: ' + (data.detail || '伺服器異常'));
+                        }
+                    } catch (err) {
+                        alert('批次刪除請求錯誤: ' + err);
+                    } finally {
+                        this.isBatchDeleting = false;
+                        this.$nextTick(() => { lucide.createIcons(); });
                     }
                 },
 
