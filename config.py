@@ -4,7 +4,7 @@ from pathlib import Path
 # Application & Version Control
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 020"
+BUILD_NUMBER = "Build 021"
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -53,10 +53,14 @@ MIN_FREE_DISK_MB = int(os.environ.get("MIN_FREE_DISK_MB", 2048))
 AVAILABLE_MODELS = [
     {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite (預設推薦，極速超低延遲)"},
     {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (極速高精度)"},
-    {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (穩定高辨識)"},
+    {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (旗艦高精度，複雜古籍推薦)"},
+    {"id": "gemini-3.7-flash", "name": "Gemini 3.7 Flash (次世代旗艦)"},
+    {"id": "gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash-Lite (極速輕量)"},
+    {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite (穩定輕量)"},
+    {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (經典穩定)"},
     {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite (極低延遲)"},
-    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (經典版本)"},
-    {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro (超高精度，但 RPM 較低)"},
+    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (舊版相容)"},
+    {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro (舊版高精度)"},
 ]
 
 # Layout configurations

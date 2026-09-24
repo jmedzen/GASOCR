@@ -571,7 +571,7 @@
 
                 async refreshModels(manual = false) {
                     this.isLoadingModels = true;
-                    this.$nextTick(() => { lucide.createIcons(); });
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
                     try {
                         const res = await fetch(`/api/models?refresh=${manual}`);
                         const data = await res.json();
@@ -582,15 +582,21 @@
                                 this.upgradeModel = pro ? (pro.id || pro) : (this.modelsList[0].id || this.modelsList[0]);
                             }
                             if (manual) {
-                                alert(data.message || `已成功載入 ${data.models.length} 個 Google AI Studio 模型！`);
+                                if (data.updated) {
+                                    this.showToast(`✅ ${data.message || `已成功更新 ${data.models.length} 個可用模型！`}`);
+                                } else {
+                                    this.showToast(`⚠️ ${data.message || '無法自 Google 取得最新模型，維持現有清單'}`);
+                                }
                             }
+                        } else if (manual) {
+                            this.showToast(`⚠️ ${data.message || '未能取得可用模型清單'}`);
                         }
                     } catch (err) {
                         console.error('刷新模型清單失敗:', err);
-                        if (manual) alert('刷新模型清單失敗: ' + err);
+                        if (manual) this.showToast('⚠️ 刷新模型清單失敗: ' + (err.message || err));
                     } finally {
                         this.isLoadingModels = false;
-                        this.$nextTick(() => { lucide.createIcons(); });
+                        this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
                     }
                 },
 

@@ -172,19 +172,24 @@ async def update_cached_models(force: bool = False) -> Tuple[bool, str]:
     """向 Google AI Studio 自動抓取並更新可用模型清單"""
     global CACHED_MODELS
     try:
-        accounts = await database.get_accounts()
+        # 需 include_secrets=True 才能獲取 api_key 或 oauth token 進行 Google API 查詢
+        accounts = await database.get_accounts(include_secrets=True)
         active_accounts = [acc for acc in accounts if acc.get("is_active") == 1]
         if not active_accounts:
             return False, "尚未設定啟用的 Google 帳號或 API Key，顯示預設模型清單"
         
-        # 嘗試使用第一組可用的啟用帳號向 Google 抓取最新清單
+        last_error = ""
+        # 嘗試使用可用的啟用帳號向 Google 抓取最新清單
         for acc in active_accounts:
             success, models, msg = await gemini_ocr.fetch_google_models(acc)
             if success and models:
                 CACHED_MODELS = models
-                print(f"✅ 成功從 Google AI Studio 自動抓取 {len(models)} 個 Gemini 模型")
-                return True, f"成功更新 {len(models)} 個最新模型"
-        return False, f"嘗試向 Google AI Studio 請求模型清單未果，維持現有清單"
+                acc_name = acc.get("name", "未命名金鑰")
+                print(f"✅ 成功從 Google AI Studio 自動抓取 {len(models)} 個 Gemini 模型 (使用帳號: {acc_name})")
+                return True, f"成功更新 {len(models)} 個最新模型 (來自帳號: {acc_name})"
+            else:
+                last_error = msg
+        return False, f"嘗試向 Google AI Studio 請求模型清單未果 ({last_error})，維持現有清單"
     except Exception as e:
         return False, f"更新模型清單異常: {str(e)}"
 

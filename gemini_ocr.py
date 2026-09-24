@@ -4,6 +4,7 @@ import httpx
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
 import database
+import config
 
 def build_ocr_prompt(lang: str, direction: str, column: str, custom_prompt: str = "") -> str:
     """根據使用者的排版設定動態組裝 OCR 提示詞"""
@@ -215,26 +216,44 @@ async def fetch_google_models(account: Dict[str, Any]) -> Tuple[bool, List[Dict[
                 name = m.get("name", "")
                 if "generateContent" in methods and "gemini" in name.lower():
                     model_id = name.replace("models/", "")
+                    mid_lower = model_id.lower()
+                    
+                    # 過濾非 OCR 視覺文件轉譯模型（純語音 TTS、純轉錄、機器人控制、電腦操作、純圖像生成等）
+                    if any(x in mid_lower for x in ["-tts", "transcribe", "robotics", "computer-use", "-image"]):
+                        continue
+                        
                     display_name = m.get("displayName", model_id)
                     description = m.get("description", "")
+                    
+                    if display_name and display_name.lower() != model_id.lower() and f"({model_id})" not in display_name:
+                        formatted_name = f"{display_name} ({model_id})"
+                    else:
+                        formatted_name = display_name or model_id
+
+                    # 標註系統預設推薦模型
+                    if model_id == config.DEFAULT_MODEL:
+                        formatted_name = f"{formatted_name} (預設推薦)"
+
                     parsed_models.append({
                         "id": model_id,
-                        "name": f"{display_name} ({model_id})",
+                        "name": formatted_name,
                         "description": description
                     })
             
-            # 智慧排序：優先推薦 3.5-flash-lite 與 Flash-Lite 模型，其次 Flash，再次 Pro 等
+            # 智慧排序：系統預設推薦置頂 (-1)，其次 Flash-Lite (0)，再次 Flash (1)，再次 Pro (2)，其餘 (3)
             def sort_key(item):
                 mid = item["id"].lower()
-                if "3.5-flash-lite" in mid:
-                    tier = 0
+                def_mid = config.DEFAULT_MODEL.lower()
+                if mid == def_mid:
+                    return (-1, item["name"])
                 elif "flash-lite" in mid:
-                    tier = 1
+                    return (0, item["name"])
                 elif "flash" in mid:
-                    tier = 2
+                    return (1, item["name"])
+                elif "pro" in mid:
+                    return (2, item["name"])
                 else:
-                    tier = 3
-                return (tier, item["name"])
+                    return (3, item["name"])
                 
             parsed_models.sort(key=sort_key)
             return True, parsed_models, "成功"

@@ -20,7 +20,7 @@ async def test_all():
         assert res.status_code == 200
         data = res.json()
         print(f"   ✅ 版本號確認: {data['build']} ({data['version']})")
-        assert data['build'] == "Build 020"
+        assert data['build'] == "Build 021"
 
         # 2. 測試檔案 Hash 比對端點 /api/files/check-hash
         # 建立一個測試用的有效 1 頁 PDF 檔案
@@ -125,6 +125,14 @@ async def test_all():
         assert len(render_progress_events) == 1
         assert render_progress_events[-1] == (1, 1)
         print(f"   ✅ 圖片預處理切圖進度回呼驗證通過: {len(render_progress_events)} 頁全部成功觸發進度事件")
+
+        # 7. 測試模型清單動態抓取與刷新 (/api/models?refresh=true)
+        res = await client.get("/api/models?refresh=true")
+        assert res.status_code == 200
+        m_data = res.json()
+        assert "models" in m_data and m_data["count"] >= 10
+        assert m_data["updated"] is True
+        print(f"   ✅ 模型動態抓取與刷新驗證通過: 成功獲取 {m_data['count']} 個模型 (updated={m_data['updated']})")
 
         # 清理測試資料
         await database.delete_task(task_id)
