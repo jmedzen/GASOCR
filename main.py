@@ -223,11 +223,21 @@ async def lifespan(app: FastAPI):
 
     # API 上線後自動背景抓取最新模型清單
     spawn_background(update_cached_models())
+
+    # 啟動全自動流水線排程調度引擎
+    await pipeline_dispatcher.start()
+
     try:
         yield
     finally:
         global SHUTTING_DOWN
         SHUTTING_DOWN = True
+
+        # 停止流水線排程調度引擎
+        try:
+            await pipeline_dispatcher.stop()
+        except Exception:
+            pass
 
         # ⚠️ 這裡必須 wait=True，這是修掉「python 當機」的關鍵。
         #
@@ -431,6 +441,129 @@ def cancel_task_active_jobs(tid: str):
             pt = active_page_tasks.pop(key, None)
             if pt and not pt.done():
                 pt.cancel()
+
+# --- 全自動流水線排程調度引擎 (Pipeline Conveyor Belt Engine) ---
+
+class PipelineDispatcher:
+    """
+    全域流水線排程調度引擎 (Pipeline Conveyor Belt Engine)
+    
+    職責：
+    1. 管理「等待切圖 (pending_render)」隊列：
+       - 當切圖執行緒有空位時，依 FIFO 順序自動拉起等待切圖任務。
+    2. 管理「等待OCR (pending_ocr)」隊列：
+       - 當免費 OCR 槽位或付費通道有空位時，依 FIFO 順序自動拉起等待OCR任務。
+    3. 全自動流水線接棒 (Auto-Drain)：
+       - 前一個任務切圖完畢時，立即推進該任務進入 OCR 佇列，並拉起下一個等待切圖任務。
+       - 前一個任務 OCR 完畢（或暫停/失敗）時，立即釋放槽位並拉起下一個等待OCR任務。
+    4. 崩潰/重啟/異常自動修復 (Self-Healing)：
+       - 即使伺服器重啟、連線中斷或協程意外終止，調度器常駐心跳每 1.5 秒巡檢資料庫，
+         自動接續所有未完成任務，杜絕任務卡在「等待中」動彈不得。
+    """
+    def __init__(self):
+        self._notify_event = asyncio.Event()
+        self._running = False
+        self._loop_task: Optional[asyncio.Task] = None
+        self._lock = asyncio.Lock()
+
+    def trigger(self):
+        """立即通知調度器推進佇列"""
+        self._notify_event.set()
+
+    async def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._loop_task = spawn_background(self._run_loop())
+        print("🚀 [Pipeline Dispatcher] 全自動流水線排程調度引擎已啟動")
+
+    async def stop(self):
+        self._running = False
+        self._notify_event.set()
+        if self._loop_task and not self._loop_task.done():
+            self._loop_task.cancel()
+        print("🧹 [Pipeline Dispatcher] 流水線排程調度引擎已安全停止")
+
+    async def _run_loop(self):
+        while self._running:
+            try:
+                await self.dispatch()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"⚠️ [Pipeline Dispatcher] 調度循環異常: {e}")
+            
+            try:
+                await asyncio.wait_for(self._notify_event.wait(), timeout=1.5)
+                self._notify_event.clear()
+            except asyncio.TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                break
+
+    async def dispatch(self):
+        if SHUTTING_DOWN:
+            return
+
+        async with self._lock:
+            # 1. 清理已結束的協程參照
+            for tid in list(active_pipeline_tasks.keys()):
+                t = active_pipeline_tasks.get(tid)
+                if t and t.done():
+                    active_pipeline_tasks.pop(tid, None)
+
+            # 2. 自動校準 free_ocr_task_manager 的 active_tasks，清理殘留幽靈槽位
+            running_tids = set(active_pipeline_tasks.keys())
+            await free_ocr_task_manager.clean_inactive_slots(running_tids)
+
+            # 3. 查詢資料庫中等待處理的任務 (FIFO 順序)
+            async with database.get_db() as db:
+                cursor = await db.execute("""
+                    SELECT id, status, is_paid, created_at
+                    FROM tasks
+                    WHERE status IN ('pending_render', 'pending_ocr')
+                    ORDER BY created_at ASC
+                """)
+                rows = await cursor.fetchall()
+            waiting_tasks = [dict(r) for r in rows]
+
+            if not waiting_tasks:
+                return
+
+            # 4. 推進等待切圖任務 (pending_render)
+            available_render_slots = max(0, RENDER_SEMAPHORE._value)
+            if available_render_slots > 0:
+                pending_renders = [t for t in waiting_tasks if t["status"] == "pending_render"]
+                for pt in pending_renders:
+                    tid = pt["id"]
+                    if tid in active_pipeline_tasks and not active_pipeline_tasks[tid].done():
+                        continue
+                    if available_render_slots <= 0:
+                        break
+                    print(f"🚀 [Pipeline Dispatcher] 自動啟動切圖任務: {tid}")
+                    spawn_background(process_task_pipeline(tid))
+                    available_render_slots -= 1
+
+            # 5. 推進等待OCR任務 (pending_ocr)
+            max_free_slots = await free_ocr_task_manager.get_max_concurrent()
+            current_active_free = len(free_ocr_task_manager.active_tasks)
+            available_ocr_slots = max(0, max_free_slots - current_active_free)
+
+            pending_ocrs = [t for t in waiting_tasks if t["status"] == "pending_ocr"]
+            for ot in pending_ocrs:
+                tid = ot["id"]
+                if tid in active_pipeline_tasks and not active_pipeline_tasks[tid].done():
+                    continue
+                is_paid = bool(ot.get("is_paid"))
+                if is_paid:
+                    print(f"💎 [Pipeline Dispatcher] 自動啟動付費 OCR 任務: {tid}")
+                    spawn_background(process_task_pipeline(tid))
+                elif available_ocr_slots > 0:
+                    print(f"🚀 [Pipeline Dispatcher] 自動啟動免費 OCR 任務: {tid} (可用槽位: {available_ocr_slots})")
+                    spawn_background(process_task_pipeline(tid))
+                    available_ocr_slots -= 1
+
+pipeline_dispatcher = PipelineDispatcher()
 
 async def background_render_task_pages(task_id: str, pdf_path: Path, target_pages: set):
     """在背景完成剩餘未渲染頁面的 300 DPI 高清渲染，受 RENDER_SEMAPHORE 控管總 CPU 並發"""
@@ -882,6 +1015,9 @@ async def process_task_pipeline(task_id: str):
                     executor=PDF_RENDER_EXECUTOR
                 )
             
+            # 切圖完成釋放切圖槽位，立即通知調度器拉起下一個等待切圖任務
+            pipeline_dispatcher.trigger()
+
             # 切圖完成後，檢查在切圖渲染期間，使用者是否已按了暫停或刪除
             check_task = await database.get_task(task_id)
             if not check_task or check_task.get("status") in ["paused", "failed"]:
@@ -899,6 +1035,8 @@ async def process_task_pipeline(task_id: str):
                 rendered_pages=total_target,
                 pdf_total_pages=pdf_total_pages
             )
+            # 通知調度器該任務已就緒等待 OCR
+            pipeline_dispatcher.trigger()
 
         async with free_ocr_task_manager.limit(task_id, is_paid=is_paid_task):
             # 取得執行槽位後，檢查在等待期間任務是否已被使用者暫停或刪除
@@ -985,6 +1123,7 @@ async def process_task_pipeline(task_id: str):
                 if all_completed:
                     await database.update_task_status(task_id, "completed")
                     print(f"🎉 [Task {task_id}] 全書目標頁面全數辨識完成 (100%)！")
+                    pipeline_dispatcher.trigger()
                     
                     # 7. 進度條完成之後，若還有頁面沒有高清解析，在背景跑完所有剩餘頁面渲染
                     if pdf_path.exists() and pdf_total_pages > len(target_page_nums):
@@ -1004,6 +1143,7 @@ async def process_task_pipeline(task_id: str):
                         await database.update_task_status(task_id, "failed")
                     else:
                         await database.update_task_status(task_id, "paused")
+                    pipeline_dispatcher.trigger()
         
     except asyncio.CancelledError:
         print(f"⏸️ [Task {task_id}] 切圖/轉譯流水線已即時響應暫停指令")
@@ -1016,6 +1156,7 @@ async def process_task_pipeline(task_id: str):
             await database.update_task_status(task_id, "failed")
     finally:
         active_pipeline_tasks.pop(task_id, None)
+        pipeline_dispatcher.trigger()
 
 # --- Web UI Routes ---
 
@@ -1309,6 +1450,7 @@ async def create_api_key_account(payload: ApiKeyAccountCreate):
     # 新增金鑰後自動觸發更新模型清單與並發槽位
     spawn_background(update_cached_models())
     await free_ocr_task_manager.notify_account_change()
+    pipeline_dispatcher.trigger()
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/oauth", dependencies=[Depends(require_access_or_admin)])
@@ -1317,6 +1459,7 @@ async def create_oauth_account(payload: OAuthAccountCreate):
     # 新增 OAuth 後自動觸發更新模型清單與並發槽位
     spawn_background(update_cached_models())
     await free_ocr_task_manager.notify_account_change()
+    pipeline_dispatcher.trigger()
     return {"status": "ok", "account_id": acc_id}
 
 @app.post("/api/accounts/{account_id}/toggle", dependencies=[Depends(require_access_or_admin)])
@@ -1327,12 +1470,14 @@ async def toggle_account(account_id: int):
     new_state = not bool(account["is_active"])
     await database.toggle_account_active(account_id, new_state)
     await free_ocr_task_manager.notify_account_change()
+    pipeline_dispatcher.trigger()
     return {"status": "ok", "is_active": new_state}
 
 @app.delete("/api/accounts/{account_id}", dependencies=[Depends(require_access_or_admin)])
 async def delete_account(account_id: int):
     await database.delete_account(account_id)
     await free_ocr_task_manager.notify_account_change()
+    pipeline_dispatcher.trigger()
     return {"status": "ok"}
 
 @app.post("/api/accounts/{account_id}/test", dependencies=[Depends(require_access_or_admin)])
@@ -1807,6 +1952,7 @@ async def create_ocr_task(
             )
         raise HTTPException(status_code=400, detail=detail)
         
+    pipeline_dispatcher.trigger()
     return {
         "status": "ok", 
         "task_ids": created_tasks, 
@@ -1842,6 +1988,7 @@ async def delete_ocr_task(task_id: str):
             shutil.rmtree(render_dir)
     except Exception as e:
         print(f"Error cleaning task files {task_id}: {e}")
+    pipeline_dispatcher.trigger()
     return {"status": "ok"}
 
 class BatchDeleteTasksRequest(BaseModel):
@@ -1895,6 +2042,7 @@ async def batch_delete_ocr_tasks(payload: BatchDeleteTasksRequest):
     if deleted_ids:
         await database.delete_tasks(deleted_ids)
 
+    pipeline_dispatcher.trigger()
     return {
         "status": "ok", 
         "deleted_count": len(deleted_ids), 
@@ -1934,6 +2082,7 @@ async def pause_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
         paused_ids.append(tid)
         print(f"⏸️ [Pause All] 任務 {tid} 已即時暫停切圖與 OCR")
         
+    pipeline_dispatcher.trigger()
     return {
         "status": "ok",
         "paused_count": len(paused_ids),
@@ -1989,6 +2138,7 @@ async def resume_all_tasks(payload: Optional[BatchTaskActionRequest] = None):
         resumed_ids.append(tid)
         print(f"▶️ [Resume All] 任務 {tid} 已重啟轉譯流水線 (狀態: {target_status})")
         
+    pipeline_dispatcher.trigger()
     return {
         "status": "ok",
         "resumed_count": len(resumed_ids),
@@ -2012,6 +2162,7 @@ async def pause_task(task_id: str):
     await database.pause_task_in_progress_pages(task_id)
     
     print(f"⏸️ [Task {task_id}] 使用者手動暫停任務成功（已即時中斷切圖與 OCR 流程）")
+    pipeline_dispatcher.trigger()
     return {"status": "ok", "task_status": "paused"}
 
 class ResumeTaskPayload(BaseModel):
@@ -2059,6 +2210,7 @@ async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None)
 
         await database.update_task_status(task_id, status=target_status, bg_render_status=target_bg_status, model=new_model)
         spawn_background(process_task_pipeline(task_id))
+        pipeline_dispatcher.trigger()
         return {
             "status": "ok", 
             "task_status": target_status, 

@@ -90,9 +90,9 @@ async def run_tests():
             
             task1 = await database.get_task(t1)
             task2 = await database.get_task(t2)
-            assert task1["status"] == "processing"
-            assert task2["status"] == "processing"
-            print("   ✅ 全局全部繼續成功：t1, t2 均已重設為 processing 並重啟流水線")
+            assert task1["status"] in ["processing", "rendering"]
+            assert task2["status"] in ["processing", "rendering"]
+            print("   ✅ 全局全部繼續成功：t1, t2 均已重設為 processing/rendering 並重啟流水線")
 
         # 3. 測試指定任務批次暫停 (POST /api/tasks/pause-all with task_ids=[t1])
         print("👉 [3/4] 測試選取任務批次暫停 (pause-all with task_ids)...")
@@ -105,7 +105,7 @@ async def run_tests():
         task1 = await database.get_task(t1)
         task2 = await database.get_task(t2)
         assert task1["status"] == "paused"
-        assert task2["status"] == "processing", "未選取的 t2 應保持 processing"
+        assert task2["status"] in ["processing", "rendering"], "未選取的 t2 應保持執行中"
         print("   ✅ 選取任務批次暫停成功：僅 t1 暫停，t2 持續運行")
 
         # 4. 測試指定任務批次繼續 (POST /api/tasks/resume-all with task_ids=[t1])
@@ -119,7 +119,7 @@ async def run_tests():
             assert mock_pipe.call_count == 1
             
             task1 = await database.get_task(t1)
-            assert task1["status"] == "processing"
+            assert task1["status"] in ["processing", "rendering"]
             print("   ✅ 選取任務批次繼續成功：t1 接續執行")
 
     # 清理測試環境

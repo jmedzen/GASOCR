@@ -348,6 +348,16 @@ class FreeOCRTaskManager:
             if task_id in self._active_tasks:
                 self._active_tasks.remove(task_id)
                 print(f"🔓 [Free OCR Slot] 任務 {task_id} 釋放免費 OCR 槽位 (剩餘執行中: {len(self._active_tasks)})")
+            self._condition.notify_all()
+
+    async def clean_inactive_slots(self, running_task_ids: Set[str]):
+        """清理已不在執行中的幽靈槽位，避免死鎖"""
+        async with self._condition:
+            stale = [t for t in self._active_tasks if t not in running_task_ids]
+            for t in stale:
+                self._active_tasks.remove(t)
+                print(f"🧹 [Free OCR Slot] 清理殘留幽靈槽位: {t}")
+            if stale:
                 self._condition.notify_all()
 
     async def notify_account_change(self):
@@ -370,8 +380,8 @@ class FreeOCRTaskManager:
         if is_paid:
             yield
             return
-        await self.acquire(task_id)
         try:
+            await self.acquire(task_id)
             yield
         finally:
             await self.release(task_id)
