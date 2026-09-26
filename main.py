@@ -271,6 +271,9 @@ STATIC_DIR = config.BASE_DIR / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.globals["build_number"] = config.BUILD_NUMBER
+templates.env.globals["app_version"] = config.APP_VERSION
+templates.env.globals["app_name"] = config.APP_NAME
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/renders", StaticFiles(directory=str(config.RENDERS_DIR)), name="renders")
 

@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Project-GASOCR-blue?style=for-the-badge&logo=google" alt="GASOCR" />
-  <img src="https://img.shields.io/badge/Build-039-indigo?style=for-the-badge" alt="Build 039" />
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjmedzen%2FGASOCR%2Fmain%2Fversion.json&query=%24.build&label=Build&color=indigo&style=for-the-badge" alt="Build" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/Security-Access%20Gate%20%7C%20Admin-emerald?style=for-the-badge&logo=auth0" alt="Security" />
   <img src="https://img.shields.io/badge/Gemini-3.5%20%7C%203.7%20%7C%202.5-4285F4?style=for-the-badge&logo=googlegemini" alt="Gemini Models" />

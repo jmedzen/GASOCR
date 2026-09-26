@@ -1,17 +1,33 @@
 import os
+import json
 from pathlib import Path
 
-# Application & Version Control
+# Base directories
+BASE_DIR = Path(__file__).resolve().parent
+
+# Application & Version Control (Single Source of Truth)
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
 BUILD_NUMBER = "Build 039"
+
+# Auto-sync version.json for external tools, CI/CD, and dynamic badges
+try:
+    _v_file = BASE_DIR / "version.json"
+    _v_payload = json.dumps({
+        "app_name": APP_NAME,
+        "app_version": APP_VERSION,
+        "build_number": BUILD_NUMBER,
+        "build": BUILD_NUMBER.replace("Build ", "")
+    }, indent=2) + "\n"
+    if not _v_file.exists() or _v_file.read_text(encoding="utf-8") != _v_payload:
+        _v_file.write_text(_v_payload, encoding="utf-8")
+except Exception:
+    pass
 
 # Host & Port settings
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8610"))
 
-# Base directories
-BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data"))).resolve()
 UPLOADS_DIR = DATA_DIR / "uploads"
 RENDERS_DIR = DATA_DIR / "renders"
