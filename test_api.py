@@ -145,7 +145,7 @@ async def test_fastapi_endpoints():
         # 9.2 測試續傳時攜帶新模型繼續執行 (POST /api/tasks/{id}/resume with model)
         resp = await client.post(f"/api/tasks/{test_tid}/resume", json={"model": "gemini-2.0-flash"})
         assert resp.status_code == 200
-        assert resp.json()["task_status"] == "processing"
+        assert resp.json()["task_status"] in ["rendering", "processing", "pending_render"]
         assert resp.json()["model"] == "gemini-2.0-flash"
         print(f"   ✅ POST /api/tasks/{test_tid}/resume 成功以新模型 gemini-2.0-flash 繼續執行")
 

@@ -191,6 +191,7 @@ async def render_pdf_to_images_async(
         for t in page_tasks:
             if not t.done():
                 t.cancel()
+        await asyncio.gather(*page_tasks, return_exceptions=True)
         raise
     finally:
         await loop.run_in_executor(executor, _close_document, pdf)

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import time
 import httpx
@@ -5,6 +6,8 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
 import database
 import config
+
+OAUTH_REFRESH_LOCK = asyncio.Lock()
 
 def build_ocr_prompt(lang: str, direction: str, column: str, custom_prompt: str = "") -> str:
     """根據使用者的排版設定動態組裝 OCR 提示詞"""
@@ -54,7 +57,7 @@ def build_ocr_prompt(lang: str, direction: str, column: str, custom_prompt: str 
     return prompt.strip()
 
 async def refresh_oauth_token_if_needed(account: Dict[str, Any]) -> str:
-    """若 OAuth Access Token 即將過期或為空，向 Google 換取新的 token"""
+    """若 OAuth Access Token 即將過期或為空，向 Google 換取新的 token（具備雙重檢查鎖定防並發衝突）"""
     now = time.time()
     current_token = account.get("oauth_access_token")
     expiry = account.get("oauth_token_expiry") or 0.0
@@ -62,41 +65,51 @@ async def refresh_oauth_token_if_needed(account: Dict[str, Any]) -> str:
     # 若還有 60 秒以上效期，直接使用
     if current_token and expiry > now + 60:
         return current_token
+
+    async with OAUTH_REFRESH_LOCK:
+        # 雙重檢查：確認其他協程是否已在排隊等待期間完成刷新
+        fresh = await database.get_account_by_id(account["id"])
+        if fresh:
+            current_token = fresh.get("oauth_access_token")
+            expiry = fresh.get("oauth_token_expiry") or 0.0
+            if current_token and expiry > time.time() + 60:
+                return current_token
+
+        client_id = account.get("oauth_client_id")
+        client_secret = account.get("oauth_client_secret")
+        refresh_token = account.get("oauth_refresh_token")
         
-    client_id = account.get("oauth_client_id")
-    client_secret = account.get("oauth_client_secret")
-    refresh_token = account.get("oauth_refresh_token")
-    
-    if not (client_id and client_secret and refresh_token):
-        raise ValueError("OAuth 帳號缺乏 client_id, client_secret 或 refresh_token")
-        
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token"
-            }
-        )
-        if resp.status_code != 200:
-            raise ValueError(f"刷新 OAuth Token 失敗: {resp.text}")
+        if not (client_id and client_secret and refresh_token):
+            raise ValueError("OAuth 帳號缺乏 client_id, client_secret 或 refresh_token")
             
-        data = resp.json()
-        new_token = data["access_token"]
-        expires_in = data.get("expires_in", 3600)
-        
-        # 更新資料庫
-        async with database.get_db() as db:
-            await db.execute("""
-                UPDATE accounts 
-                SET oauth_access_token = ?, oauth_token_expiry = ? 
-                WHERE id = ?
-            """, (new_token, now + expires_in, account["id"]))
-            await db.commit()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token"
+                }
+            )
+            if resp.status_code != 200:
+                raise ValueError(f"刷新 OAuth Token 失敗: {resp.text}")
+                
+            data = resp.json()
+            new_token = data["access_token"]
+            expires_in = data.get("expires_in", 3600)
+            now = time.time()
             
-        return new_token
+            # 更新資料庫
+            async with database.get_db() as db:
+                await db.execute("""
+                    UPDATE accounts 
+                    SET oauth_access_token = ?, oauth_token_expiry = ? 
+                    WHERE id = ?
+                """, (new_token, now + expires_in, account["id"]))
+                await db.commit()
+                
+            return new_token
 
 async def call_gemini_ocr(
     account: Dict[str, Any],

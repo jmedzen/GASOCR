@@ -516,16 +516,16 @@ class PipelineDispatcher:
             running_tids = set(active_pipeline_tasks.keys())
             await free_ocr_task_manager.clean_inactive_slots(running_tids)
 
-            # 3. 查詢資料庫中等待處理的任務 (FIFO 順序)
+            # 3. 查詢資料庫中等待處理的任務 (FIFO 順序，相容舊版 pending)
             async with database.get_db() as db:
                 cursor = await db.execute("""
-                    SELECT id, status, is_paid, created_at
+                    SELECT id, status, is_paid, created_at, total_pages, rendered_pages, bg_render_status
                     FROM tasks
-                    WHERE status IN ('pending_render', 'pending_ocr')
+                    WHERE status IN ('pending_render', 'pending_ocr', 'pending')
                     ORDER BY created_at ASC
                 """)
                 rows = await cursor.fetchall()
-            waiting_tasks = [dict(r) for r in rows]
+            waiting_tasks = [database._normalize_task_status(dict(r)) for r in rows]
 
             if not waiting_tasks:
                 return
@@ -604,6 +604,7 @@ async def background_render_task_pages(task_id: str, pdf_path: Path, target_page
         await database.update_task_status(task_id, bg_render_status="failed")
     finally:
         active_bg_render_tasks.pop(task_id, None)
+        pipeline_dispatcher.trigger()
 
 async def run_page_ocr(
     task_id: str, 
@@ -2343,9 +2344,12 @@ async def resume_single_page(
 # --- SSE Stream for Live Progress ---
 
 @app.get("/api/tasks/{task_id}/events")
-async def sse_task_events(task_id: str):
+async def sse_task_events(task_id: str, request: Request = None):
     async def event_generator():
         while True:
+            if request and await request.is_disconnected():
+                break
+
             task = await database.get_task(task_id)
             if not task:
                 break

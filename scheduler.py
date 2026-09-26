@@ -81,6 +81,9 @@ class AccountScheduler:
           1. 僅從 is_paid == 0 的免費金鑰池中選取（確保免費批次不消耗付費金鑰）
           2. 強制 4.2s 間隔保護，保證符合 15 RPM
         """
+        chosen = None
+        wait_needed = 0.0
+
         async with self._lock:
             accounts = await database.get_accounts(include_secrets=True)
             now = time.time()
@@ -97,49 +100,46 @@ class AccountScheduler:
                 is_paid = chosen.get("is_paid", 0) == 1
                 min_interval = 0.2 if is_paid else MIN_REQUEST_INTERVAL_SECONDS
                 last_req = self._last_request_times.get(chosen["id"], chosen.get("last_used_at", 0.0))
-                elapsed = now - last_req
-                if elapsed < min_interval:
-                    wait_needed = min_interval - elapsed
-                    await asyncio.sleep(wait_needed)
-                
-                self._last_request_times[chosen["id"]] = time.time()
-                return chosen
-
-            if require_paid:
-                # 付費金鑰池輪詢模式：過濾出 is_paid == 1 且啟用的付費金鑰
-                available = [
-                    acc for acc in accounts 
-                    if acc.get("is_active") == 1 
-                    and acc.get("is_paid", 0) == 1
-                    and (acc.get("cooldown_until") or 0.0) <= now
-                ]
+                target_time = max(now, last_req + min_interval)
+                wait_needed = max(0.0, target_time - now)
+                self._last_request_times[chosen["id"]] = target_time
             else:
-                # 免費金鑰池輪詢模式：過濾出 is_paid == 0 且啟用的免費金鑰
-                available = [
-                    acc for acc in accounts 
-                    if acc.get("is_active") == 1 
-                    and acc.get("is_paid", 0) == 0
-                    and (acc.get("cooldown_until") or 0.0) <= now
-                ]
-            
-            if not available:
-                return None
+                if require_paid:
+                    # 付費金鑰池輪詢模式：過濾出 is_paid == 1 且啟用的付費金鑰
+                    available = [
+                        acc for acc in accounts 
+                        if acc.get("is_active") == 1 
+                        and acc.get("is_paid", 0) == 1
+                        and (acc.get("cooldown_until") or 0.0) <= now
+                    ]
+                else:
+                    # 免費金鑰池輪詢模式：過濾出 is_paid == 0 且啟用的免費金鑰
+                    available = [
+                        acc for acc in accounts 
+                        if acc.get("is_active") == 1 
+                        and acc.get("is_paid", 0) == 0
+                        and (acc.get("cooldown_until") or 0.0) <= now
+                    ]
                 
-            # 依上次使用時間排序（最久沒使用的優先）
-            available.sort(key=lambda acc: self._last_request_times.get(acc["id"], acc.get("last_used_at", 0.0)))
-            chosen = available[0]
-            
-            # 計算安全呼叫間隔節流（付費金鑰 0.2s，免費金鑰 4.2s）
-            min_interval = 0.2 if chosen.get("is_paid", 0) == 1 else MIN_REQUEST_INTERVAL_SECONDS
-            last_req = self._last_request_times.get(chosen["id"], chosen.get("last_used_at", 0.0))
-            elapsed = now - last_req
-            if elapsed < min_interval:
-                wait_needed = min_interval - elapsed
-                await asyncio.sleep(wait_needed)
+                if not available:
+                    return None
+                    
+                # 依上次使用時間排序（最久沒使用的優先）
+                available.sort(key=lambda acc: self._last_request_times.get(acc["id"], acc.get("last_used_at", 0.0)))
+                chosen = available[0]
                 
-            # 登記本次使用時間
-            self._last_request_times[chosen["id"]] = time.time()
-            return chosen
+                # 計算安全呼叫間隔節流（付費金鑰 0.2s，免費金鑰 4.2s）
+                min_interval = 0.2 if chosen.get("is_paid", 0) == 1 else MIN_REQUEST_INTERVAL_SECONDS
+                last_req = self._last_request_times.get(chosen["id"], chosen.get("last_used_at", 0.0))
+                target_time = max(now, last_req + min_interval)
+                wait_needed = max(0.0, target_time - now)
+                self._last_request_times[chosen["id"]] = target_time
+
+        # 鎖外執行非同步等待，避免阻塞其他帳號或付費通道分派
+        if wait_needed > 0:
+            await asyncio.sleep(wait_needed)
+            
+        return chosen
 
     async def report_success(self, account_id: int):
         """成功回報，更新計數器並重置該帳號的連續配額錯誤次數"""

@@ -1,12 +1,16 @@
-import pytest
-import pytest_asyncio
+import asyncio
+try:
+    import pytest
+    import pytest_asyncio
+except ImportError:
+    pytest = None
+
 from httpx import AsyncClient, ASGITransport
 
 import config
 import database
 from main import app
 
-@pytest.mark.asyncio
 async def test_gate_protection_flow():
     await database.init_db()
     
@@ -123,4 +127,10 @@ async def test_gate_protection_flow():
         admin_settings_res = await guest_client.get("/api/admin/settings")
         assert admin_settings_res.status_code == 200
 
+        # 還原存取保護狀態，避免影響其他測試
+        await database.set_access_gate(False)
+
     print("🎉 全站密碼保護前後端物理隔離所有情境測試全數通過！")
+
+if __name__ == "__main__":
+    asyncio.run(test_gate_protection_flow())

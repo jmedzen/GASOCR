@@ -1,3 +1,4 @@
+import asyncio
 import aiosqlite
 import time
 import datetime
@@ -13,12 +14,17 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def get_db():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
         db.row_factory = aiosqlite.Row
         yield db
 
 async def init_db():
     async with get_db() as db:
+        # 啟用 WAL (Write-Ahead Logging) 模式與逾時保護，大幅提升高並發讀寫效能並消除 database locked
+        await db.execute("PRAGMA journal_mode = WAL;")
+        await db.execute("PRAGMA busy_timeout = 30000;")
+        await db.execute("PRAGMA synchronous = NORMAL;")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS system_settings (
                 key TEXT PRIMARY KEY,
@@ -258,14 +264,14 @@ async def delete_file_hash_by_path(filepath: str):
         await db.commit()
 
 async def index_existing_uploads():
-    """伺服器啟動時，自動為 uploads 目錄內的現有檔案建立 Hash 索引"""
+    """伺服器啟動時，自動為 uploads 目錄內的現有檔案建立 Hash 索引（以非同步線程執行避免卡死主迴圈）"""
     from config import UPLOADS_DIR
     upload_path = Path(UPLOADS_DIR)
     if not upload_path.exists():
         return
     for f in upload_path.glob("*.pdf"):
         try:
-            h = compute_file_sha256(f)
+            h = await asyncio.to_thread(compute_file_sha256, f)
             await save_file_hash(h, f.name, str(f), f.stat().st_size)
         except Exception as e:
             print(f"Error indexing upload {f}: {e}")

@@ -34,6 +34,7 @@ def run_batch_delete_tests():
 
     async def setup_tasks():
         await database.init_db()
+        await database.set_access_gate(False)
         await database.delete_tasks([task_id_1, task_id_2, task_id_3])
         for i, tid in enumerate([task_id_1, task_id_2, task_id_3], start=1):
             await database.create_task(
