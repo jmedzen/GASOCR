@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # Application & Version Control (Single Source of Truth)
 APP_NAME = "GASOCR"
 APP_VERSION = "1.0.0"
-BUILD_NUMBER = "Build 039"
+BUILD_NUMBER = "Build 040"
 
 # Auto-sync version.json for external tools, CI/CD, and dynamic badges
 try:

@@ -73,27 +73,59 @@ async def test_all():
         assert task["file_hash"] == file_hash
         print(f"   ✅ 任務資料表 file_hash 驗證通過: {task['file_hash'][:12]}...")
 
-        # 4. 測試 [PAID] 升級模型單頁重辨與路由
-        # 新增一組付費測試金鑰
-        paid_acc_id = await database.add_api_key_account("test_paid_key", "AIzaSyDummyPaidKeyForTesting", is_paid=1)
+        # 4. 測試 [PAID] 升級模型單頁重辨與路由 (即使原本任務為免費 is_paid=0，升級重辨也能套用付費通道)
+        paid_acc_id = await database.add_api_key_account("test_paid_key_v40", "AIzaSyDummyPaidKeyV40", is_paid=1)
         
-        # 建立一個測試 page
+        # 建立測試頁面
         page_data = [{"task_id": task_id, "page_num": 1, "image_path": str(test_pdf)}]
         await database.create_task_pages(page_data)
 
-        # 呼叫 retry 端點，使用 [PAID] gemini-2.5-pro
-        original_run_page_ocr = main.run_page_ocr
-        async def mock_run_page_ocr(**kwargs):
-            pass
-        main.run_page_ocr = mock_run_page_ocr
+        gemini_calls = []
+        async def mock_gemini_call(account, img, model, prompt):
+            gemini_calls.append({"account": account, "model": model})
+            return True, "這是付費通道升級轉譯後的結果", 200
 
-        res = await client.post(f"/api/tasks/{task_id}/pages/1/retry", json={
-            "model": "[PAID] gemini-2.5-pro"
-        })
-        assert res.status_code == 200
-        data = res.json()
-        print(f"   ✅ 成功調用 [PAID] 升級模型重辨: {data['model']}")
-        main.run_page_ocr = original_run_page_ocr
+        from unittest.mock import patch
+        with patch("main.call_gemini_ocr", side_effect=mock_gemini_call):
+            # 4a. 測試傳入 [PAID] gemini-2.5-pro
+            res = await client.post(f"/api/tasks/{task_id}/pages/1/retry", json={
+                "model": "[PAID] gemini-2.5-pro"
+            })
+            assert res.status_code == 200
+            data = res.json()
+            assert data["is_paid"] is True
+            await asyncio.sleep(0.25)
+            assert len(gemini_calls) == 1
+            assert gemini_calls[0]["account"]["is_paid"] == 1
+            assert gemini_calls[0]["model"] == "gemini-2.5-pro"
+            
+            p_check = (await database.get_task_pages(task_id))[0]
+            assert "💎" in p_check["used_model"]
+            print(f"   ✅ [4a] 成功調用 [PAID] 升級模型重辨至付費金鑰: {gemini_calls[0]['account']['name']}, 標記: {p_check['used_model']}")
+
+            # 4b. 測試顯式傳入 is_paid=True 與指定 paid_account_id
+            gemini_calls.clear()
+            res = await client.post(f"/api/tasks/{task_id}/pages/1/retry", json={
+                "model": "gemini-2.5-pro",
+                "is_paid": True,
+                "paid_account_id": paid_acc_id
+            })
+            assert res.status_code == 200
+            await asyncio.sleep(0.25)
+            assert len(gemini_calls) == 1
+            assert gemini_calls[0]["account"]["id"] == paid_acc_id
+            assert gemini_calls[0]["model"] == "gemini-2.5-pro"
+            print(f"   ✅ [4b] 成功指定 paid_account_id ({paid_acc_id}) 並套用付費通道")
+
+            # 4c. 測試以原帶有 💎 標記之 used_model 重試時，自動保留付費通道並清除 💎
+            gemini_calls.clear()
+            res = await client.post(f"/api/tasks/{task_id}/pages/1/retry", json={})
+            assert res.status_code == 200
+            await asyncio.sleep(0.25)
+            assert len(gemini_calls) == 1
+            assert gemini_calls[0]["account"]["is_paid"] == 1
+            assert gemini_calls[0]["model"] == "gemini-2.5-pro"
+            print(f"   ✅ [4c] 成功自 💎 used_model 延續付費重辨，API 接收模型乾淨無雜質")
 
         # 5. 測試 SSE 串流富資訊欄位
         from main import sse_task_events

@@ -183,6 +183,7 @@
                 isRetryingPage: false,
                 isRetryingUpgrade: false,
                 upgradeModel: 'gemini-2.5-pro',
+                upgradePaidAccountId: 0,
                 liveAvgSpeed: 0,
                 liveEtaSeconds: 0,
                 liveActivePage: null,
@@ -972,8 +973,15 @@
                         const res = await fetch('/api/accounts');
                         const data = await res.json();
                         this.accounts = data.accounts || [];
-                        if (this.paidAccounts.length > 0 && !this.formConfig.paidAccountId) {
-                            this.formConfig.paidAccountId = this.paidAccounts[0].id;
+                        if (this.paidAccounts.length > 0) {
+                            if (!this.formConfig.paidAccountId) {
+                                this.formConfig.paidAccountId = this.paidAccounts[0].id;
+                            }
+                            if (!this.upgradeModel || !this.upgradeModel.startsWith('[PAID]')) {
+                                const pro = (this.modelsList || []).find(m => (m.id || m) === 'gemini-2.5-pro');
+                                const targetId = pro ? (pro.id || pro) : (this.modelsList?.[0]?.id || this.modelsList?.[0] || 'gemini-2.5-pro');
+                                this.upgradeModel = '[PAID] ' + targetId;
+                            }
                         }
                     } catch (err) {
                         console.error('Failed to load accounts:', err);
@@ -2500,7 +2508,7 @@
                     }
                 },
 
-                async retryCurrentPage(modelOverride = null) {
+                async retryCurrentPage(modelOverride = null, extraOptions = {}) {
                     if (!this.currentTaskId || !this.selectedPageNum || this.isRetryingPage) return;
                     this.isRetryingPage = true;
                     this.isRetryingUpgrade = !!modelOverride;
@@ -2514,6 +2522,13 @@
                     const targetModel = modelOverride || this.currentPage?.used_model || this.currentTask?.model || '{{ default_model | default("gemini-3.5-flash-lite") }}';
                     const isUpgrade = !!modelOverride;
 
+                    const isPaid = extraOptions.is_paid !== undefined 
+                        ? extraOptions.is_paid 
+                        : (targetModel.includes('[PAID]') || targetModel.includes('💎') || (this.currentTask && this.currentTask.is_paid === 1));
+                    const paidAccountId = extraOptions.paid_account_id !== undefined
+                        ? extraOptions.paid_account_id
+                        : (isPaid ? (this.upgradePaidAccountId || (this.currentTask && this.currentTask.paid_account_id) || 0) : null);
+
                     // 1. 登記至重辨佇列：對每一頁只保留最新結果的一個 item
                     this.reocrQueue = this.reocrQueue.filter(j => !(j.taskId === taskId && j.pageNum === pageNum));
                     const newJob = {
@@ -2523,6 +2538,8 @@
                         pageNum: pageNum,
                         model: targetModel,
                         isUpgrade: isUpgrade,
+                        isPaid: isPaid,
+                        paidAccountId: paidAccountId,
                         status: 'processing',
                         startedAt: Date.now(),
                         formattedTime: new Date().toLocaleTimeString(),
@@ -2533,11 +2550,15 @@
                     this.saveReocrQueue();
 
                     const toastMsg = isUpgrade 
-                        ? `✨ 已啟動「升級重新辨識」：第 ${pageNum} 頁 (模型: ${targetModel})` 
-                        : `⚡ 已啟動重新辨識：第 ${pageNum} 頁 (模型: ${targetModel})`;
+                        ? `✨ 已啟動「升級重新辨識」：第 ${pageNum} 頁 (模型: ${targetModel}${isPaid ? ' 💎 付費通道' : ''})` 
+                        : `⚡ 已啟動重新辨識：第 ${pageNum} 頁 (模型: ${targetModel}${isPaid ? ' 💎 付費通道' : ''})`;
                     this.showToast(toastMsg);
 
-                    const payload = modelOverride ? { model: modelOverride } : {};
+                    const payload = {
+                        model: targetModel,
+                        is_paid: isPaid,
+                        paid_account_id: paidAccountId
+                    };
                     try {
                         const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/retry`, {
                             method: 'POST',
@@ -2580,7 +2601,11 @@
 
                 retryWithUpgradeModel() {
                     const target = this.upgradeModel || (this.currentTask ? this.currentTask.model : 'gemini-2.5-pro');
-                    this.retryCurrentPage(target);
+                    const isPaid = target.startsWith('[PAID]') || target.includes('💎') || (this.paidAccounts && this.paidAccounts.length > 0 && !target.includes('flash-lite'));
+                    this.retryCurrentPage(target, {
+                        is_paid: isPaid,
+                        paid_account_id: isPaid ? (this.upgradePaidAccountId || 0) : null
+                    });
                 },
 
                 async pauseCurrentPage() {
@@ -2647,7 +2672,12 @@
                 async resumeReocrJob(job) {
                     if (!job || !job.taskId || !job.pageNum) return;
                     try {
-                        const payload = job.model ? { model: job.model } : {};
+                        const isPaid = job.isPaid || (job.model && (job.model.includes('[PAID]') || job.model.includes('💎')));
+                        const payload = {
+                            model: job.model || null,
+                            is_paid: isPaid,
+                            paid_account_id: job.paidAccountId || null
+                        };
                         const res = await fetch(`/api/tasks/${job.taskId}/pages/${job.pageNum}/resume`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },

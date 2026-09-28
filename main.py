@@ -616,14 +616,19 @@ async def run_page_ocr(
     model: str, 
     prompt: str, 
     max_retries: int = 3,
-    specific_account_id: Optional[int] = None
+    specific_account_id: Optional[int] = None,
+    is_paid: Optional[bool] = None
 ):
     """執行單頁 OCR 並配合排程器冷卻切換，支援 503 自動重試 5 次與任務暫停"""
     task_key = f"{task_id}_{page_num}"
     active_page_tasks[task_key] = asyncio.current_task()
     
-    clean_model = model.replace("[PAID]", "").strip()
-    is_paid_call = "[PAID]" in model or specific_account_id is not None
+    clean_model = model.replace("[PAID]", "").replace("💎", "").strip()
+    is_paid_call = bool(is_paid) or ("[PAID]" in model) or ("💎" in model)
+    if specific_account_id is not None:
+        acc = await database.get_account_by_id(specific_account_id)
+        if acc and acc.get("is_paid") == 1:
+            is_paid_call = True
     used_model_display = f"{clean_model} 💎" if is_paid_call else clean_model
     
     try:
@@ -710,7 +715,7 @@ async def run_page_ocr(
             if not account:
                 # 智慧降級備援：若指定付費通道但無可用金鑰（冷卻或已耗盡），自動降級至免費池預設模型
                 if is_paid_task or target_account_id is not None:
-                    fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
+                    fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
                     prev_label = clean_model + (" 💎" if is_paid_call else "")
                     print(f"⚠️ [Page OCR Fallback] 任務 {task_id} 第 {page_num} 頁：{prev_label} 無可用金鑰或冷卻超時，智慧降級至免費 API ({fallback_model}) 接續執行")
                     await database.update_page_status(
@@ -807,7 +812,7 @@ async def run_page_ocr(
                     return
                 
                 # 智慧降級備援：若為付費 API 帳號或指定付費通道觸發 429，或高級模型（非預設模型）重試多次遭遇 429
-                fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").strip()
+                fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
                 should_fallback = False
                 fallback_reason = ""
                 
@@ -2254,6 +2259,8 @@ class PageRetryPayload(BaseModel):
     lang: Optional[str] = None
     direction: Optional[str] = None
     column: Optional[str] = None
+    is_paid: Optional[bool] = None
+    paid_account_id: Optional[int] = None
 
 @app.post("/api/tasks/{task_id}/pages/{page_num}/retry")
 async def retry_single_page(
@@ -2263,7 +2270,9 @@ async def retry_single_page(
     model: Optional[str] = None,
     lang: Optional[str] = None,
     direction: Optional[str] = None,
-    column: Optional[str] = None
+    column: Optional[str] = None,
+    is_paid: Optional[bool] = None,
+    paid_account_id: Optional[int] = None
 ):
     task = await database.get_task(task_id)
     if not task:
@@ -2293,14 +2302,22 @@ async def retry_single_page(
         custom_prompt=task.get("custom_prompt", "")
     )
     
+    # 判斷是否為付費 API 辨識請求：
+    # 1. payload / query 顯式傳入 is_paid == True
+    # 2. target_model 包含 [PAID] 或 💎
+    req_is_paid = payload.is_paid if (payload and payload.is_paid is not None) else is_paid
+    is_paid_request = bool(req_is_paid) or ("[PAID]" in str(target_model)) or ("💎" in str(target_model))
+    
+    req_paid_acc_id = payload.paid_account_id if (payload and payload.paid_account_id is not None) else paid_account_id
+
     specific_acc_id = None
-    if "[PAID]" in target_model:
-        accounts = await database.get_accounts()
-        paid_acc = next((a for a in accounts if a.get("is_paid") == 1 and a.get("is_active") == 1), None)
-        if paid_acc:
-            specific_acc_id = paid_acc["id"]
-    elif task.get("is_paid") and task.get("paid_account_id"):
+    if req_paid_acc_id and req_paid_acc_id > 0:
+        # 指定特定付費帳號
+        specific_acc_id = req_paid_acc_id
+    elif not is_paid_request and task.get("is_paid") and task.get("paid_account_id"):
         specific_acc_id = task.get("paid_account_id")
+    # 若 is_paid_request 為 True 且未指定特定 account_id (或傳 0)，specific_acc_id 維持 None，
+    # 讓智慧排程器在付費金鑰池 (require_paid=True) 中自動進行負載平衡輪詢
 
     img_path = Path(target_page["image_path"])
     spawn_background(run_page_ocr(
@@ -2309,13 +2326,15 @@ async def retry_single_page(
         image_path=img_path, 
         model=target_model, 
         prompt=prompt,
-        specific_account_id=specific_acc_id
+        specific_account_id=specific_acc_id,
+        is_paid=is_paid_request
     ))
     
     return {
         "status": "ok", 
         "message": f"第 {page_num} 頁重新轉譯已啟動，使用模型: {target_model}",
-        "model": target_model
+        "model": target_model,
+        "is_paid": is_paid_request
     }
 
 @app.post("/api/tasks/{task_id}/pages/{page_num}/pause")

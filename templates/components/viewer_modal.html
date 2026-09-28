@@ -52,9 +52,13 @@
                 <!-- Page Operations -->
                 <div class="flex items-center flex-wrap gap-2" x-show="currentPage">
                     <!-- 當前辨識模型標記 -->
-                    <span class="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 shrink-0" x-show="currentPage?.used_model">
+                    <span 
+                        class="text-xs font-medium px-2.5 py-1 rounded-lg border shrink-0 transition" 
+                        :class="currentPage?.used_model?.includes('💎') ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs font-semibold' : 'bg-slate-100 text-slate-600 border-slate-200'"
+                        x-show="currentPage?.used_model"
+                    >
                         <span>辨識模型: </span>
-                        <strong class="font-mono text-blue-600" x-text="currentPage?.used_model || ''"></strong>
+                        <strong class="font-mono" :class="currentPage?.used_model?.includes('💎') ? 'text-amber-800 font-bold' : 'text-blue-600'" x-text="currentPage?.used_model || ''"></strong>
                     </span>
 
                     <!-- 原模型重新辨識按鈕 -->
@@ -93,7 +97,7 @@
                         </button>
                     </template>
 
-                    <!-- 升級模型組合 (upgrademodel 下拉選單 + 升級重新辨識按鈕) -->
+                    <!-- 升級模型組合 (upgrademodel 下拉選單 + 付費金鑰選擇 + 升級重新辨識按鈕) -->
                     <div class="flex items-center space-x-1.5 p-0.5 rounded-lg border border-indigo-200 bg-indigo-50/50 shadow-xs shrink-0">
                         <div class="relative inline-flex items-center pl-2">
                             <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-600 mr-1 shrink-0"></i>
@@ -117,6 +121,22 @@
                             </select>
                             <svg class="w-3.5 h-3.5 text-indigo-600 absolute right-1 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </div>
+
+                        <!-- 付費金鑰指定下拉選單 (當選擇付費模型且有多組付費金鑰時顯示) -->
+                        <div class="relative inline-flex items-center pl-1" x-show="upgradeModel && upgradeModel.startsWith('[PAID]') && paidAccounts.length > 1">
+                            <select 
+                                x-model.number="upgradePaidAccountId"
+                                class="appearance-none bg-amber-100/90 hover:bg-amber-200/90 border border-amber-300 rounded px-1.5 pr-4 py-0.5 text-[11px] font-semibold text-amber-950 focus:outline-none cursor-pointer max-w-[130px] truncate"
+                                title="選擇專屬付費金鑰或自動輪詢"
+                            >
+                                <option :value="0">⚡ 輪詢付費池</option>
+                                <template x-for="acc in paidAccounts" :key="acc.id">
+                                    <option :value="acc.id" x-text="acc.name"></option>
+                                </template>
+                            </select>
+                            <svg class="w-3 h-3 text-amber-700 absolute right-1 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+
                         <button 
                             @click="retryWithUpgradeModel()" 
                             :disabled="isRetryingPage"
