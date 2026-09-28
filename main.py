@@ -2238,12 +2238,13 @@ async def get_task_detail(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     pages = await database.get_task_pages(task_id)
     
-    # 轉換圖片路徑為靜態 URL
+    # 轉換圖片路徑為靜態 URL，並加上 updated_at 作為版本號快取破壞參數 (Cache Buster)
     formatted_pages = []
     for p in pages:
         d = dict(p)
         img_name = Path(p["image_path"]).name
-        d["image_url"] = f"/renders/{task_id}/{img_name}"
+        version_param = int(p.get("updated_at") or 0)
+        d["image_url"] = f"/renders/{task_id}/{img_name}?v={version_param}"
         formatted_pages.append(d)
         
     return {"task": task, "pages": formatted_pages}
@@ -2362,6 +2363,197 @@ async def resume_single_page(
 ):
     """繼續指定單頁的重新辨識"""
     return await retry_single_page(task_id, page_num, payload=payload)
+
+# --- 任務工具箱：指定頁數重新切圖 (PDF Re-slice) ---
+
+def parse_page_selection(page_range_str: str, max_pages: int) -> List[int]:
+    """
+    解析使用者輸入的頁碼字串，例如 '1, 3, 5-8', '2~6', '1，3，5-7'。
+    支援逗號、分號、波浪號、全形字元。
+    結果會限制在 1 ~ max_pages 內，去重並由小到大排序。
+    """
+    if not page_range_str or not page_range_str.strip():
+        return []
+    
+    cleaned = (
+        page_range_str.replace("，", ",")
+        .replace("；", ",")
+        .replace(";", ",")
+        .replace("~", "-")
+        .replace("～", "-")
+        .replace("－", "-")
+        .replace("..", "-")
+    )
+    
+    parts = cleaned.split(",")
+    selected = set()
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            sub = part.split("-")
+            if len(sub) == 2:
+                try:
+                    start_p = int(sub[0].strip())
+                    end_p = int(sub[1].strip())
+                    if start_p > end_p:
+                        start_p, end_p = end_p, start_p
+                    for p in range(start_p, end_p + 1):
+                        if 1 <= p <= max_pages:
+                            selected.add(p)
+                except ValueError:
+                    continue
+        else:
+            try:
+                p = int(part)
+                if 1 <= p <= max_pages:
+                    selected.add(p)
+            except ValueError:
+                continue
+                
+    return sorted(list(selected))
+
+class TaskReslicePayload(BaseModel):
+    mode: str = "custom"  # "custom", "all", "failed_only"
+    page_range: Optional[str] = None
+    pages: Optional[List[int]] = None
+    dpi: Optional[int] = 300
+    reocr: bool = False
+
+@app.post("/api/tasks/{task_id}/reslice")
+async def reslice_task_pages(task_id: str, payload: TaskReslicePayload):
+    """
+    任務工具箱：重新對原始 PDF 指定頁面切圖（修復切圖破片或渲染異常）
+    - mode="custom": 指定頁碼範圍（字串 page_range 如 "1, 3, 5-8" 或 pages 陣列）
+    - mode="all": 切出該任務全部目標頁
+    - mode="failed_only": 僅重新切圖失敗頁或圖片遺失頁
+    - reocr=True: 切圖成功後自動觸發這些頁面的 OCR 重新辨識
+    """
+    task = await database.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    pdf_path = Path(task.get("original_filepath", ""))
+    if not pdf_path.exists():
+        raise HTTPException(status_code=400, detail="原始 PDF 檔案不存在，無法重新切圖")
+        
+    total_pdf_pages = await asyncio.to_thread(get_pdf_page_count, pdf_path)
+    if total_pdf_pages <= 0:
+        raise HTTPException(status_code=400, detail="無法讀取 PDF 頁面或 PDF 檔案損毀")
+
+    task_start = max(1, task.get("start_page") or 1)
+    task_end = min(total_pdf_pages, task.get("end_page") or total_pdf_pages) if (task.get("end_page") and task.get("end_page") > 0) else total_pdf_pages
+    if task_start > task_end:
+        task_start, task_end = 1, total_pdf_pages
+
+    # 決定目標頁碼
+    mode = payload.mode or "custom"
+    target_pages: List[int] = []
+
+    if mode == "custom":
+        if payload.pages:
+            target_pages = sorted(list(set([p for p in payload.pages if 1 <= p <= total_pdf_pages])))
+        elif payload.page_range:
+            target_pages = parse_page_selection(payload.page_range, total_pdf_pages)
+        else:
+            raise HTTPException(status_code=400, detail="請指定要重新切圖的頁碼範圍 (例如: 1, 3, 5-8)")
+        if not target_pages:
+            raise HTTPException(status_code=400, detail=f"未選定任何有效頁碼（該 PDF 共 {total_pdf_pages} 頁）")
+            
+    elif mode == "all":
+        target_pages = list(range(task_start, task_end + 1))
+        
+    elif mode == "failed_only":
+        existing_pages = await database.get_task_pages(task_id)
+        for p in existing_pages:
+            p_num = p["page_num"]
+            img = Path(p.get("image_path", ""))
+            is_failed = p.get("status") == "failed"
+            is_missing = not img.exists() or (img.exists() and img.stat().st_size == 0)
+            if is_failed or is_missing:
+                target_pages.append(p_num)
+        if not target_pages:
+            return {
+                "status": "ok",
+                "message": "未發現任何切圖失敗或遺失的頁面，無需重新切圖",
+                "pages": []
+            }
+    else:
+        raise HTTPException(status_code=400, detail=f"不支援的切圖模式: {mode}")
+
+    render_dpi = payload.dpi if (payload.dpi and 72 <= payload.dpi <= 600) else (task.get("dpi") or 300)
+
+    try:
+        # 非同步多執行緒安全切圖 (受 PDFIUM_LOCK 保護，使用專屬執行緒池)
+        rendered_results = await render_pdf_to_images_async(
+            pdf_path=pdf_path,
+            task_id=task_id,
+            start_page=min(target_pages),
+            end_page=max(target_pages),
+            dpi=render_dpi,
+            executor=PDF_RENDER_EXECUTOR,
+            pages_to_render=target_pages
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF 重新切圖失敗: {e}")
+
+    # 更新資料庫紀錄
+    for p_num, out_path in rendered_results:
+        await database.update_page_resliced(
+            task_id=task_id,
+            page_num=p_num,
+            image_path=str(out_path),
+            reset_status=payload.reocr
+        )
+
+    # 若勾選自動重新 OCR
+    if payload.reocr and rendered_results:
+        target_model = task.get("model", config.DEFAULT_MODEL)
+        target_lang = task.get("lang_pref", "traditional")
+        target_direction = task.get("direction_pref", "auto")
+        target_column = task.get("column_pref", "auto")
+        prompt = build_ocr_prompt(
+            lang=target_lang,
+            direction=target_direction,
+            column=target_column,
+            custom_prompt=task.get("custom_prompt", "")
+        )
+        is_paid = bool(task.get("is_paid"))
+        paid_acc_id = task.get("paid_account_id") if is_paid else None
+
+        for p_num, out_path in rendered_results:
+            task_key = f"{task_id}_{p_num}"
+            if task_key in active_page_tasks:
+                active_page_tasks[task_key].cancel()
+                active_page_tasks.pop(task_key, None)
+
+            spawn_background(run_page_ocr(
+                task_id=task_id,
+                page_num=p_num,
+                image_path=out_path,
+                model=target_model,
+                prompt=prompt,
+                specific_account_id=paid_acc_id,
+                is_paid=is_paid
+            ))
+
+        # 任務若原先已完成或暫停，更新狀態為 processing 讓進度與流水線繼續
+        if task.get("status") in ("completed", "paused"):
+            await database.update_task_status(task_id, status="processing")
+
+    success_pages = [p[0] for p in rendered_results]
+    msg = f"已成功重新切圖 {len(success_pages)} 頁 (P.{', P.'.join(str(p) for p in success_pages[:8])}{'...' if len(success_pages) > 8 else ''})"
+    if payload.reocr:
+        msg += "，並已自動排入 OCR 重新辨識"
+
+    return {
+        "status": "ok",
+        "message": msg,
+        "pages": success_pages,
+        "reocr": payload.reocr
+    }
+
 
 # --- SSE Stream for Live Progress ---
 

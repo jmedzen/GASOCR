@@ -167,15 +167,102 @@ async def test_all():
         assert m_data["updated"] is True
         print(f"   ✅ 模型動態抓取與刷新驗證通過: 成功獲取 {m_data['count']} 個模型 (updated={m_data['updated']})")
 
+        # 8. 測試任務工具箱：指定頁數重新切圖 (PDF Re-slice) 與 Cache Buster
+        from main import parse_page_selection
+        # 8a. 驗證頁碼解析邏輯
+        assert parse_page_selection("1, 3, 5-8", 10) == [1, 3, 5, 6, 7, 8]
+        assert parse_page_selection("1~3, 5, 8-12", 10) == [1, 2, 3, 5, 8, 9, 10]
+        assert parse_page_selection("1，3，5－7", 10) == [1, 3, 5, 6, 7]
+        assert parse_page_selection("", 10) == []
+        print("   ✅ [8a] 頁碼範圍字串解析函式 parse_page_selection 驗證通過")
+
+        # 8b. 建立多頁 PDF 進行重新切圖測試
+        reslice_pdf = config.UPLOADS_DIR / "test_reslice.pdf"
+        r_doc = pdfium.PdfDocument.new()
+        for _ in range(4):
+            r_doc.new_page(width=100, height=100)
+        r_doc.save(str(reslice_pdf))
+        r_doc.close()
+
+        r_bytes = reslice_pdf.read_bytes()
+        r_hash = hashlib.sha256(r_bytes).hexdigest()
+        await database.save_file_hash(r_hash, "test_reslice.pdf", str(reslice_pdf), len(r_bytes))
+
+        res = await client.post("/api/tasks", data={
+            "existing_files": json.dumps([{
+                "hash": r_hash,
+                "filename": "test_reslice.pdf",
+                "filepath": str(reslice_pdf)
+            }]),
+            "model": "gemini-2.5-flash",
+            "lang": "traditional",
+            "start_page": "1",
+            "end_page": "4"
+        })
+        assert res.status_code == 200, f"Task creation failed: {res.text}"
+        reslice_task_id = res.json()["task_id"]
+
+        # 呼叫 /api/tasks/{task_id}/reslice 指定第 1, 3 頁重新切圖
+        res = await client.post(f"/api/tasks/{reslice_task_id}/reslice", json={
+            "mode": "custom",
+            "page_range": "1, 3",
+            "dpi": 150,
+            "reocr": False
+        })
+        assert res.status_code == 200
+        res_data = res.json()
+        assert res_data["status"] == "ok"
+        assert res_data["pages"] == [1, 3]
+        assert (config.RENDERS_DIR / reslice_task_id / "page_0001.png").exists()
+        assert (config.RENDERS_DIR / reslice_task_id / "page_0003.png").exists()
+        print("   ✅ [8b] 任務工具箱自訂頁碼重新切圖成功: 頁碼 [1, 3] (150 DPI)")
+
+        # 8c. 測試全頁重新切圖 (mode="all")
+        res = await client.post(f"/api/tasks/{reslice_task_id}/reslice", json={
+            "mode": "all",
+            "dpi": 150,
+            "reocr": False
+        })
+        assert res.status_code == 200
+        res_data = res.json()
+        assert res_data["status"] == "ok"
+        assert res_data["pages"] == [1, 2, 3, 4]
+        print("   ✅ [8c] 任務工具箱全頁重新切圖成功: 頁碼 [1, 2, 3, 4]")
+
+        # 8d. 驗證 get_task_detail 返回的 image_url 包含 ?v= 快取破壞參數
+        res = await client.get(f"/api/tasks/{reslice_task_id}")
+        assert res.status_code == 200
+        detail = res.json()
+        pages = detail["pages"]
+        assert len(pages) >= 4
+        assert "?v=" in pages[0]["image_url"]
+        print(f"   ✅ [8d] 校對 UI 圖片 URL 快取破壞參數驗證通過: {pages[0]['image_url']}")
+
+        # 8e. 測試 reocr=True 觸發自動 OCR
+        res = await client.post(f"/api/tasks/{reslice_task_id}/reslice", json={
+            "mode": "custom",
+            "page_range": "2",
+            "dpi": 150,
+            "reocr": True
+        })
+        assert res.status_code == 200
+        res_data = res.json()
+        assert res_data["reocr"] is True
+        assert res_data["pages"] == [2]
+        print("   ✅ [8e] 重新切圖自動排入 OCR 重新辨識驗證通過")
+
         # 清理測試資料
         await database.delete_task(task_id)
+        await database.delete_task(reslice_task_id)
         await database.delete_account(paid_acc_id)
         if test_pdf.exists():
             test_pdf.unlink(missing_ok=True)
+        if reslice_pdf.exists():
+            reslice_pdf.unlink(missing_ok=True)
         print("   ✅ 測試資源清理完成")
 
     print("\n==================================================")
-    print("🎉 5 大核心新功能自動化驗證全部通過！")
+    print(f"🎉 全部核心新功能與工具箱自動化驗證全部通過！({config.BUILD_NUMBER})")
     print("==================================================")
 
 if __name__ == "__main__":

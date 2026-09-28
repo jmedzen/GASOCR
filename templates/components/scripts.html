@@ -60,6 +60,14 @@
                 accounts: [],
                 showAccountsModal: false,
                 showQueueModal: false,
+                // 任務工具箱 (PDF Re-slice) 狀態
+                showTaskToolsModal: false,
+                taskToolsTarget: null,
+                taskToolsMode: 'custom', // 'custom' | 'all' | 'failed_only'
+                taskToolsPageRange: '',
+                taskToolsDpi: 300,
+                taskToolsReocr: false,
+                isReslicing: false,
                 // Quota Exhaustion & Countdown State
                 quotaStatus: {
                     all_free_exhausted: false,
@@ -1617,7 +1625,7 @@
                     }
                 },
 
-                inspectTask(task) {
+                inspectTask(task, shouldScroll = true) {
                     // 立即關閉先前的 SSE 連線，防止背景舊任務事件污染當前校對任務
                     if (this.eventSource) {
                         this.eventSource.close();
@@ -1635,7 +1643,17 @@
                     if (['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(task.status)) {
                         this.listenTaskEvents(task.id);
                     }
-                    this.$nextTick(() => { lucide.createIcons(); });
+                    this.$nextTick(() => { 
+                        if (window.lucide) lucide.createIcons(); 
+                        if (shouldScroll) {
+                            setTimeout(() => {
+                                const el = document.getElementById('proofread-section');
+                                if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                            }, 50);
+                        }
+                    });
                 },
 
                 async toggleTaskPause(task) {
@@ -1680,6 +1698,75 @@
                         }
                     } catch (err) {
                         this.showToast(`⚠️ 操作失敗: ${err.message || err}`);
+                    }
+                },
+
+                // --- 任務工具箱 (PDF Re-slice) 控制方法 ---
+                openTaskTools(task) {
+                    if (!task) return;
+                    this.taskToolsTarget = task;
+                    this.taskToolsMode = 'custom';
+                    this.taskToolsPageRange = '';
+                    this.taskToolsDpi = task.dpi || 300;
+                    this.taskToolsReocr = false;
+                    this.isReslicing = false;
+                    this.showTaskToolsModal = true;
+                    this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                },
+
+                closeTaskTools() {
+                    if (this.isReslicing) return;
+                    this.showTaskToolsModal = false;
+                    this.taskToolsTarget = null;
+                    this.taskToolsPageRange = '';
+                },
+
+                setTaskToolsQuickPages(val) {
+                    this.taskToolsPageRange = val;
+                },
+
+                async submitTaskReslice() {
+                    if (!this.taskToolsTarget || this.isReslicing) return;
+                    const task = this.taskToolsTarget;
+                    
+                    if (this.taskToolsMode === 'custom' && !this.taskToolsPageRange.trim()) {
+                        this.showToast('⚠️ 請輸入要重新切圖的頁碼（例如: 1, 3, 5-8）');
+                        return;
+                    }
+
+                    this.isReslicing = true;
+                    try {
+                        const payload = {
+                            mode: this.taskToolsMode,
+                            page_range: this.taskToolsMode === 'custom' ? this.taskToolsPageRange.trim() : null,
+                            dpi: parseInt(this.taskToolsDpi, 10) || 300,
+                            reocr: Boolean(this.taskToolsReocr)
+                        };
+
+                        const res = await fetch(`/api/tasks/${task.id}/reslice`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok) {
+                            throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+                        }
+
+                        this.showToast(`🎉 ${data.message || '重新切圖成功！'}`);
+                        this.closeTaskTools();
+
+                        // 重新整理任務清單與當前檢視詳情
+                        await this.loadTasks();
+                        if (this.currentTaskId === task.id) {
+                            await this.pollTaskDetail();
+                        }
+                    } catch (err) {
+                        this.showToast(`⚠️ 重新切圖失敗: ${err.message || err}`);
+                    } finally {
+                        this.isReslicing = false;
+                        this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
                     }
                 },
 

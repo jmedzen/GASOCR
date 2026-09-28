@@ -622,6 +622,43 @@ async def update_page_status(task_id: str, page_num: int, status: str, error_mes
         """, (status, error_message, now, task_id, page_num))
         await db.commit()
 
+async def update_page_resliced(task_id: str, page_num: int, image_path: str, reset_status: bool = False):
+    """
+    更新重新切圖後的圖片路徑與更新時間戳。
+    - 若 reset_status 為 True（即要求重辨），重設狀態為 'pending' 並清空錯誤訊息。
+    - 若 reset_status 為 False：保留原本 completed 成果；若原本為 failed 且無 OCR 文字則轉為 'rendered' 並清空錯誤。
+    """
+    now = time.time()
+    async with get_db() as db:
+        if reset_status:
+            await db.execute("""
+                INSERT INTO task_pages (task_id, page_num, image_path, status, error_message, updated_at)
+                VALUES (?, ?, ?, 'pending', '', ?)
+                ON CONFLICT(task_id, page_num) DO UPDATE SET
+                    image_path = excluded.image_path,
+                    status = 'pending',
+                    error_message = '',
+                    updated_at = excluded.updated_at
+            """, (task_id, page_num, image_path, now))
+        else:
+            await db.execute("""
+                INSERT INTO task_pages (task_id, page_num, image_path, status, updated_at)
+                VALUES (?, ?, ?, 'rendered', ?)
+                ON CONFLICT(task_id, page_num) DO UPDATE SET
+                    image_path = excluded.image_path,
+                    status = CASE 
+                        WHEN task_pages.status = 'failed' AND (task_pages.ocr_text IS NULL OR task_pages.ocr_text = '') THEN 'rendered'
+                        ELSE task_pages.status
+                    END,
+                    error_message = CASE 
+                        WHEN task_pages.status = 'failed' AND (task_pages.ocr_text IS NULL OR task_pages.ocr_text = '') THEN ''
+                        ELSE task_pages.error_message
+                    END,
+                    updated_at = excluded.updated_at
+            """, (task_id, page_num, image_path, now))
+        await db.commit()
+
+
 # --- Password & System Settings ---
 
 def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
