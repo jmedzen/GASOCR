@@ -229,14 +229,16 @@ async def test_all():
         assert res_data["pages"] == [1, 2, 3, 4]
         print("   ✅ [8c] 任務工具箱全頁重新切圖成功: 頁碼 [1, 2, 3, 4]")
 
-        # 8d. 驗證 get_task_detail 返回的 image_url 包含 ?v= 快取破壞參數
+        # 8d. 驗證 get_task_detail 返回的 image_url 包含 ?v= 快取破壞參數與未完成頁統計欄位
         res = await client.get(f"/api/tasks/{reslice_task_id}")
         assert res.status_code == 200
         detail = res.json()
         pages = detail["pages"]
         assert len(pages) >= 4
         assert "?v=" in pages[0]["image_url"]
-        print(f"   ✅ [8d] 校對 UI 圖片 URL 快取破壞參數驗證通過: {pages[0]['image_url']}")
+        assert "uncompleted_pages_count" in detail["task"]
+        assert "uncompleted_pages" in detail["task"]
+        print(f"   ✅ [8d] 校對 UI 圖片 URL 快取破壞參數與未完成頁數欄位驗證通過: {detail['task']['uncompleted_pages_count']} 頁未完成")
 
         # 8e. 測試 reocr=True 觸發自動 OCR
         res = await client.post(f"/api/tasks/{reslice_task_id}/reslice", json={

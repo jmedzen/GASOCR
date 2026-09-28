@@ -40,6 +40,20 @@
                 get pendingCheckingCount() {
                     return this.pendingFiles ? this.pendingFiles.filter(f => f.isCheckingHash).length : 0;
                 },
+                get uncompletedPages() {
+                    if (!this.pages || !this.pages.length) return [];
+                    return this.pages.filter(p => p.status !== 'completed' || !p.ocr_text || !p.ocr_text.trim());
+                },
+                get uncompletedPagesCount() {
+                    return this.uncompletedPages.length;
+                },
+                get uncompletedPagesListText() {
+                    const uncompleted = this.uncompletedPages;
+                    if (!uncompleted.length) return '';
+                    const nums = uncompleted.map(p => `P.${p.page_num}`);
+                    if (nums.length <= 4) return nums.join(', ');
+                    return nums.slice(0, 3).join(', ') + ` 等共 ${nums.length} 頁`;
+                },
                 formConfig: {
                     model: '{{ default_model | default("gemini-3.5-flash-lite") }}',
                     lang: 'traditional',
@@ -1706,12 +1720,39 @@
                     if (!task) return;
                     this.taskToolsTarget = task;
                     this.taskToolsMode = 'custom';
-                    this.taskToolsPageRange = '';
+                    // 若當前正在校對該任務的特定頁面，智慧預填當前頁碼
+                    if (this.currentPage && this.currentPage.page_num && this.currentTaskId === task.id) {
+                        this.taskToolsPageRange = String(this.currentPage.page_num);
+                    } else {
+                        this.taskToolsPageRange = '';
+                    }
                     this.taskToolsDpi = task.dpi || 300;
                     this.taskToolsReocr = false;
                     this.isReslicing = false;
                     this.showTaskToolsModal = true;
                     this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                },
+
+                async retryUncompletedPages() {
+                    const uncompleted = this.uncompletedPages;
+                    if (!uncompleted.length || !this.currentTask) {
+                        this.showToast('ℹ️ 目前沒有未完成的頁面');
+                        return;
+                    }
+                    const count = uncompleted.length;
+                    this.showToast(`🔄 開始對 ${count} 個未完成頁面排入重新辨識...`);
+                    for (const p of uncompleted) {
+                        try {
+                            await fetch(`/api/tasks/${this.currentTaskId}/pages/${p.page_num}/retry`, { method: 'POST' });
+                        } catch (e) {
+                            console.error(`重試 P.${p.page_num} 失敗:`, e);
+                        }
+                    }
+                    this.showToast(`🚀 已成功將 ${count} 個未完成頁面排入重新辨識！`);
+                    if (this.currentTask.status === 'paused' || this.currentTask.status === 'completed') {
+                        this.currentTask.status = 'processing';
+                    }
+                    this.listenTaskEvents(this.currentTaskId);
                 },
 
                 closeTaskTools() {

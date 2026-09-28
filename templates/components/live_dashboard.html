@@ -249,8 +249,38 @@
 
             <!-- Per-Page Status Capsules Matrix -->
             <div class="mt-3 pt-2.5 border-t border-slate-100" x-show="pages.length > 0">
-                <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-[11px] font-semibold text-slate-500">頁面執行狀態燈號（點選可直接預覽校對）：</span>
+                <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                    <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span class="text-[11px] font-semibold text-slate-500">頁面執行狀態燈號（點選可直接預覽校對）：</span>
+                        
+                        <!-- 新增: 未完成頁數 UI 欄位 -->
+                        <template x-if="uncompletedPagesCount > 0">
+                            <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-2xs text-[11px]"
+                                  :title="`未完成頁碼: ${uncompletedPages.map(p => 'P.' + p.page_num).join(', ')}`">
+                                <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
+                                <span class="font-bold">未完成頁數:</span>
+                                <span class="font-mono font-black text-rose-800 dark:text-rose-200" x-text="`${uncompletedPagesCount} 頁`"></span>
+                                <span class="text-[10px] font-mono text-rose-600 dark:text-rose-400 opacity-90 hidden sm:inline"
+                                      x-text="`(${uncompletedPagesListText})`"></span>
+                                <button 
+                                    type="button" 
+                                    @click="retryUncompletedPages()"
+                                    class="ml-1 px-1.5 py-0.2 rounded bg-rose-200/70 hover:bg-rose-300/80 dark:bg-rose-900/60 dark:hover:bg-rose-800 text-[10px] font-bold text-rose-800 dark:text-rose-200 transition cursor-pointer"
+                                    title="一鍵將所有未完成頁排入重新轉譯"
+                                >
+                                    一鍵補辨
+                                </button>
+                            </span>
+                        </template>
+                        <template x-if="uncompletedPagesCount === 0 && pages.length > 0">
+                            <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-2xs text-[11px]">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                <span class="font-bold">未完成頁數:</span>
+                                <span class="font-mono font-black text-emerald-800 dark:text-emerald-200">0 頁 (全數完成 ✓)</span>
+                            </span>
+                        </template>
+                    </div>
+
                     <div class="flex items-center space-x-3 text-[11px] text-slate-400">
                         <template x-if="currentTask?.status === 'rendering'">
                             <span class="flex items-center space-x-1 text-amber-600 font-semibold"><span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span>300 DPI 切圖中</span></span>
@@ -258,6 +288,7 @@
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>完成</span></span>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span><span>轉譯中</span></span>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span>重試/忙碌</span></span>
+                        <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span><span>未完成/失敗</span></span>
                         <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-slate-300"></span><span>等待</span></span>
                     </div>
                 </div>

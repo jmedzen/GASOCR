@@ -1086,21 +1086,26 @@ async def process_task_pipeline(task_id: str):
                 model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
                 await run_page_ocr(task_id, p["page_num"], Path(p["image_path"]), model_to_use, prompt)
                 
-            # 5.5 全書最後一頁初次 OCR 完畢後，重新檢查一次沒有結果的頁面並補辨 (End-of-Book Sweep)
-            current_task = await database.get_task(task_id)
-            if not current_task or current_task.get("status") in ["paused", "failed"]:
-                return
+            # 5.5 全書最後一頁初次 OCR 完畢後，再次掃描未完成頁面並補辨 (End-of-Book Sweep)
+            # 支援最多 2 輪補檢，確保因 429 速率限制或 503 伺服器忙碌而暫時失敗的頁面能順利補齊
+            max_sweep_rounds = 2
+            for sweep_round in range(1, max_sweep_rounds + 1):
+                current_task = await database.get_task(task_id)
+                if not current_task or current_task.get("status") in ["paused", "failed"]:
+                    return
 
-            latest_pages = await database.get_task_pages(task_id)
-            unresolved_pages = [
-                lp for lp in latest_pages 
-                if lp["page_num"] in target_page_nums 
-                and (lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip())
-            ]
+                latest_pages = await database.get_task_pages(task_id)
+                unresolved_pages = [
+                    lp for lp in latest_pages 
+                    if lp["page_num"] in target_page_nums 
+                    and (lp["status"] != "completed" or not (lp.get("ocr_text") or "").strip())
+                ]
 
-            if unresolved_pages:
+                if not unresolved_pages:
+                    break
+
                 missing_nums = [p["page_num"] for p in unresolved_pages]
-                print(f"🔄 [Task {task_id}] 全書最後一頁辨識完畢，發現 {len(unresolved_pages)} 頁無結果 (頁碼: {missing_nums})，啟動全書結尾自動補檢複查...")
+                print(f"🔄 [Task {task_id}] 執行到最後一頁完成，第 {sweep_round} 輪掃描發現 {len(unresolved_pages)} 頁未完成 (頁碼: {missing_nums})，啟動自動補檢複查...")
                 # 給予短暫冷卻緩衝 (2.5s)，讓 429 速率限制或 503 伺服器忙碌解凍
                 await asyncio.sleep(2.5)
 
@@ -1109,10 +1114,10 @@ async def process_task_pipeline(task_id: str):
                     if not current_task or current_task.get("status") in ["paused", "failed"]:
                         return
                     p_num = p["page_num"]
-                    print(f"🔄 [Task {task_id} 補檢複查 {idx}/{len(unresolved_pages)}] 重新辨識第 {p_num} 頁...")
+                    print(f"🔄 [Task {task_id} 補檢複查 R{sweep_round} {idx}/{len(unresolved_pages)}] 重新辨識第 {p_num} 頁...")
                     await database.update_page_status(
                         task_id, p_num, "processing", 
-                        error_message=f"正在進行全書結尾自動補檢複查 ({idx}/{len(unresolved_pages)} 頁)..."
+                        error_message=f"正在進行全書結尾自動補檢複查 (第 {sweep_round} 輪, {idx}/{len(unresolved_pages)} 頁)..."
                     )
                     model_to_use = current_task.get("model") or task.get("model", config.DEFAULT_MODEL)
                     await run_page_ocr(
@@ -2247,7 +2252,11 @@ async def get_task_detail(task_id: str):
         d["image_url"] = f"/renders/{task_id}/{img_name}?v={version_param}"
         formatted_pages.append(d)
         
-    return {"task": task, "pages": formatted_pages}
+    task_dict = dict(task)
+    uncompleted_list = [p["page_num"] for p in pages if p["status"] != "completed" or not (p.get("ocr_text") or "").strip()]
+    task_dict["uncompleted_pages_count"] = len(uncompleted_list)
+    task_dict["uncompleted_pages"] = uncompleted_list
+    return {"task": task_dict, "pages": formatted_pages}
 
 @app.put("/api/tasks/{task_id}/pages/{page_num}")
 async def update_page_text(task_id: str, page_num: int, payload: Dict[str, str]):
@@ -2621,7 +2630,9 @@ async def sse_task_events(task_id: str, request: Request = None):
                         "used_model": p.get("used_model")
                     }
                     for p in pages
-                ]
+                ],
+                "uncompleted_pages_count": sum(1 for p in pages if p["status"] != "completed" or not p.get("ocr_text")),
+                "uncompleted_pages": [p["page_num"] for p in pages if p["status"] != "completed" or not p.get("ocr_text")]
             }
 
             quota_status = await scheduler.get_quota_status()
