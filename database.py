@@ -593,10 +593,28 @@ async def update_page_result(task_id: str, page_num: int, status: str, ocr_text:
         row = await cursor.fetchone()
         completed_count = row["count"] if row else 0
         
-        # 檢查任務是否已全數完成
+        # 檢查任務是否已全數完成：
+        # 方法一：計數比對（適用於順跑完成）
+        # 方法二：查無任何未完成頁面（適用於手動重試最後幾頁後觸發完成）
         t_cursor = await db.execute("SELECT total_pages, status FROM tasks WHERE id = ?", (task_id,))
         t_row = await t_cursor.fetchone()
-        if t_row and t_row["total_pages"] and completed_count >= t_row["total_pages"]:
+        
+        all_done = False
+        if t_row and t_row["total_pages"] and t_row["status"] not in ("completed",):
+            # 快速計數比對
+            if completed_count >= t_row["total_pages"]:
+                all_done = True
+            else:
+                # 確認是否真的無任何未完成頁面（處理手動重試後的邊界情況）
+                incomplete_cursor = await db.execute(
+                    "SELECT COUNT(*) as cnt FROM task_pages WHERE task_id = ? AND (status != 'completed' OR ocr_text IS NULL OR ocr_text = '')",
+                    (task_id,)
+                )
+                inc_row = await incomplete_cursor.fetchone()
+                if inc_row and inc_row["cnt"] == 0:
+                    all_done = True
+        
+        if all_done:
             await db.execute("UPDATE tasks SET processed_pages = ?, status = 'completed', updated_at = ? WHERE id = ?", (completed_count, now, task_id))
         else:
             await db.execute("UPDATE tasks SET processed_pages = ?, updated_at = ? WHERE id = ?", (completed_count, now, task_id))
