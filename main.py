@@ -23,7 +23,7 @@ import config
 from scheduler import scheduler, free_ocr_task_manager
 from pdf_engine import render_pdf_to_images, render_pdf_to_images_async, render_single_page, get_pdf_page_count, render_remaining_pdf_pages
 import gemini_ocr
-from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed
+from gemini_ocr import build_ocr_prompt, call_gemini_ocr, refresh_oauth_token_if_needed, sanitize_model_name
 import exporters
 import web_rpa
 from rate_limiter import auth_rate_limiter, get_client_ip
@@ -623,8 +623,8 @@ async def run_page_ocr(
     task_key = f"{task_id}_{page_num}"
     active_page_tasks[task_key] = asyncio.current_task()
     
-    clean_model = model.replace("[PAID]", "").replace("💎", "").strip()
-    is_paid_call = bool(is_paid) or ("[PAID]" in model) or ("💎" in model)
+    clean_model = sanitize_model_name(model)
+    is_paid_call = bool(is_paid) or ("[PAID]" in str(model)) or ("💎" in str(model))
     if specific_account_id is not None:
         acc = await database.get_account_by_id(specific_account_id)
         if acc and acc.get("is_paid") == 1:
@@ -715,7 +715,7 @@ async def run_page_ocr(
             if not account:
                 # 智慧降級備援：若指定付費通道但無可用金鑰（冷卻或已耗盡），自動降級至免費池預設模型
                 if is_paid_task or target_account_id is not None:
-                    fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
+                    fallback_model = sanitize_model_name(config.DEFAULT_MODEL)
                     prev_label = clean_model + (" 💎" if is_paid_call else "")
                     print(f"⚠️ [Page OCR Fallback] 任務 {task_id} 第 {page_num} 頁：{prev_label} 無可用金鑰或冷卻超時，智慧降級至免費 API ({fallback_model}) 接續執行")
                     await database.update_page_status(
@@ -812,7 +812,7 @@ async def run_page_ocr(
                     return
                 
                 # 智慧降級備援：若為付費 API 帳號或指定付費通道觸發 429，或高級模型（非預設模型）重試多次遭遇 429
-                fallback_model = config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
+                fallback_model = sanitize_model_name(config.DEFAULT_MODEL)
                 should_fallback = False
                 fallback_reason = ""
                 
@@ -2300,7 +2300,8 @@ async def retry_single_page(
         active_page_tasks.pop(task_key, None)
         await asyncio.sleep(0.05)
         
-    target_model = (payload.model if (payload and payload.model) else None) or model or target_page.get("used_model") or task.get("model", config.DEFAULT_MODEL)
+    raw_target_model = (payload.model if (payload and payload.model) else None) or model or target_page.get("used_model") or task.get("model", config.DEFAULT_MODEL)
+    target_model = sanitize_model_name(raw_target_model)
     target_lang = (payload.lang if (payload and payload.lang) else None) or lang or task.get("lang_pref", "traditional")
     target_direction = (payload.direction if (payload and payload.direction) else None) or direction or task.get("direction_pref", "auto")
     target_column = (payload.column if (payload and payload.column) else None) or column or task.get("column_pref", "auto")

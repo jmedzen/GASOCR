@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import time
+import re
 import httpx
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
@@ -8,6 +9,42 @@ import database
 import config
 
 OAUTH_REFRESH_LOCK = asyncio.Lock()
+
+def sanitize_model_name(model: Optional[str]) -> str:
+    """
+    清洗並提取純淨的 Google Gemini 模型識別碼 (model_id)。
+    過濾掉 [PAID]、💎、[降級備援]、[人工通過]、[手動通過]、(預設推薦)、models/ 等雜質與裝飾標籤，
+    杜絕 Google AI Studio API 拋出 'unexpected model name format (INVALID_ARGUMENT)' 400 錯誤。
+    """
+    if not model or not str(model).strip():
+        return config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
+
+    s = str(model).strip()
+    
+    # 移除重複或多餘的 models/ 前綴
+    if s.startswith("models/"):
+        s = s[7:]
+    elif "/models/" in s:
+        s = s.split("/models/")[-1]
+
+    # 移除所有中括號內容 [ ... ] (例如 [PAID], [降級備援], [人工通過], [手動通過])
+    s = re.sub(r'\[.*?\]', '', s)
+    s = s.replace("💎", "").strip()
+
+    # 優先從字串中以正則比對標準的 gemini-* 模型 ID (不分大小寫)
+    match = re.search(r'(gemini-[a-zA-Z0-9\.\-_]+)', s, re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+
+    # 移除小括號 ( ... )
+    s = re.sub(r'\(.*?\)', '', s).strip()
+    parts = s.split()
+    cleaned = parts[0] if parts else ""
+    
+    if not cleaned:
+        return config.DEFAULT_MODEL.replace("[PAID]", "").replace("💎", "").strip()
+
+    return cleaned.lower()
 
 def build_ocr_prompt(lang: str, direction: str, column: str, custom_prompt: str = "") -> str:
     """根據使用者的排版設定動態組裝 OCR 提示詞"""
@@ -126,8 +163,10 @@ async def call_gemini_ocr(
         img_bytes = f.read()
     img_b64 = base64.b64encode(img_bytes).decode("utf-8")
     
+    clean_model = sanitize_model_name(model)
+    
     # 構造 Google Generative Language API 請求
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
     headers = {"Content-Type": "application/json"}
     params = {}
     
