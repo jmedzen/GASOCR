@@ -1,4 +1,4 @@
-    <!-- Task Tools Modal (PDF Re-slice) -->
+    <!-- Task Tools Modal (Task Tools: Manual Pass OCR & PDF Re-slice) -->
     <div 
         x-show="showTaskToolsModal" 
         class="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4"
@@ -23,23 +23,23 @@
             @click.stop
         >
             <!-- Header -->
-            <div class="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-slate-800 mb-4">
+            <div class="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-slate-800 mb-3.5">
                 <div class="flex items-center space-x-2.5">
                     <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-800 shrink-0">
                         <i data-lucide="wrench" class="w-5 h-5"></i>
                     </div>
                     <div>
                         <h3 class="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center space-x-2">
-                            <span>任務工具箱・重新切圖</span>
-                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-700">PDF Re-slice</span>
+                            <span>任務工具箱</span>
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">Task Tools</span>
                         </h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">針對切圖破片或渲染異常，自原始 PDF 重新切圖</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">提供手動標記通過（轉為綠色完成）與 PDF 重新切圖等維護功能</p>
                     </div>
                 </div>
                 <button 
                     type="button" 
                     @click="closeTaskTools()" 
-                    :disabled="isReslicing"
+                    :disabled="isReslicing || isPassingPages"
                     class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-40"
                     title="關閉 (Esc)"
                 >
@@ -47,8 +47,37 @@
                 </button>
             </div>
 
+            <!-- Tool Feature Tabs Switcher -->
+            <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-3.5">
+                <!-- Tab 1: 手動標記通過 (Pass OCR) -->
+                <button 
+                    type="button" 
+                    @click="taskToolsActiveTab = 'pass'"
+                    class="py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                    :class="taskToolsActiveTab === 'pass' 
+                        ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-500/20' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'"
+                >
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+                    <span>手動標記通過 (綠色)</span>
+                </button>
+                
+                <!-- Tab 2: PDF 重新切圖 (Re-slice) -->
+                <button 
+                    type="button" 
+                    @click="taskToolsActiveTab = 'reslice'"
+                    class="py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                    :class="taskToolsActiveTab === 'reslice' 
+                        ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs ring-1 ring-blue-500/20' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'"
+                >
+                    <i data-lucide="scissors" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                    <span>PDF 重新切圖</span>
+                </button>
+            </div>
+
             <!-- Target Task Info Box -->
-            <div class="mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-center space-x-3">
+            <div class="mb-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-center space-x-3">
                 <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                     <i data-lucide="file-text" class="w-4 h-4"></i>
                 </div>
@@ -64,169 +93,320 @@
                 </div>
             </div>
 
-            <!-- Reslice Mode Selector -->
-            <div class="space-y-3 mb-4">
-                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">選擇切圖模式</label>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <!-- Option 1: 指定頁碼 -->
-                    <label 
-                        class="relative flex flex-col p-3 rounded-xl border text-xs cursor-pointer transition select-none"
-                        :class="taskToolsMode === 'custom' 
-                            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
-                    >
-                        <input type="radio" name="resliceMode" value="custom" x-model="taskToolsMode" class="sr-only">
-                        <div class="font-bold flex items-center space-x-1.5 mb-1">
-                            <span>🎯 指定頁碼</span>
-                        </div>
-                        <span class="text-[11px] text-slate-500 dark:text-slate-400">自訂頁數或區間</span>
-                    </label>
+            <!-- ================= TAB 1: 手動標記通過 (PASS OCR) ================= -->
+            <div x-show="taskToolsActiveTab === 'pass'" class="space-y-3.5">
+                <!-- Info Banner -->
+                <div class="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-start space-x-2">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5"></i>
+                    <div class="text-[11px] leading-relaxed">
+                        <span class="font-bold">手動設定通過：</span>
+                        可手動將指定頁面標記為「已完成（綠色）」。系統會<strong class="text-emerald-900 dark:text-emerald-100">自動檢查是否已 100% 完成</strong>，若全數完成將自動將本任務狀態移至「已完成」！
+                    </div>
+                </div>
 
-                    <!-- Option 2: 任務全頁 -->
-                    <label 
-                        class="relative flex flex-col p-3 rounded-xl border text-xs cursor-pointer transition select-none"
-                        :class="taskToolsMode === 'all' 
-                            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
-                    >
-                        <input type="radio" name="resliceMode" value="all" x-model="taskToolsMode" class="sr-only">
-                        <div class="font-bold flex items-center space-x-1.5 mb-1">
-                            <span>📚 任務全頁</span>
-                        </div>
-                        <span class="text-[11px] text-slate-500 dark:text-slate-400">重切範圍內所有頁</span>
-                    </label>
+                <!-- Pass Mode Selector -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">選擇設定通過範圍</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <!-- Option 1: 當前頁面 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsPassMode === 'current' 
+                                ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
+                        >
+                            <input type="radio" name="passMode" value="current" x-model="taskToolsPassMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>🎯 當前頁面</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400" x-text="currentPage && currentPage.page_num ? `第 P.${currentPage.page_num} 頁` : '當前檢視頁'"></span>
+                        </label>
 
-                    <!-- Option 3: 失敗與遺失頁 -->
-                    <label 
-                        class="relative flex flex-col p-3 rounded-xl border text-xs cursor-pointer transition select-none"
-                        :class="taskToolsMode === 'failed_only' 
-                            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
-                    >
-                        <input type="radio" name="resliceMode" value="failed_only" x-model="taskToolsMode" class="sr-only">
-                        <div class="font-bold flex items-center space-x-1.5 mb-1">
-                            <span>⚠️ 僅失敗頁</span>
+                        <!-- Option 2: 指定頁碼 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsPassMode === 'custom' 
+                                ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
+                        >
+                            <input type="radio" name="passMode" value="custom" x-model="taskToolsPassMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>🔢 指定頁碼</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">自訂頁數或區間</span>
+                        </label>
+
+                        <!-- Option 3: 所有未完成頁面 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsPassMode === 'all_uncompleted' 
+                                ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
+                        >
+                            <input type="radio" name="passMode" value="all_uncompleted" x-model="taskToolsPassMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>⚠️ 所有未完成頁</span>
+                            </div>
+                            <span class="text-[11px] font-mono text-rose-600 dark:text-rose-400 font-semibold" x-text="`剩餘 ${uncompletedPagesCount} 頁`"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Custom Page Range Input (Visible when taskToolsPassMode === 'custom') -->
+                <div x-show="taskToolsPassMode === 'custom'" class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                            輸入欲通過之頁碼 <span class="text-rose-500">*</span>
+                        </label>
+                        <!-- Quick Pill Buttons -->
+                        <div class="flex items-center space-x-1">
+                            <template x-if="currentPage && currentPage.page_num">
+                                <button 
+                                    type="button" 
+                                    @click="taskToolsPassPageRange = String(currentPage.page_num)" 
+                                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 cursor-pointer font-bold"
+                                >
+                                    <span x-text="`當前 P.${currentPage.page_num}`"></span>
+                                </button>
+                            </template>
+                            <template x-if="uncompletedPages.length > 0">
+                                <button 
+                                    type="button" 
+                                    @click="taskToolsPassPageRange = uncompletedPages.map(p => p.page_num).join(', ')" 
+                                    class="text-[10px] px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 cursor-pointer font-bold"
+                                >
+                                    填入所有未完成頁
+                                </button>
+                            </template>
                         </div>
-                        <span class="text-[11px] text-slate-500 dark:text-slate-400">切圖異常或遺失頁</span>
+                    </div>
+
+                    <input 
+                        type="text" 
+                        x-model="taskToolsPassPageRange" 
+                        placeholder="例如: 1, 3, 5-8 或 10" 
+                        class="w-full text-xs font-mono rounded-xl border border-slate-300 dark:border-slate-700 px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        :disabled="isPassingPages"
+                    >
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        💡 支援單頁與連續區間（以逗號分隔，例如 <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">1, 3, 5-8</code>），以原始 PDF 實際頁碼為準。
+                    </p>
+                </div>
+
+                <!-- Optional Fallback Text Input -->
+                <div class="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-1.5">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        空白頁/無文字時補填標記 (選填)
                     </label>
+                    <input 
+                        type="text" 
+                        x-model="taskToolsPassText" 
+                        placeholder="[人工校對・確認通過] (若原已有 OCR 文本將自動保留)" 
+                        class="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        :disabled="isPassingPages"
+                    >
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        若頁面原本已有 OCR 文本會直接保留；若為空白頁或辨識空值，系統將自動寫入此標記以確保通過判斷有效。
+                    </p>
                 </div>
             </div>
 
-            <!-- Custom Page Range Input (Visible when mode === 'custom') -->
-            <div x-show="taskToolsMode === 'custom'" class="mb-4 space-y-2">
-                <div class="flex items-center justify-between">
-                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                        指定切圖頁碼 <span class="text-rose-500">*</span>
-                    </label>
-                    <!-- Quick Pill Buttons -->
-                    <div class="flex items-center space-x-1">
-                        <button 
-                            type="button" 
-                            @click="setTaskToolsQuickPages('1')" 
-                            class="text-[10px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+            <!-- ================= TAB 2: PDF 重新切圖 (RE-SLICE) ================= -->
+            <div x-show="taskToolsActiveTab === 'reslice'" class="space-y-3.5">
+                <!-- Reslice Mode Selector -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">選擇切圖模式</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <!-- Option 1: 指定頁碼 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsMode === 'custom' 
+                                ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
                         >
-                            第 1 頁
-                        </button>
-                        <button 
-                            type="button" 
-                            @click="setTaskToolsQuickPages('1-5')" 
-                            class="text-[10px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                            <input type="radio" name="resliceMode" value="custom" x-model="taskToolsMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>🎯 指定頁碼</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">自訂頁數或區間</span>
+                        </label>
+
+                        <!-- Option 2: 任務全頁 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsMode === 'all' 
+                                ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
                         >
-                            前 5 頁
-                        </button>
-                        <template x-if="currentPage && currentPage.page_num">
+                            <input type="radio" name="resliceMode" value="all" x-model="taskToolsMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>📚 任務全頁</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">重切範圍內所有頁</span>
+                        </label>
+
+                        <!-- Option 3: 失敗與遺失頁 -->
+                        <label 
+                            class="relative flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition select-none"
+                            :class="taskToolsMode === 'failed_only' 
+                                ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-2xs' 
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'"
+                        >
+                            <input type="radio" name="resliceMode" value="failed_only" x-model="taskToolsMode" class="sr-only">
+                            <div class="font-bold flex items-center space-x-1.5 mb-1">
+                                <span>⚠️ 僅失敗頁</span>
+                            </div>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">切圖異常或遺失頁</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Custom Page Range Input (Visible when mode === 'custom') -->
+                <div x-show="taskToolsMode === 'custom'" class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                            指定切圖頁碼 <span class="text-rose-500">*</span>
+                        </label>
+                        <!-- Quick Pill Buttons -->
+                        <div class="flex items-center space-x-1">
                             <button 
                                 type="button" 
-                                @click="setTaskToolsQuickPages(String(currentPage.page_num))" 
-                                class="text-[10px] px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer font-bold"
+                                @click="setTaskToolsQuickPages('1')" 
+                                class="text-[10px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
                             >
-                                <span x-text="`當前 P.${currentPage.page_num}`"></span>
+                                第 1 頁
                             </button>
-                        </template>
+                            <button 
+                                type="button" 
+                                @click="setTaskToolsQuickPages('1-5')" 
+                                class="text-[10px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                            >
+                                前 5 頁
+                            </button>
+                            <template x-if="currentPage && currentPage.page_num">
+                                <button 
+                                    type="button" 
+                                    @click="setTaskToolsQuickPages(String(currentPage.page_num))" 
+                                    class="text-[10px] px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer font-bold"
+                                >
+                                    <span x-text="`當前 P.${currentPage.page_num}`"></span>
+                                </button>
+                            </template>
+                        </div>
                     </div>
-                </div>
 
-                <input 
-                    type="text" 
-                    x-model="taskToolsPageRange" 
-                    placeholder="例如: 1, 3, 5-8 或 10" 
-                    class="w-full text-xs font-mono rounded-xl border border-slate-300 dark:border-slate-700 px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    :disabled="isReslicing"
-                >
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                    💡 支援單頁與連續區間（以逗號分隔，例如 <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">1, 3, 5-8</code> 或 <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">2-6</code>），以原始 PDF 實際頁碼為準。
-                </p>
-            </div>
-
-            <!-- Slicing Options: DPI & Auto Re-OCR -->
-            <div class="mb-5 p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-3">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <label class="text-xs font-bold text-slate-700 dark:text-slate-300">切圖解析度 (DPI)</label>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400">預設 300 DPI 兼具清晰度與辨識精度</p>
-                    </div>
-                    <select 
-                        x-model.number="taskToolsDpi" 
-                        class="text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 py-1 focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold"
-                        :disabled="isReslicing"
-                    >
-                        <option value="150">150 DPI (輕量快速)</option>
-                        <option value="200">200 DPI (標準畫質)</option>
-                        <option value="300">300 DPI (推薦・高清 OCR)</option>
-                        <option value="400">400 DPI (超高清・微小字跡)</option>
-                    </select>
-                </div>
-
-                <!-- Re-OCR Checkbox -->
-                <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-start space-x-2.5">
                     <input 
-                        type="checkbox" 
-                        id="taskToolsReocrCheck" 
-                        x-model="taskToolsReocr" 
-                        class="w-4 h-4 mt-0.5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                        type="text" 
+                        x-model="taskToolsPageRange" 
+                        placeholder="例如: 1, 3, 5-8 或 10" 
+                        class="w-full text-xs font-mono rounded-xl border border-slate-300 dark:border-slate-700 px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         :disabled="isReslicing"
                     >
-                    <label for="taskToolsReocrCheck" class="text-xs cursor-pointer select-none">
-                        <span class="font-bold text-slate-700 dark:text-slate-200">切圖完成後，自動將這些頁面排入 OCR 重新辨識</span>
-                        <span class="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                            若勾選，系統在更新切圖後會立即觸發後台 OCR 流程，以新圖片產出辨識文本。
-                        </span>
-                    </label>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        💡 支援單頁與連續區間（以逗號分隔，例如 <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">1, 3, 5-8</code>），以原始 PDF 實際頁碼為準。
+                    </p>
+                </div>
+
+                <!-- Slicing Options: DPI & Auto Re-OCR -->
+                <div class="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <label class="text-xs font-bold text-slate-700 dark:text-slate-300">切圖解析度 (DPI)</label>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">預設 300 DPI 兼具清晰度與辨識精度</p>
+                        </div>
+                        <select 
+                            x-model.number="taskToolsDpi" 
+                            class="text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 py-1 focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold"
+                            :disabled="isReslicing"
+                        >
+                            <option value="150">150 DPI (輕量快速)</option>
+                            <option value="200">200 DPI (標準畫質)</option>
+                            <option value="300">300 DPI (推薦・高清 OCR)</option>
+                            <option value="400">400 DPI (超高清・微小字跡)</option>
+                        </select>
+                    </div>
+
+                    <!-- Re-OCR Checkbox -->
+                    <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-start space-x-2.5">
+                        <input 
+                            type="checkbox" 
+                            id="taskToolsReocrCheck" 
+                            x-model="taskToolsReocr" 
+                            class="w-4 h-4 mt-0.5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                            :disabled="isReslicing"
+                        >
+                        <label for="taskToolsReocrCheck" class="text-xs cursor-pointer select-none">
+                            <span class="font-bold text-slate-700 dark:text-slate-200">切圖完成後，自動將這些頁面排入 OCR 重新辨識</span>
+                            <span class="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                若勾選，系統在更新切圖後會立即觸發後台 OCR 流程，以新圖片產出辨識文本。
+                            </span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
             <!-- Footer Actions -->
-            <div class="flex items-center justify-end space-x-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div class="flex items-center justify-end space-x-2.5 pt-3.5 border-t border-slate-100 dark:border-slate-800 mt-4">
                 <button 
                     type="button" 
                     @click="closeTaskTools()" 
-                    :disabled="isReslicing"
+                    :disabled="isReslicing || isPassingPages"
                     class="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
                 >
                     取消
                 </button>
-                <button 
-                    type="button" 
-                    @click="submitTaskReslice()" 
-                    :disabled="isReslicing || (taskToolsMode === 'custom' && !taskToolsPageRange.trim())"
-                    class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold transition shadow-sm flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                    <template x-if="isReslicing">
-                        <span class="flex items-center space-x-1.5">
-                            <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                            </svg>
-                            <span>正在切圖中...</span>
-                        </span>
-                    </template>
-                    <template x-if="!isReslicing">
-                        <span class="flex items-center space-x-1.5">
-                            <i data-lucide="scissors" class="w-3.5 h-3.5"></i>
-                            <span>開始重新切圖</span>
-                        </span>
-                    </template>
-                </button>
+
+                <!-- TAB 1 Submit Button: 手動標記通過 -->
+                <template x-if="taskToolsActiveTab === 'pass'">
+                    <button 
+                        type="button" 
+                        @click="submitTaskPassPages()" 
+                        :disabled="isPassingPages || (taskToolsPassMode === 'custom' && !taskToolsPassPageRange.trim())"
+                        class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold transition shadow-sm flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                        <template x-if="isPassingPages">
+                            <span class="flex items-center space-x-1.5">
+                                <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>設定處理中...</span>
+                            </span>
+                        </template>
+                        <template x-if="!isPassingPages">
+                            <span class="flex items-center space-x-1.5">
+                                <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                                <span>設定通過 (變成綠色)</span>
+                            </span>
+                        </template>
+                    </button>
+                </template>
+
+                <!-- TAB 2 Submit Button: 開始重新切圖 -->
+                <template x-if="taskToolsActiveTab === 'reslice'">
+                    <button 
+                        type="button" 
+                        @click="submitTaskReslice()" 
+                        :disabled="isReslicing || (taskToolsMode === 'custom' && !taskToolsPageRange.trim())"
+                        class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold transition shadow-sm flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                        <template x-if="isReslicing">
+                            <span class="flex items-center space-x-1.5">
+                                <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>正在切圖中...</span>
+                            </span>
+                        </template>
+                        <template x-if="!isReslicing">
+                            <span class="flex items-center space-x-1.5">
+                                <i data-lucide="scissors" class="w-3.5 h-3.5"></i>
+                                <span>開始重新切圖</span>
+                            </span>
+                        </template>
+                    </button>
+                </template>
             </div>
         </div>
     </div>

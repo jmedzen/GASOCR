@@ -593,32 +593,125 @@ async def update_page_result(task_id: str, page_num: int, status: str, ocr_text:
         row = await cursor.fetchone()
         completed_count = row["count"] if row else 0
         
-        # 檢查任務是否已全數完成：
-        # 方法一：計數比對（適用於順跑完成）
-        # 方法二：查無任何未完成頁面（適用於手動重試最後幾頁後觸發完成）
-        t_cursor = await db.execute("SELECT total_pages, status FROM tasks WHERE id = ?", (task_id,))
-        t_row = await t_cursor.fetchone()
-        
-        all_done = False
-        if t_row and t_row["total_pages"] and t_row["status"] not in ("completed",):
-            # 快速計數比對
-            if completed_count >= t_row["total_pages"]:
-                all_done = True
-            else:
-                # 確認是否真的無任何未完成頁面（處理手動重試後的邊界情況）
-                incomplete_cursor = await db.execute(
-                    "SELECT COUNT(*) as cnt FROM task_pages WHERE task_id = ? AND (status != 'completed' OR ocr_text IS NULL OR ocr_text = '')",
-                    (task_id,)
-                )
-                inc_row = await incomplete_cursor.fetchone()
-                if inc_row and inc_row["cnt"] == 0:
-                    all_done = True
-        
-        if all_done:
-            await db.execute("UPDATE tasks SET processed_pages = ?, status = 'completed', updated_at = ? WHERE id = ?", (completed_count, now, task_id))
-        else:
-            await db.execute("UPDATE tasks SET processed_pages = ?, updated_at = ? WHERE id = ?", (completed_count, now, task_id))
+        # 檢查任務是否已全數完成並更新
+        await check_and_update_task_completion(task_id, db=db)
         await db.commit()
+
+async def check_and_update_task_completion(task_id: str, db = None) -> tuple[bool, int, int]:
+    """
+    檢查指定任務的所有頁面是否皆已完成。
+    若已 100% 完成，自動將 tasks 資料表的狀態更新為 'completed'，
+    並同步 processed_pages = completed_count。
+    回傳: (is_all_completed, completed_count, total_pages)
+    """
+    now = time.time()
+    
+    async def _do_check(conn):
+        t_cursor = await conn.execute("SELECT total_pages, status FROM tasks WHERE id = ?", (task_id,))
+        t_row = await t_cursor.fetchone()
+        if not t_row:
+            return False, 0, 0
+            
+        task_total = t_row["total_pages"] or 0
+        
+        # 統計完成且有文字的頁數
+        cursor = await conn.execute(
+            "SELECT COUNT(*) as count FROM task_pages WHERE task_id = ? AND status = 'completed' AND ocr_text IS NOT NULL AND ocr_text != ''",
+            (task_id,)
+        )
+        row = await cursor.fetchone()
+        completed_count = row["count"] if row else 0
+        
+        # 統計 task_pages 實際資料列數
+        tp_cur = await conn.execute("SELECT COUNT(*) as count FROM task_pages WHERE task_id = ?", (task_id,))
+        tp_row = await tp_cur.fetchone()
+        actual_total = tp_row["count"] if tp_row else task_total
+        effective_total = max(task_total, actual_total)
+        
+        # 統計未完成頁數 (狀態非 completed 或文字為空)
+        inc_cursor = await conn.execute(
+            "SELECT COUNT(*) as cnt FROM task_pages WHERE task_id = ? AND (status != 'completed' OR ocr_text IS NULL OR ocr_text = '')",
+            (task_id,)
+        )
+        inc_row = await inc_cursor.fetchone()
+        incomplete_count = inc_row["cnt"] if inc_row else 0
+        
+        is_all_done = (effective_total > 0) and (incomplete_count == 0 or completed_count >= effective_total)
+        
+        if is_all_done:
+            await conn.execute(
+                "UPDATE tasks SET processed_pages = ?, status = 'completed', updated_at = ? WHERE id = ?",
+                (effective_total, now, task_id)
+            )
+        else:
+            await conn.execute(
+                "UPDATE tasks SET processed_pages = ?, updated_at = ? WHERE id = ?",
+                (completed_count, now, task_id)
+            )
+            
+        return is_all_done, completed_count, effective_total
+
+    if db:
+        return await _do_check(db)
+    else:
+        async with get_db() as conn:
+            res = await _do_check(conn)
+            await conn.commit()
+            return res
+
+async def mark_pages_as_passed(
+    task_id: str, 
+    page_nums: List[int], 
+    default_text: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    手動設定指定頁面為 OCR 通過 (status = 'completed')。
+    - 若該頁已有 ocr_text 則保留，若無或為空則填入 default_text（預設為 '[人工確認通過]'）
+    - 清空 error_message
+    - 更新後自動檢查該任務是否已 100% 完成，若已完成自動將任務狀態轉為 'completed'
+    回傳字典：包含 updated_pages, completed_count, total_pages, is_all_completed, task_status
+    """
+    now = time.time()
+    fallback_text = (default_text or "").strip() or "[人工確認通過]"
+    
+    async with get_db() as db:
+        for page_num in page_nums:
+            cursor = await db.execute("SELECT ocr_text, used_model FROM task_pages WHERE task_id = ? AND page_num = ?", (task_id, page_num))
+            p_row = await cursor.fetchone()
+            if not p_row:
+                continue
+            
+            curr_text = p_row["ocr_text"]
+            final_text = curr_text.strip() if (curr_text and curr_text.strip()) else fallback_text
+            model_tag = p_row["used_model"] or "手動標記"
+            if "[人工通過]" not in model_tag:
+                model_tag = f"{model_tag} [人工通過]"
+                
+            await db.execute("""
+                UPDATE task_pages 
+                SET status = 'completed', 
+                    ocr_text = ?, 
+                    error_message = '', 
+                    used_model = ?, 
+                    updated_at = ?
+                WHERE task_id = ? AND page_num = ?
+            """, (final_text, model_tag, now, task_id, page_num))
+            
+        is_all_done, completed_count, total_pages = await check_and_update_task_completion(task_id, db=db)
+        await db.commit()
+        
+        t_cursor = await db.execute("SELECT status FROM tasks WHERE id = ?", (task_id,))
+        t_row = await t_cursor.fetchone()
+        task_status = t_row["status"] if t_row else ("completed" if is_all_done else "processing")
+        
+        return {
+            "task_id": task_id,
+            "updated_pages": page_nums,
+            "completed_count": completed_count,
+            "total_pages": total_pages,
+            "is_all_completed": is_all_done,
+            "task_status": task_status
+        }
 
 async def save_page_ocr_text(task_id: str, page_num: int, new_text: str):
     now = time.time()

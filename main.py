@@ -2564,6 +2564,134 @@ async def reslice_task_pages(task_id: str, payload: TaskReslicePayload):
     }
 
 
+# --- 任務工具箱：手動標記通過 (Pass OCR / 標記為綠色完成) ---
+
+class TaskPassPagesPayload(BaseModel):
+    mode: str = "current"  # "current", "custom", "all_uncompleted", "all"
+    page_num: Optional[int] = None
+    page_range: Optional[str] = None
+    pages: Optional[List[int]] = None
+    text: Optional[str] = None
+
+@app.post("/api/tasks/{task_id}/pages/{page_num}/pass")
+async def pass_single_page(
+    task_id: str, 
+    page_num: int, 
+    payload: Optional[Dict[str, Any]] = None
+):
+    """
+    手動設定指定單頁為 OCR 通過 (status = 'completed')。
+    自動檢查該任務是否已 100% 全數完成，若全數完成則自動將任務移至 'completed' (已完成)。
+    """
+    task = await database.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    pages = await database.get_task_pages(task_id)
+    target_page = next((p for p in pages if p["page_num"] == page_num), None)
+    if not target_page:
+        raise HTTPException(status_code=404, detail="Page not found")
+        
+    # 若該頁面已有背景 OCR 任務在排隊或執行，取消以避免被覆蓋
+    task_key = f"{task_id}_{page_num}"
+    if task_key in active_page_tasks:
+        active_page_tasks[task_key].cancel()
+        active_page_tasks.pop(task_key, None)
+        
+    default_text = None
+    if payload and isinstance(payload, dict):
+        default_text = payload.get("text")
+        
+    result = await database.mark_pages_as_passed(task_id, [page_num], default_text=default_text)
+    
+    msg = f"第 {page_num} 頁已手動設定為 OCR 通過（綠色）！"
+    if result["is_all_completed"]:
+        msg += " 🎉 任務已 100% 全數完成，狀態已自動轉移至「已完成」！"
+        
+    return {
+        "status": "ok",
+        "message": msg,
+        **result
+    }
+
+@app.post("/api/tasks/{task_id}/pass-pages")
+async def pass_task_pages(task_id: str, payload: TaskPassPagesPayload):
+    """
+    任務工具箱：手動設定多頁或全體未完成頁為 OCR 通過 (status = 'completed')
+    - mode="current": 設定當前頁 (payload.page_num)
+    - mode="custom": 指定頁碼範圍 (payload.page_range 或 payload.pages)
+    - mode="all_uncompleted": 所有未完成或失敗頁面
+    - mode="all": 全本頁面
+    自動檢查是否達到 100% 完成，完成後自動更新任務為 'completed' (已完成)。
+    """
+    task = await database.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    pages = await database.get_task_pages(task_id)
+    if not pages:
+        raise HTTPException(status_code=404, detail="No pages found for task")
+        
+    target_page_nums = []
+    if payload.mode == "current":
+        if not payload.page_num:
+            raise HTTPException(status_code=400, detail="請指定欲設定通過之頁碼")
+        target_page_nums = [payload.page_num]
+    elif payload.mode == "all_uncompleted":
+        target_page_nums = [
+            p["page_num"] for p in pages 
+            if p["status"] != "completed" or not (p.get("ocr_text") or "").strip()
+        ]
+        if not target_page_nums:
+            return {
+                "status": "ok",
+                "message": "目前沒有未完成的頁面，本任務已全數完成！",
+                "task_id": task_id,
+                "updated_pages": [],
+                "completed_count": len(pages),
+                "total_pages": len(pages),
+                "is_all_completed": True,
+                "task_status": task.get("status", "completed")
+            }
+    elif payload.mode == "all":
+        target_page_nums = [p["page_num"] for p in pages]
+    elif payload.mode == "custom":
+        if payload.pages:
+            target_page_nums = [p for p in payload.pages if any(tp["page_num"] == p for tp in pages)]
+        elif payload.page_range:
+            max_p = max(p["page_num"] for p in pages)
+            selected = parse_page_selection(payload.page_range, max_pages=max_p)
+            valid_set = set(p["page_num"] for p in pages)
+            target_page_nums = [p for p in selected if p in valid_set]
+        else:
+            raise HTTPException(status_code=400, detail="請輸入自訂頁碼範圍（例如: 1, 3, 5-8）")
+    else:
+        raise HTTPException(status_code=400, detail=f"不支援的通過模式: {payload.mode}")
+        
+    if not target_page_nums:
+        raise HTTPException(status_code=400, detail="未能解析出有效的目標頁碼")
+        
+    # 取消進行中的背景任務
+    for p in target_page_nums:
+        task_key = f"{task_id}_{p}"
+        if task_key in active_page_tasks:
+            active_page_tasks[task_key].cancel()
+            active_page_tasks.pop(task_key, None)
+            
+    result = await database.mark_pages_as_passed(task_id, target_page_nums, default_text=payload.text)
+    
+    count = len(target_page_nums)
+    msg = f"已成功將 {count} 個頁面手動標記為 OCR 通過（綠色）！"
+    if result["is_all_completed"]:
+        msg += " 🎉 任務已 100% 全數完成，狀態已自動轉移至「已完成」！"
+        
+    return {
+        "status": "ok",
+        "message": msg,
+        **result
+    }
+
+
 # --- SSE Stream for Live Progress ---
 
 @app.get("/api/tasks/{task_id}/events")

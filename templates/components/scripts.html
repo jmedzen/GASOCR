@@ -74,14 +74,19 @@
                 accounts: [],
                 showAccountsModal: false,
                 showQueueModal: false,
-                // 任務工具箱 (PDF Re-slice) 狀態
+                // 任務工具箱 (手動標記通過 & PDF Re-slice) 狀態
                 showTaskToolsModal: false,
                 taskToolsTarget: null,
+                taskToolsActiveTab: 'pass', // 'pass' | 'reslice'
                 taskToolsMode: 'custom', // 'custom' | 'all' | 'failed_only'
                 taskToolsPageRange: '',
                 taskToolsDpi: 300,
                 taskToolsReocr: false,
                 isReslicing: false,
+                taskToolsPassMode: 'current', // 'current' | 'custom' | 'all_uncompleted'
+                taskToolsPassPageRange: '',
+                taskToolsPassText: '',
+                isPassingPages: false,
                 // Quota Exhaustion & Countdown State
                 quotaStatus: {
                     all_free_exhausted: false,
@@ -1715,22 +1720,46 @@
                     }
                 },
 
-                // --- 任務工具箱 (PDF Re-slice) 控制方法 ---
-                openTaskTools(task) {
+                // --- 任務工具箱 (手動標記通過 & PDF Re-slice) 控制方法 ---
+                openTaskTools(task, defaultTab = null) {
                     if (!task) return;
                     this.taskToolsTarget = task;
+                    
+                    // 若有指定 defaultTab 則優先使用；若從校對中開啟且有 currentPage 預設 'pass'，否則 'reslice'
+                    if (defaultTab) {
+                        this.taskToolsActiveTab = defaultTab;
+                    } else if (this.currentPage && this.currentPage.page_num && this.currentTaskId === task.id) {
+                        this.taskToolsActiveTab = 'pass';
+                    } else {
+                        this.taskToolsActiveTab = 'pass';
+                    }
+
                     this.taskToolsMode = 'custom';
-                    // 若當前正在校對該任務的特定頁面，智慧預填當前頁碼
                     if (this.currentPage && this.currentPage.page_num && this.currentTaskId === task.id) {
                         this.taskToolsPageRange = String(this.currentPage.page_num);
+                        this.taskToolsPassMode = 'current';
+                        this.taskToolsPassPageRange = String(this.currentPage.page_num);
                     } else {
                         this.taskToolsPageRange = '';
+                        this.taskToolsPassMode = (this.uncompletedPagesCount > 0 ? 'all_uncompleted' : 'custom');
+                        this.taskToolsPassPageRange = '';
                     }
+                    this.taskToolsPassText = '';
                     this.taskToolsDpi = task.dpi || 300;
                     this.taskToolsReocr = false;
                     this.isReslicing = false;
+                    this.isPassingPages = false;
                     this.showTaskToolsModal = true;
                     this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                },
+
+                closeTaskTools() {
+                    if (this.isReslicing || this.isPassingPages) return;
+                    this.showTaskToolsModal = false;
+                    this.taskToolsTarget = null;
+                    this.taskToolsPageRange = '';
+                    this.taskToolsPassPageRange = '';
+                    this.taskToolsPassText = '';
                 },
 
                 async retryUncompletedPages() {
@@ -1755,15 +1784,160 @@
                     this.listenTaskEvents(this.currentTaskId);
                 },
 
-                closeTaskTools() {
-                    if (this.isReslicing) return;
-                    this.showTaskToolsModal = false;
-                    this.taskToolsTarget = null;
-                    this.taskToolsPageRange = '';
-                },
-
                 setTaskToolsQuickPages(val) {
                     this.taskToolsPageRange = val;
+                },
+
+                // 手動設定指定頁面為 OCR 通過 (變成綠色)
+                async submitTaskPassPages() {
+                    if (!this.taskToolsTarget || this.isPassingPages) return;
+                    const task = this.taskToolsTarget;
+                    
+                    let payload = {
+                        mode: this.taskToolsPassMode,
+                        text: this.taskToolsPassText.trim() || null
+                    };
+                    
+                    if (this.taskToolsPassMode === 'current') {
+                        if (this.currentPage && this.currentPage.page_num && this.currentTaskId === task.id) {
+                            payload.page_num = this.currentPage.page_num;
+                        } else {
+                            this.showToast('⚠️ 未選定當前頁面，請切換至「指定頁碼」手動輸入');
+                            return;
+                        }
+                    } else if (this.taskToolsPassMode === 'custom') {
+                        if (!this.taskToolsPassPageRange.trim()) {
+                            this.showToast('⚠️ 請輸入要設定通過的頁碼（例如: 1, 3, 5-8）');
+                            return;
+                        }
+                        payload.page_range = this.taskToolsPassPageRange.trim();
+                    } else if (this.taskToolsPassMode === 'all_uncompleted') {
+                        // mode is 'all_uncompleted'
+                    }
+
+                    this.isPassingPages = true;
+                    try {
+                        const res = await fetch(`/api/tasks/${task.id}/pass-pages`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+                        }
+
+                        this.showToast(`✅ ${data.message || '已成功設定通過！'}`);
+                        this.closeTaskTools();
+
+                        // 即時在記憶體中更新頁面狀態為綠色完成 (completed)
+                        if (this.currentTaskId === task.id) {
+                            const updatedNums = new Set(data.updated_pages || []);
+                            for (const p of this.pages) {
+                                if (updatedNums.has(p.page_num)) {
+                                    p.status = 'completed';
+                                    p.error_message = '';
+                                    if (!p.ocr_text || !p.ocr_text.trim()) {
+                                        p.ocr_text = payload.text || '[人工確認通過]';
+                                    }
+                                }
+                            }
+                            if (this.currentPage && updatedNums.has(this.currentPage.page_num)) {
+                                this.currentPage.status = 'completed';
+                                this.currentPage.error_message = '';
+                                if (!this.currentPage.ocr_text || !this.currentPage.ocr_text.trim()) {
+                                    this.currentPage.ocr_text = payload.text || '[人工確認通過]';
+                                    this.currentPageText = this.currentPage.ocr_text;
+                                }
+                            }
+                        }
+
+                        // 自動檢查是否已經 100% 完成，完成之後自動移動到已完成的狀態
+                        if (data.is_all_completed) {
+                            if (this.currentTask && this.currentTask.id === task.id) {
+                                this.currentTask.status = 'completed';
+                                this.currentTask.processed_pages = data.total_pages || this.currentTask.total_pages;
+                            }
+                            const match = this.allTasks.find(t => t.id === task.id);
+                            if (match) {
+                                match.status = 'completed';
+                                match.processed_pages = data.total_pages || match.total_pages;
+                            }
+                            // 自動切換清單篩選至「已完成」，呈現移動到已完成的效果
+                            if (this.taskFilterStatus !== 'all') {
+                                this.taskFilterStatus = 'completed';
+                            }
+                            this.showToast('🎉 本任務所有頁面已 100% 全數完成！已自動移至「已完成」狀態！');
+                        }
+
+                        await this.loadTasks();
+                        if (this.currentTaskId === task.id) {
+                            await this.pollTaskDetail();
+                        }
+                    } catch (err) {
+                        this.showToast(`⚠️ 設定通過失敗: ${err.message || err}`);
+                    } finally {
+                        this.isPassingPages = false;
+                        this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                    }
+                },
+
+                // 校對介面一鍵快捷手動通過本頁
+                async markCurrentPagePassedDirectly() {
+                    if (!this.currentTask || !this.currentPage) return;
+                    const taskId = this.currentTaskId;
+                    const pageNum = this.currentPage.page_num;
+                    
+                    try {
+                        const fallbackText = this.currentPage.ocr_text || this.currentPageText || null;
+                        const res = await fetch(`/api/tasks/${taskId}/pages/${pageNum}/pass`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: fallbackText })
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+                        }
+
+                        this.currentPage.status = 'completed';
+                        this.currentPage.error_message = '';
+                        if (!this.currentPage.ocr_text || !this.currentPage.ocr_text.trim()) {
+                            this.currentPage.ocr_text = fallbackText || '[人工確認通過]';
+                            this.currentPageText = this.currentPage.ocr_text;
+                        }
+                        const targetInPages = this.pages.find(p => p.page_num === pageNum);
+                        if (targetInPages) {
+                            targetInPages.status = 'completed';
+                            targetInPages.error_message = '';
+                            if (!targetInPages.ocr_text || !targetInPages.ocr_text.trim()) {
+                                targetInPages.ocr_text = this.currentPage.ocr_text;
+                            }
+                        }
+
+                        if (data.is_all_completed) {
+                            this.currentTask.status = 'completed';
+                            this.currentTask.processed_pages = data.total_pages || this.currentTask.total_pages;
+                            const match = this.allTasks.find(t => t.id === taskId);
+                            if (match) {
+                                match.status = 'completed';
+                                match.processed_pages = data.total_pages || match.total_pages;
+                            }
+                            if (this.taskFilterStatus !== 'all') {
+                                this.taskFilterStatus = 'completed';
+                            }
+                            this.showToast(`🎉 第 ${pageNum} 頁已設定通過！任務已 100% 全數完成，自動移至「已完成」！`);
+                        } else {
+                            this.showToast(`✅ 第 ${pageNum} 頁已手動設定為 OCR 通過（綠色）！`);
+                        }
+
+                        await this.loadTasks();
+                        await this.pollTaskDetail();
+                    } catch (err) {
+                        this.showToast(`⚠️ 操作失敗: ${err.message || err}`);
+                    } finally {
+                        this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+                    }
                 },
 
                 async submitTaskReslice() {
