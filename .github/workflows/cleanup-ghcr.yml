@@ -1,0 +1,55 @@
+name: Cleanup GHCR Images
+
+on:
+  schedule:
+    # 每週日 UTC 03:00 (台灣時間 11:00) 定期自動維護清理
+    - cron: '0 3 * * 0'
+  workflow_run:
+    # 當 Docker Image 建置發布成功後，自動觸發清理
+    workflows: ["Build and Publish Docker Image to GHCR and Docker Hub"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    # 支援手動觸發，方便測試或自訂保留版本數
+    inputs:
+      keep_n_tagged:
+        description: 'Number of latest tagged images to keep'
+        required: true
+        type: number
+        default: 5
+      dry_run:
+        description: 'Dry run (simulate cleanup without deleting)'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: cleanup-ghcr
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cleanup Old GHCR Images
+    runs-on: ubuntu-latest
+    # 僅在 workflow_run 成功結束，或是由 schedule / workflow_dispatch 觸發時執行
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Cleanup GHCR Images
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.PAT_PACKAGES || secrets.GITHUB_TOKEN }}
+          package: gasocr
+          keep-n-tagged: ${{ inputs.keep_n_tagged || 5 }}
+          exclude-tags: 'latest'
+          delete-untagged: true
+          delete-ghost-images: true
+          delete-partial-images: true
+          delete-orphaned-images: true
+          dry-run: ${{ inputs.dry_run || false }}
+          validate: true
