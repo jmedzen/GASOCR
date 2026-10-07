@@ -164,9 +164,8 @@ async def _stream_upload_to_disk(
 CACHED_MODELS: List[Dict[str, Any]] = list(config.AVAILABLE_MODELS)
 
 def get_combined_models() -> List[Dict[str, Any]]:
-    """整合 API 抓取的模型清單與網頁自動化 [Web] 模型"""
-    web_models = web_rpa.get_supported_web_models()
-    return web_models + list(CACHED_MODELS)
+    """取得可用模型清單（純 Google AI Studio API 模型，已移除網頁端選項）"""
+    return list(CACHED_MODELS)
 
 async def update_cached_models(force: bool = False) -> Tuple[bool, str]:
     """向 Google AI Studio 自動抓取並更新可用模型清單"""
@@ -1427,7 +1426,7 @@ async def index(request: Request):
 
 @app.get("/api/models")
 async def get_models(refresh: bool = False):
-    """取得或手動強制刷新 Google AI Studio 可用模型清單（包含 [Web] 網頁自動化模型）"""
+    """取得或手動強制刷新 Google AI Studio 可用模型清單"""
     updated = False
     message = ""
     if refresh:

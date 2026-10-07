@@ -72,12 +72,14 @@ async def test_fastapi_endpoints():
         models_data = resp.json()
         assert "models" in models_data and models_data["count"] > 0
         web_models = [m for m in models_data["models"] if m.get("is_web", False)]
-        assert len(web_models) >= 2, "應包含至少 2 個網頁自動化模型"
-        # 驗證所有模型清單中已完全移除 AI Studio 選項
+        assert len(web_models) == 0, f"模型選單中不應包含網頁自動化模型: {web_models}"
+        # 驗證所有模型清單中已完全移除 AI Studio 選項與 Web 模型選項
         for m in models_data["models"]:
             assert "AI Studio" not in m.get("name", "") and "AI Studio" not in m.get("id", ""), \
                 f"模型選單中不應包含 AI Studio: {m}"
-        print(f"   ✅ GET /api/models 獲取成功 (共有 {models_data['count']} 個模型，包含 {len(web_models)} 個網頁模型，無 AI Studio 選項)")
+            assert not m.get("is_web", False) and "[Web" not in m.get("name", ""), \
+                f"模型選單中不應包含 Web 模型: {m}"
+        print(f"   ✅ GET /api/models 獲取成功 (共有 {models_data['count']} 個模型，無 Web 模型，無 AI Studio 選項)")
 
         resp = await client.get("/api/models?refresh=true")
         assert resp.status_code == 200
