@@ -2903,7 +2903,7 @@
 
                 retryWithUpgradeModel() {
                     const target = this.upgradeModel || (this.currentTask ? this.currentTask.model : 'gemini-2.5-pro');
-                    const isPaid = target.startsWith('[PAID]') || target.includes('💎') || (this.paidAccounts && this.paidAccounts.length > 0 && !target.includes('flash-lite'));
+                    const isPaid = target.startsWith('[PAID]') || target.includes('💎');
                     this.retryCurrentPage(target, {
                         is_paid: isPaid,
                         paid_account_id: isPaid ? (this.upgradePaidAccountId || 0) : null

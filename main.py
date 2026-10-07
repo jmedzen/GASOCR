@@ -690,8 +690,11 @@ async def run_page_ocr(
 
         task_info = await database.get_task(task_id) or {}
         target_account_id = specific_account_id
-        is_paid_task = bool(is_paid_call or task_info.get("is_paid"))
-        if target_account_id is None and task_info.get("is_paid"):
+        if is_paid is not None:
+            is_paid_task = is_paid_call
+        else:
+            is_paid_task = bool(is_paid_call or task_info.get("is_paid"))
+        if target_account_id is None and is_paid_task and task_info.get("paid_account_id"):
             target_account_id = task_info.get("paid_account_id")
 
         retries = 0
@@ -2314,10 +2317,14 @@ async def retry_single_page(
     )
     
     # 判斷是否為付費 API 辨識請求：
-    # 1. payload / query 顯式傳入 is_paid == True
-    # 2. target_model 包含 [PAID] 或 💎
+    # 1. payload / query 顯式傳入 is_paid
+    # 2. raw_target_model (未清洗前) 包含 [PAID] 或 💎
+    # 3. 若皆未指定，繼承原任務的 is_paid 設定
     req_is_paid = payload.is_paid if (payload and payload.is_paid is not None) else is_paid
-    is_paid_request = bool(req_is_paid) or ("[PAID]" in str(target_model)) or ("💎" in str(target_model))
+    if req_is_paid is not None:
+        is_paid_request = bool(req_is_paid)
+    else:
+        is_paid_request = ("[PAID]" in str(raw_target_model)) or ("💎" in str(raw_target_model)) or bool(task.get("is_paid"))
     
     req_paid_acc_id = payload.paid_account_id if (payload and payload.paid_account_id is not None) else paid_account_id
 

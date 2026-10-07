@@ -32,6 +32,7 @@ data/*
 database.sqlite
 sets/*
 !sets/.gitkeep
+paddle/*
 *.log
 diag_*.py
 capture_*.py
