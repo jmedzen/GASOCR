@@ -1,6 +1,6 @@
         <!-- Task In-Progress Banner / Detailed Live Dashboard -->
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm" x-show="currentTask">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm" x-show="currentTask">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
                 <div>
                     <div class="flex items-center space-x-2.5 flex-wrap gap-y-1">
                         <span class="text-xs font-bold px-2.5 py-0.5 rounded-full uppercase"
@@ -38,7 +38,7 @@
                                     <select 
                                         x-model="currentTask.model" 
                                         @change="changeTaskModel(currentTask)"
-                                        class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[200px] truncate"
+                                        class="appearance-none bg-transparent pr-4 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[140px] sm:max-w-[200px] truncate"
                                     >
                                         <template x-for="m in modelsList" :key="m.id || m">
                                             <option :value="m.id || m" x-text="m.name || m.id || m" :selected="(m.id || m) === currentTask.model"></option>
@@ -55,7 +55,7 @@
                         <span>自訂提示詞：
                             <template x-if="currentTask?.custom_prompt && currentTask.custom_prompt.trim()">
                                 <span class="inline-flex items-center space-x-1">
-                                    <span class="font-mono text-indigo-600 dark:text-indigo-400 font-semibold truncate max-w-[160px] sm:max-w-xs inline-block align-bottom" :title="currentTask.custom_prompt" x-text="currentTask.custom_prompt"></span>
+                                    <span class="font-mono text-indigo-600 dark:text-indigo-400 font-semibold truncate max-w-[140px] sm:max-w-xs inline-block align-bottom" :title="currentTask.custom_prompt" x-text="currentTask.custom_prompt"></span>
                                     <button type="button" @click="navigator.clipboard.writeText(currentTask.custom_prompt); showToast('✅ 已複製原始自訂提示詞！')" class="px-1.5 py-0.2 rounded text-[11px] font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition cursor-pointer" title="複製完整自訂提示詞">
                                         複製
                                     </button>
@@ -95,38 +95,38 @@
                 </div>
 
                 <!-- Export & Control Action Buttons -->
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <template x-if="['processing', 'rendering', 'pending', 'pending_render', 'pending_ocr'].includes(currentTask?.status)">
-                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-amber-300 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 text-xs font-medium text-amber-800 transition flex items-center space-x-1.5 shadow-sm">
+                        <button @click="toggleTaskPause(currentTask)" class="px-2.5 sm:px-3 py-1.5 rounded-lg border border-amber-300 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 text-xs font-medium text-amber-800 transition flex items-center space-x-1.5 shadow-sm">
                             <span>⏸ 暫停任務</span>
                         </button>
                     </template>
                     <template x-if="['paused', 'failed'].includes(currentTask?.status)">
-                        <button @click="toggleTaskPause(currentTask)" class="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-800 transition flex items-center space-x-1.5 shadow-sm">
+                        <button @click="toggleTaskPause(currentTask)" class="px-2.5 sm:px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-800 transition flex items-center space-x-1.5 shadow-sm">
                             <span>▶ 繼續任務</span>
                         </button>
                     </template>
-                    <button @click="downloadExport('md')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                    <button @click="downloadExport('md')" class="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
                         <i data-lucide="file-code" class="w-3.5 h-3.5 text-blue-600"></i>
-                        <span>下載 Markdown (.md)</span>
+                        <span class="hidden sm:inline">下載 </span><span>Markdown (.md)</span>
                     </button>
-                    <button @click="downloadExport('docx')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                    <button @click="downloadExport('docx')" class="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
                         <i data-lucide="file-type-2" class="w-3.5 h-3.5 text-blue-600"></i>
-                        <span>下載 Word (.docx)</span>
+                        <span class="hidden sm:inline">下載 </span><span>Word (.docx)</span>
                     </button>
-                    <button @click="downloadExport('txt')" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
+                    <button @click="downloadExport('txt')" class="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 bg-white hover:bg-blue-50 text-xs font-medium text-slate-700 transition flex items-center space-x-1.5">
                         <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600"></i>
                         <span>純文字 (.txt)</span>
                     </button>
-                    <button @click="downloadExport('zip')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm">
+                    <button @click="downloadExport('zip')" class="px-3 sm:px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm">
                         <i data-lucide="archive" class="w-3.5 h-3.5"></i>
-                        <span>打包 ZIP (含原圖)</span>
+                        <span>打包 ZIP</span>
                     </button>
                 </div>
             </div>
 
             <!-- Detailed Telemetry Stat Cards -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-100">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3 sm:mt-4 pt-3 border-t border-slate-100">
                 <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
                     <div class="text-[11px] text-slate-400 font-medium">
                         <span x-text="currentTask?.status === 'rendering' ? '圖片預處理進度' : (currentTask?.status === 'pending_render' ? '等待切圖排隊' : (currentTask?.status === 'pending_ocr' ? '等待OCR排隊' : (currentTask?.status === 'pending' ? '等待切圖排隊' : '本次指定頁數')))"></span>

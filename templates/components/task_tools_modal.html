@@ -1,7 +1,7 @@
     <!-- Task Tools Modal (Task Tools: Manual Pass OCR & PDF Re-slice) -->
     <div 
         x-show="showTaskToolsModal" 
-        class="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4"
         style="display: none;"
         @keydown.escape.window="closeTaskTools()"
         x-transition:enter="transition ease-out duration-200"
@@ -19,7 +19,7 @@
 
         <!-- Modal Dialog -->
         <div 
-            class="relative bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 transition-all z-10"
+            class="relative bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 transition-all z-10"
             @click.stop
         >
             <!-- Header -->

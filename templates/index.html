@@ -14,6 +14,9 @@
         tailwind.config = {
             theme: {
                 extend: {
+                    screens: {
+                        'xs': '480px',
+                    },
                     colors: {
                         gemini: {
                             50: '#f0f4ff',
@@ -45,7 +48,7 @@
     {% include 'components/toasts.html' %}
 
     <!-- Main Container -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+    <main class="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col gap-4 sm:gap-6">
         {% include 'components/upload_form.html' %}
 
         {% include 'components/task_list.html' %}

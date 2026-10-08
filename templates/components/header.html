@@ -1,52 +1,53 @@
     <!-- Top Navigation Bar -->
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm transition-colors">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-md shrink-0">
-                    <i data-lucide="sparkles" class="w-6 h-6"></i>
+        <div class="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-2 sm:space-x-3 min-w-0">
+                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-md shrink-0">
+                    <i data-lucide="sparkles" class="w-4 h-4 sm:w-6 sm:h-6"></i>
                 </div>
-                <div>
-                    <div class="flex items-center space-x-2">
-                        <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent tracking-tight">
+                <div class="min-w-0">
+                    <div class="flex items-center space-x-1.5 sm:space-x-2">
+                        <h1 class="text-sm sm:text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent tracking-tight shrink-0">
                             GASOCR
                         </h1>
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200">
+                        <span class="inline-flex items-center px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold font-mono bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0">
                             {{ build_number }}
                         </span>
                     </div>
-                    <p class="text-xs text-slate-500 hidden sm:block">Google AI Studio Gemini OCR・多帳號零費用保證</p>
+                    <p class="text-xs text-slate-500 hidden sm:block truncate">Google AI Studio Gemini OCR・多帳號零費用保證</p>
                 </div>
             </div>
 
             <!-- Badges, Theme Selector & Account Manager Button -->
-            <div class="flex items-center space-x-2 sm:space-x-3">
+            <div class="flex items-center space-x-1 sm:space-x-2 lg:space-x-3 shrink-0">
                 
                 <!-- Theme Selector (light / dark / gruvbox) -->
-                <div class="flex items-center p-1 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold shadow-inner">
-                    <button type="button" @click="setTheme('light')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'light' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                <div class="flex items-center p-0.5 sm:p-1 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold shadow-inner shrink-0">
+                    <button type="button" @click="setTheme('light')" class="px-1.5 sm:px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'light' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'" title="淺色模式">
                         <span>☀️</span>
                         <span class="hidden md:inline">淺色</span>
                     </button>
-                    <button type="button" @click="setTheme('dark')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'dark' ? 'bg-slate-800 shadow-sm text-amber-300 font-bold' : 'text-slate-500 hover:text-slate-800'">
+                    <button type="button" @click="setTheme('dark')" class="px-1.5 sm:px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'dark' ? 'bg-slate-800 shadow-sm text-amber-300 font-bold' : 'text-slate-500 hover:text-slate-800'" title="深色模式">
                         <span>🌙</span>
                         <span class="hidden md:inline">深色</span>
                     </button>
-                    <button type="button" @click="setTheme('gruvbox')" class="px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'gruvbox' ? 'bg-[#3c3836] shadow-sm text-[#fabd2f] font-bold' : 'text-slate-500 hover:text-slate-800'">
+                    <button type="button" @click="setTheme('gruvbox')" class="px-1.5 sm:px-2 py-1 rounded-lg transition flex items-center space-x-1" :class="currentTheme === 'gruvbox' ? 'bg-[#3c3836] shadow-sm text-[#fabd2f] font-bold' : 'text-slate-500 hover:text-slate-800'" title="Gruvbox 模式">
                         <span>📜</span>
                         <span class="hidden md:inline">Gruvbox</span>
                     </button>
                 </div>
 
                 <!-- Zero-cost Safe Badge -->
-                <div class="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <div class="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                     <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
                     <span>0 元保護</span>
                 </div>
 
                 <!-- Active Keys Count -->
-                <button @click="openAccountsModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 transition">
-                    <i data-lucide="key" class="w-4 h-4 text-blue-600"></i>
-                    <span>金鑰池: <strong class="text-blue-600" x-text="activeAccountsCount">0</strong></span>
+                <button @click="openAccountsModal()" class="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-white text-xs font-medium text-slate-700 transition shrink-0" title="開啟金鑰池管理">
+                    <i data-lucide="key" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600"></i>
+                    <span class="hidden sm:inline">金鑰池: </span>
+                    <strong class="text-blue-600" x-text="activeAccountsCount">0</strong>
                 </button>
 
                 <!-- Free Quota Exhausted Notification Badge -->
@@ -54,10 +55,10 @@
                     x-show="quotaStatus.all_free_exhausted" 
                     x-cloak 
                     @click="openQuotaModal()" 
-                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer shadow-xs animate-pulse"
+                    class="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer shadow-xs animate-pulse shrink-0"
                     title="今日免費 API 配額已耗盡，點擊查看重置倒數與解決方案"
                 >
-                    <i data-lucide="clock" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                    <i data-lucide="clock" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 dark:text-amber-400"></i>
                     <span class="hidden sm:inline">額度倒數:</span>
                     <span class="font-mono font-bold" x-text="quotaCountdownText">--:--:--</span>
                 </button>
@@ -65,10 +66,10 @@
                 <!-- NEW: Re-OCR Queue Drawer Button -->
                 <button 
                     @click="toggleQueueModal()" 
-                    class="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition shadow-xs cursor-pointer reocr-nav-btn"
+                    class="relative flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border text-xs font-medium transition shadow-xs cursor-pointer reocr-nav-btn shrink-0"
                     :title="'開啟重新辨識與升級佇列 (快捷鍵: ' + modKeyLabel + '+Q 或 Q)'"
                 >
-                    <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
+                    <i data-lucide="layers" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600"></i>
                     <span class="font-semibold hidden sm:inline">重辨佇列</span>
                     <template x-if="activeReocrCount > 0">
                         <span class="flex h-2 w-2 relative">
@@ -86,11 +87,11 @@
                 <!-- NEW: Admin & Access Gate Button -->
                 <button 
                     @click="openAdminModal()" 
-                    class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs admin-nav-btn"
+                    class="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs admin-nav-btn shrink-0"
                     :class="authStatus.is_admin ? 'admin-nav-btn-admin font-semibold' : ''"
                     :title="authStatus.is_admin ? '管理員後台 (已登入)' : '系統管理與通關安全設定'"
                 >
-                    <i data-lucide="shield" class="w-4 h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
+                    <i data-lucide="shield" class="w-3.5 h-3.5 sm:w-4 sm:h-4" :class="authStatus.is_admin ? 'text-amber-500' : 'text-slate-400'"></i>
                     <span class="font-semibold hidden sm:inline" x-text="authStatus.is_admin ? '管理員' : '系統管理'">系統管理</span>
                     <span x-show="authStatus.access_gate_enabled" class="text-[11px]" title="全站通關保護中" style="display: none;">🔒</span>
                 </button>
@@ -99,7 +100,7 @@
                 <button 
                     x-show="authStatus.access_gate_enabled"
                     @click="reLockAccessGate()" 
-                    class="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border-rose-200 dark:border-rose-900/60"
+                    class="flex items-center space-x-1 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer shadow-xs text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border-rose-200 dark:border-rose-900/60 shrink-0"
                     title="立即重新上鎖全站 (退出通關狀態)"
                     style="display: none;"
                 >
