@@ -451,6 +451,12 @@ async def update_task_model(task_id: str, model: str):
         await db.execute("UPDATE tasks SET model = ?, updated_at = ? WHERE id = ?", (model, now, task_id))
         await db.commit()
 
+async def update_task_custom_prompt(task_id: str, custom_prompt: str):
+    now = time.time()
+    async with get_db() as db:
+        await db.execute("UPDATE tasks SET custom_prompt = ?, updated_at = ? WHERE id = ?", (custom_prompt, now, task_id))
+        await db.commit()
+
 async def update_task_status(
     task_id: str, 
     status: Optional[str] = None, 

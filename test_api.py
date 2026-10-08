@@ -163,6 +163,42 @@ async def test_fastapi_endpoints():
         assert resp.json()["model"] == "gemini-2.5-pro"
         print("   ✅ POST /api/tasks/{id}/pages/1/retry 成功接收升級模型 gemini-2.5-pro 重新辨識")
 
+        # 9.4 測試校對模式單頁暫停 (POST /api/tasks/{id}/pages/{page_num}/pause)
+        resp = await client.post(f"/api/tasks/{test_tid}/pages/1/pause")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        detail_resp = await client.get(f"/api/tasks/{test_tid}")
+        assert detail_resp.status_code == 200
+        p1 = next((p for p in detail_resp.json()["pages"] if p["page_num"] == 1), None)
+        assert p1 is not None and p1["status"] == "paused"
+        print("   ✅ POST /api/tasks/{id}/pages/1/pause 成功暫停單頁且資料庫狀態正確轉為 paused")
+
+        # 9.5 測試校對模式單頁繼續轉譯 (POST /api/tasks/{id}/pages/{page_num}/resume)
+        resp = await client.post(f"/api/tasks/{test_tid}/pages/1/resume")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        print("   ✅ POST /api/tasks/{id}/pages/1/resume 成功繼續單頁辨識")
+
+        # 9.6 測試自訂提示詞重新編輯與更新 (PATCH /api/tasks/{id}/prompt)
+        test_prompt = "測試專屬提示詞：忽略注音、保留夾註"
+        resp = await client.patch(f"/api/tasks/{test_tid}/prompt", json={"custom_prompt": test_prompt})
+        assert resp.status_code == 200
+        assert resp.json()["custom_prompt"] == test_prompt
+        t_resp = await client.get(f"/api/tasks/{test_tid}")
+        assert t_resp.json()["task"]["custom_prompt"] == test_prompt
+        print("   ✅ PATCH /api/tasks/{id}/prompt 成功更新任務自訂提示詞")
+
+        # 9.7 測試攜帶 custom_prompt 與 update_task_prompt 發起重辨
+        re_prompt = "單頁專屬 Prompt：強制全形標點"
+        resp = await client.post(f"/api/tasks/{test_tid}/pages/1/resume", json={
+            "custom_prompt": re_prompt,
+            "update_task_prompt": True
+        })
+        assert resp.status_code == 200
+        t_resp = await client.get(f"/api/tasks/{test_tid}")
+        assert t_resp.json()["task"]["custom_prompt"] == re_prompt
+        print("   ✅ POST /api/tasks/{id}/pages/1/resume 成功攜帶自訂 Prompt 並同步更新任務設定")
+
         for tid in batch_res["task_ids"]:
             # 清理該任務
             await client.delete(f"/api/tasks/{tid}")

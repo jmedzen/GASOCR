@@ -314,6 +314,7 @@
                             <span x-show="p.status === 'completed'">✓</span>
                             <span x-show="p.status === 'processing'" class="text-[9px]">⚡</span>
                             <span x-show="p.status === 'failed'">✗</span>
+                            <span x-show="p.status === 'paused'">⏸</span>
                             <span class="text-[9px] opacity-75 font-normal" x-show="p.duration > 0" x-text="`${p.duration}s`"></span>
                         </button>
                     </template>

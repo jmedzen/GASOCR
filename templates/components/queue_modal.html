@@ -54,6 +54,60 @@
                         </div>
                     </div>
 
+                    <!-- 當前檢視任務 Prompt 編輯區 (若正在校對或檢視特定任務) -->
+                    <template x-if="currentTask">
+                        <div class="p-2.5 rounded-lg border bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900/50 flex flex-col gap-1.5 text-xs shadow-2xs">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-1.5 truncate max-w-[230px] sm:max-w-xs">
+                                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0"></i>
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 truncate" x-text="`當前任務：${currentTask.filename || currentTask.id}`"></span>
+                                </div>
+                                <button 
+                                    type="button"
+                                    @click="toggleTaskPromptEditor()" 
+                                    class="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition flex items-center space-x-1 cursor-pointer shadow-2xs shrink-0"
+                                    title="編輯當前任務之全域預設 Prompt"
+                                >
+                                    <i data-lucide="edit-3" class="w-3 h-3"></i>
+                                    <span x-text="editingTaskPrompt ? '收合' : '編輯任務 Prompt'"></span>
+                                </button>
+                            </div>
+                            
+                            <!-- 預覽提示詞 -->
+                            <div x-show="!editingTaskPrompt" class="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center space-x-1">
+                                <span class="font-semibold text-slate-600 dark:text-slate-300 shrink-0">Prompt:</span>
+                                <span class="font-mono truncate" x-text="(currentTask.custom_prompt && currentTask.custom_prompt.trim()) ? currentTask.custom_prompt : '(使用系統預設提示詞)'"></span>
+                            </div>
+
+                            <!-- 展開的任務 Prompt 編輯器 -->
+                            <div x-show="editingTaskPrompt" x-transition class="flex flex-col gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                                <textarea 
+                                    x-model="taskPromptDraftText" 
+                                    placeholder="輸入此任務之預設提示詞（例如：繁簡轉換規則、排版標點規範、古籍直排橫讀、生僻字對照...）"
+                                    rows="3"
+                                    class="w-full p-2 text-xs font-mono border rounded-md bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y leading-relaxed"
+                                ></textarea>
+                                <div class="flex items-center justify-end space-x-1.5">
+                                    <button 
+                                        type="button"
+                                        @click="editingTaskPrompt = false" 
+                                        class="px-2.5 py-1 rounded-md text-xs font-medium border bg-white hover:bg-slate-100 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
+                                    >
+                                        取消
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        @click="saveCurrentTaskPrompt()" 
+                                        class="px-2.5 py-1 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition flex items-center space-x-1 cursor-pointer shadow-2xs"
+                                    >
+                                        <i data-lucide="check" class="w-3 h-3"></i>
+                                        <span>儲存任務 Prompt</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
                     <!-- Filter Tabs & Batch Actions -->
                     <div class="flex items-center justify-between pt-1 gap-2 flex-wrap">
                         <div class="flex items-center space-x-1 p-0.5 rounded-lg text-xs shrink-0 reocr-filter-bar">
@@ -205,6 +259,87 @@
                                     <span class="font-bold text-slate-800 dark:text-slate-100 truncate" :title="job.taskFilename" x-text="job.taskFilename"></span>
                                 </div>
                                 <span class="px-2 py-0.5 rounded-md font-bold text-xs border shrink-0 reocr-badge-page" x-text="`第 ${job.pageNum} 頁`"></span>
+                            </div>
+
+                            <!-- Prompt Section: Preview & Edit Toggle -->
+                            <div class="flex items-center justify-between text-xs pt-0.5">
+                                <button 
+                                    type="button"
+                                    @click.stop="toggleJobPrompt(job)" 
+                                    class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer border max-w-[270px] sm:max-w-xs truncate"
+                                    :class="(job.customPrompt && job.customPrompt.trim()) 
+                                        ? 'bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' 
+                                        : 'bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 dark:bg-slate-800/60 dark:text-slate-400 border-slate-200 dark:border-slate-700'"
+                                    title="查看或編輯此項目自訂提示詞 (Prompt)"
+                                >
+                                    <i data-lucide="message-square" class="w-3 h-3 text-indigo-500 shrink-0"></i>
+                                    <span class="shrink-0 font-semibold" x-text="(job.customPrompt && job.customPrompt.trim()) ? '自訂 Prompt' : '編輯 Prompt'"></span>
+                                    <span class="text-[10px] text-slate-400 font-normal truncate max-w-[120px] sm:max-w-[160px]" x-show="job.customPrompt && job.customPrompt.trim()" x-text="`：${job.customPrompt}`"></span>
+                                    <i data-lucide="chevron-down" class="w-3 h-3 shrink-0 transition-transform" :class="{'rotate-180': editingPromptJobId === job.id}"></i>
+                                </button>
+                                <span class="text-[10px] text-slate-400 shrink-0" x-show="editingPromptJobId !== job.id && (!job.customPrompt || !job.customPrompt.trim())">預設提示詞</span>
+                            </div>
+
+                            <!-- Expandable Job Prompt Editor -->
+                            <div 
+                                x-show="editingPromptJobId === job.id" 
+                                x-transition
+                                @click.stop
+                                class="p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800/95 border-indigo-200 dark:border-indigo-900/60 flex flex-col gap-2 shadow-2xs"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                                        <i data-lucide="edit-3" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400"></i>
+                                        <span>編輯提示詞 (Prompt)</span>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        @click.stop="cancelJobPromptEdit()" 
+                                        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+                                        title="收合"
+                                    >
+                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+
+                                <textarea 
+                                    x-model="promptDraftText" 
+                                    @click.stop
+                                    placeholder="輸入本頁專屬 Prompt（例如：忽略讀音標記、完整保留雙行夾註、字詞對照表、缺字標記規則...）"
+                                    rows="3"
+                                    class="w-full p-2 text-xs font-mono border rounded-md bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y leading-relaxed"
+                                ></textarea>
+
+                                <div class="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                                    <label class="flex items-center space-x-1.5 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+                                        <input 
+                                            type="checkbox" 
+                                            x-model="promptDraftSyncTask" 
+                                            class="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 text-xs"
+                                        >
+                                        <span>同步更新所屬任務 Prompt</span>
+                                    </label>
+                                    
+                                    <div class="flex items-center space-x-1.5 ml-auto">
+                                        <button 
+                                            type="button"
+                                            @click.stop="saveJobPromptOnly(job)" 
+                                            class="px-2.5 py-1 rounded-md text-xs font-medium border bg-white hover:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-600 transition cursor-pointer shadow-2xs"
+                                            title="僅儲存 Prompt 至本項目（下次重試生效）"
+                                        >
+                                            僅儲存
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            @click.stop="saveAndRerunJob(job)" 
+                                            class="px-2.5 py-1 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition flex items-center space-x-1 cursor-pointer shadow-2xs"
+                                            title="儲存 Prompt 並立即重新發起辨識"
+                                        >
+                                            <i data-lucide="zap" class="w-3 h-3 text-amber-300"></i>
+                                            <span>儲存並重辨</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Error info if failed or paused -->

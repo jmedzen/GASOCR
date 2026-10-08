@@ -2187,6 +2187,9 @@ class ResumeTaskPayload(BaseModel):
 class TaskModelUpdate(BaseModel):
     model: str
 
+class TaskPromptUpdate(BaseModel):
+    custom_prompt: str
+
 @app.patch("/api/tasks/{task_id}/model")
 async def update_task_model_endpoint(task_id: str, payload: TaskModelUpdate):
     """更新指定任務的 Gemini 模型"""
@@ -2195,6 +2198,15 @@ async def update_task_model_endpoint(task_id: str, payload: TaskModelUpdate):
         raise HTTPException(status_code=404, detail="Task not found")
     await database.update_task_model(task_id, payload.model)
     return {"status": "ok", "task_id": task_id, "model": payload.model}
+
+@app.patch("/api/tasks/{task_id}/prompt")
+async def update_task_prompt_endpoint(task_id: str, payload: TaskPromptUpdate):
+    """更新指定任務的自訂提示詞 (custom_prompt)"""
+    task = await database.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await database.update_task_custom_prompt(task_id, payload.custom_prompt)
+    return {"status": "ok", "task_id": task_id, "custom_prompt": payload.custom_prompt}
 
 @app.post("/api/tasks/{task_id}/resume")
 async def resume_task(task_id: str, payload: Optional[ResumeTaskPayload] = None):
@@ -2271,6 +2283,8 @@ class PageRetryPayload(BaseModel):
     lang: Optional[str] = None
     direction: Optional[str] = None
     column: Optional[str] = None
+    custom_prompt: Optional[str] = None
+    update_task_prompt: Optional[bool] = False
     is_paid: Optional[bool] = None
     paid_account_id: Optional[int] = None
 
@@ -2283,6 +2297,7 @@ async def retry_single_page(
     lang: Optional[str] = None,
     direction: Optional[str] = None,
     column: Optional[str] = None,
+    custom_prompt: Optional[str] = None,
     is_paid: Optional[bool] = None,
     paid_account_id: Optional[int] = None
 ):
@@ -2308,11 +2323,20 @@ async def retry_single_page(
     target_direction = (payload.direction if (payload and payload.direction) else None) or direction or task.get("direction_pref", "auto")
     target_column = (payload.column if (payload and payload.column) else None) or column or task.get("column_pref", "auto")
 
+    # 提取自訂 Prompt：優先取 payload 傳入，若無再取 query 參數，皆無則繼承任務設定
+    target_custom_prompt = (payload.custom_prompt if (payload and payload.custom_prompt is not None) else None)
+    if target_custom_prompt is None:
+        target_custom_prompt = custom_prompt if custom_prompt is not None else task.get("custom_prompt", "")
+
+    # 若指定 update_task_prompt，同步覆蓋更新任務之 custom_prompt
+    if payload and payload.update_task_prompt and target_custom_prompt is not None:
+        await database.update_task_custom_prompt(task_id, target_custom_prompt)
+
     prompt = build_ocr_prompt(
         lang=target_lang,
         direction=target_direction,
         column=target_column,
-        custom_prompt=task.get("custom_prompt", "")
+        custom_prompt=target_custom_prompt
     )
     
     # 判斷是否為付費 API 辨識請求：

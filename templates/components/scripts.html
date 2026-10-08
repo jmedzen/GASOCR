@@ -167,6 +167,11 @@
                     }
                 })(),
                 reocrFilter: 'all',
+                editingPromptJobId: null,
+                promptDraftText: '',
+                promptDraftSyncTask: false,
+                editingTaskPrompt: false,
+                taskPromptDraftText: '',
                 toastMessage: '',
                 toastTimeout: null,
                 authTab: 'api_key',
@@ -2860,6 +2865,9 @@
                         taskFilename: taskFilename,
                         pageNum: pageNum,
                         model: targetModel,
+                        customPrompt: extraOptions.custom_prompt !== undefined 
+                            ? extraOptions.custom_prompt 
+                            : ((this.currentTask && this.currentTask.custom_prompt) || ''),
                         isUpgrade: isUpgrade,
                         isPaid: isPaid,
                         paidAccountId: paidAccountId,
@@ -2879,6 +2887,7 @@
 
                     const payload = {
                         model: targetModel,
+                        custom_prompt: newJob.customPrompt,
                         is_paid: isPaid,
                         paid_account_id: paidAccountId
                     };
@@ -2992,12 +3001,20 @@
                     }
                 },
 
-                async resumeReocrJob(job) {
+                async resumeReocrJob(job, options = {}) {
                     if (!job || !job.taskId || !job.pageNum) return;
                     try {
                         const isPaid = job.isPaid || (job.model && (job.model.includes('[PAID]') || job.model.includes('💎')));
+                        const customPrompt = options.custom_prompt !== undefined 
+                            ? options.custom_prompt 
+                            : (job.customPrompt !== undefined ? job.customPrompt : null);
+                        if (options.custom_prompt !== undefined) {
+                            job.customPrompt = options.custom_prompt;
+                        }
                         const payload = {
                             model: job.model || null,
+                            custom_prompt: customPrompt,
+                            update_task_prompt: !!options.update_task_prompt,
                             is_paid: isPaid,
                             paid_account_id: job.paidAccountId || null
                         };
@@ -3011,6 +3028,9 @@
                             job.error = null;
                             job.startedAt = Date.now();
                             this.saveReocrQueue();
+                            if (options.update_task_prompt && this.currentTask && this.currentTask.id === job.taskId && customPrompt !== null) {
+                                this.currentTask.custom_prompt = customPrompt;
+                            }
                             if (this.currentTaskId === job.taskId) {
                                 const p = this.pages.find(page => page.page_num === job.pageNum);
                                 if (p) {
@@ -3019,7 +3039,8 @@
                                 }
                             }
                             this.listenTaskEvents(job.taskId);
-                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已啟動重辨 (模型: ${job.model})`);
+                            const promptTag = (customPrompt && customPrompt.trim()) ? ' 💬 自訂Prompt' : '';
+                            this.showToast(`▶️ [${job.taskFilename}] 第 ${job.pageNum} 頁已啟動重辨 (模型: ${job.model}${promptTag})`);
                         } else {
                             const errData = await res.json().catch(() => ({}));
                             const errMsg = this.extractErrorMessage(errData, `重試失敗 (HTTP ${res.status})`);
@@ -3051,6 +3072,88 @@
                         this.showToast(`⚠️ [${job.taskFilename}] 第 ${job.pageNum} 頁重試網路異常: ${errMsg}`);
                     } finally {
                         this.$nextTick(() => { lucide.createIcons(); });
+                    }
+                },
+
+                toggleJobPrompt(job) {
+                    if (this.editingPromptJobId === job.id) {
+                        this.editingPromptJobId = null;
+                    } else {
+                        this.editingPromptJobId = job.id;
+                        this.promptDraftText = (job.customPrompt !== undefined && job.customPrompt !== null)
+                            ? job.customPrompt 
+                            : ((this.currentTask && this.currentTask.id === job.taskId ? this.currentTask.custom_prompt : '') || '');
+                        this.promptDraftSyncTask = false;
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                cancelJobPromptEdit() {
+                    this.editingPromptJobId = null;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async saveJobPromptOnly(job) {
+                    if (!job) return;
+                    job.customPrompt = this.promptDraftText;
+                    this.saveReocrQueue();
+                    if (this.promptDraftSyncTask && job.taskId) {
+                        await this.syncTaskPromptToBackend(job.taskId, this.promptDraftText);
+                    }
+                    this.editingPromptJobId = null;
+                    this.showToast(`✅ [${job.taskFilename} 第 ${job.pageNum} 頁] Prompt 已儲存`);
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async saveAndRerunJob(job) {
+                    if (!job) return;
+                    const newPrompt = this.promptDraftText;
+                    job.customPrompt = newPrompt;
+                    const syncTask = this.promptDraftSyncTask;
+                    this.saveReocrQueue();
+                    this.editingPromptJobId = null;
+                    await this.resumeReocrJob(job, {
+                        custom_prompt: newPrompt,
+                        update_task_prompt: syncTask
+                    });
+                },
+
+                toggleTaskPromptEditor() {
+                    this.editingTaskPrompt = !this.editingTaskPrompt;
+                    if (this.editingTaskPrompt && this.currentTask) {
+                        this.taskPromptDraftText = this.currentTask.custom_prompt || '';
+                    }
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async saveCurrentTaskPrompt() {
+                    if (!this.currentTaskId) return;
+                    await this.syncTaskPromptToBackend(this.currentTaskId, this.taskPromptDraftText);
+                    this.editingTaskPrompt = false;
+                    this.$nextTick(() => { lucide.createIcons(); });
+                },
+
+                async syncTaskPromptToBackend(taskId, promptText) {
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/prompt`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ custom_prompt: promptText })
+                        });
+                        if (res.ok) {
+                            if (this.currentTask && this.currentTask.id === taskId) {
+                                this.currentTask.custom_prompt = promptText;
+                            }
+                            const targetInList = this.allTasks && this.allTasks.find(t => t.id === taskId);
+                            if (targetInList) targetInList.custom_prompt = promptText;
+                            this.showToast(`✅ 任務 Prompt 已同步更新`);
+                        } else {
+                            const errData = await res.json().catch(() => ({}));
+                            this.showToast(`⚠️ 更新任務 Prompt 失敗: ${this.extractErrorMessage(errData)}`);
+                        }
+                    } catch (e) {
+                        console.error('更新任務 Prompt 連線異常:', e);
+                        this.showToast(`⚠️ 更新任務 Prompt 網路異常`);
                     }
                 },
 
