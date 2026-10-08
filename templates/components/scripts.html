@@ -72,6 +72,8 @@
                 modelsList: {{ models | tojson }},
                 isLoadingModels: false,
                 accounts: [],
+                accountSearchKeyword: '',
+                accountFilterTab: 'all', // 'all' | 'paid' | 'free' | 'add'
                 showAccountsModal: false,
                 showQueueModal: false,
                 // 任務工具箱 (手動標記通過 & PDF Re-slice) 狀態
@@ -453,6 +455,23 @@
                 },
                 get activePaidAccountsCount() {
                     return this.accounts.filter(a => a.is_active && a.is_paid === 1).length;
+                },
+                get filteredPaidAccounts() {
+                    const q = (this.accountSearchKeyword || '').trim().toLowerCase();
+                    if (!q) return this.paidAccounts;
+                    return this.paidAccounts.filter(a => 
+                        (a.name || '').toLowerCase().includes(q) || 
+                        (a.masked_key || '').toLowerCase().includes(q)
+                    );
+                },
+                get filteredFreeAccounts() {
+                    const q = (this.accountSearchKeyword || '').trim().toLowerCase();
+                    if (!q) return this.freeAccounts;
+                    return this.freeAccounts.filter(a => 
+                        (a.name || '').toLowerCase().includes(q) || 
+                        (a.masked_key || '').toLowerCase().includes(q) ||
+                        (a.auth_type || '').toLowerCase().includes(q)
+                    );
                 },
 
                 // ── Web RPA 狀態：依瀏覽器模式給出正確的判讀 ──
@@ -1039,6 +1058,8 @@
                 },
 
                 openAccountsModal() {
+                    this.accountSearchKeyword = '';
+                    this.accountFilterTab = 'all';
                     this.loadAccounts();
                     this.loadWebRpaConfig();
                     this.checkWebRpaStatus();
